@@ -291,23 +291,25 @@ elif lead_lag_ratio < 0.8:
 
 # --- RENDER DYNAMIC PLOTS ---
 fig = make_subplots(
-    rows=2,
+    rows=3,
     cols=1,
     shared_xaxes=True,
-    vertical_spacing=0.1,
+    vertical_spacing=0.08,
     subplot_titles=(
         "Live Temperature Transient Response (°C)",
-        "Live Mass Flow Rates Response (t/h)",
+        "Live Outlet Steam Mass Flow Rate (t/h)",
+        "Live Spray Feedwater Mass Flow Rate (t/h)",
     ),
 )
 
+# Row 1: Outlet Temperature
 fig.add_trace(
     go.Scatter(
         x=st.session_state.time_history,
         y=st.session_state.temp_history,
         mode="lines",
         name="Outlet Temp (°C)",
-        line=dict(color="#00A896", width=2.5),
+        line=dict(color="#008080", width=2.5),  # Teal
     ),
     row=1,
     col=1,
@@ -319,44 +321,46 @@ fig.add_trace(
         y=[saturation_temp] * len(st.session_state.time_history),
         mode="lines",
         name="Saturation Limit (°C)",
-        line=dict(color="#E63946", dash="dash"),
+        line=dict(color="#E63946", dash="dash"),  # Crimson
     ),
     row=1,
     col=1,
 )
 
+# Row 2: Outlet Steam Flow
 fig.add_trace(
     go.Scatter(
         x=st.session_state.time_history,
         y=st.session_state.outlet_flow_history,
         mode="lines",
         name="Outlet Steam Flow (t/h)",
-        line=dict(color="#1D3557", width=2),
+        line=dict(color="#4169E1", width=2.5),  # Royal Blue
     ),
     row=2,
     col=1,
 )
 
+# Row 3: Spray Water Flow
 fig.add_trace(
     go.Scatter(
         x=st.session_state.time_history,
         y=st.session_state.spray_flow_history,
         mode="lines",
         name="Spray Water Flow (t/h)",
-        line=dict(color="#457B9D", width=2),
+        line=dict(color="#E67E22", width=2.5),  # Deep Orange
     ),
-    row=2,
+    row=3,
     col=1,
 )
 
 fig.update_layout(
-    height=520,
+    height=680,
     template="plotly_white",
     font=dict(family="Segoe UI, Aptos, Arial", size=12),
     margin=dict(l=20, r=20, t=40, b=20),
 )
 
-fig.update_xaxes(title_text="Simulation Time (s)", row=2, col=1)
+fig.update_xaxes(title_text="Simulation Time (s)", row=3, col=1)
 st.plotly_chart(fig, use_container_width=True)
 
 # --- STREAMLIT RE-RUN LOOP ---
