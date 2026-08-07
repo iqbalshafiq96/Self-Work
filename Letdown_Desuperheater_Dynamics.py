@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("💨 Real-Time Desuperheater Dynamic Simulation")
+st.title("💨 Real-Time Desuperheater Dynamic Simulation by Iqbal SHERPA 20260807")
 
 # --- INITIALIZE SESSION STATE FOR REAL-TIME SIMULATION ---
 if "time_history" not in st.session_state:
