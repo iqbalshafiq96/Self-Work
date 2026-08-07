@@ -34,7 +34,6 @@ Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour = 107  # @param {type:"number"}
 # --- AUTOMATIC CALCULATION EXECUTION ---
 import sys
 
-!{sys.executable} -m pip install -q iapws
 from iapws import IAPWS97
 
 ATMOSPHERIC_PRESSURE_MEGAPASCALS = 0.101325
