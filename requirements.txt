@@ -1,2 +1,6 @@
 streamlit
 iapws
+numpy
+pandas
+plotly
+matplotlib
