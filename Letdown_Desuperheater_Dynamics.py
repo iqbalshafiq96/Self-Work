@@ -13,32 +13,21 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("💨 Real-Time Desuperheater Dynamic Simulation by Iqbal SHERPA 20260807")
+st.title(
+    "💨 Real-Time Desuperheater Dynamic Simulation by Iqbal SHERPA 20260807"
+)
 
-# --- INITIALIZE SESSION STATE FOR REAL-TIME SIMULATION ---
-if "time_history" not in st.session_state:
-    st.session_state.time_history = [0.0]
-    st.session_state.temp_history = [180.0]
-    st.session_state.outlet_flow_history = [100.0]
-    st.session_state.spray_flow_history = [2.0]
-    st.session_state.inlet_flow_history = [98.0]
-    st.session_state.sim_time = 0.0
-
-# --- SIDEBAR INPUTS ---
+# --- SIDEBAR CONTROLS ---
 st.sidebar.header("🕹️ Simulation Real-Time Controls")
 is_running = st.sidebar.toggle("Run Live Simulation", value=True)
 tau = st.sidebar.slider(
-    "Response Time Constant τ (s)", 1.0, 30.0, 8.0, help="Higher = slower response"
+    "Response Time Constant τ (s)",
+    1.0,
+    30.0,
+    8.0,
+    help="Higher = slower response",
 )
 dt = st.sidebar.slider("Step Delay Δt (s)", 0.1, 1.0, 0.2)
-
-if st.sidebar.button("Reset Dynamic Trends"):
-    st.session_state.time_history = [0.0]
-    st.session_state.temp_history = [180.0]
-    st.session_state.outlet_flow_history = [100.0]
-    st.session_state.spray_flow_history = [2.0]
-    st.session_state.inlet_flow_history = [98.0]
-    st.session_state.sim_time = 0.0
 
 st.sidebar.header("1. Operating Configuration")
 Pressure_Unit_Type = st.sidebar.selectbox(
@@ -185,12 +174,27 @@ else:
 
 saturation_temp = IAPWS97(P=p_out_mpaa, x=0).T - 273.15
 
+
+# --- INITIALIZE / RESET SESSION STATE AT STEADY STATE ---
+def reset_to_steady_state():
+    st.session_state.time_history = [0.0]
+    st.session_state.temp_history = [target_temp_outlet]
+    st.session_state.outlet_flow_history = [target_outlet_flow]
+    st.session_state.spray_flow_history = [target_fw_flow]
+    st.session_state.inlet_flow_history = [target_inlet_flow]
+    st.session_state.sim_time = 0.0
+
+
+if "time_history" not in st.session_state:
+    reset_to_steady_state()
+
+if st.sidebar.button("Reset Dynamic Trends"):
+    reset_to_steady_state()
+
 # --- NUMERICAL INTEGRATION STEP (FIRST-ORDER LAG) ---
 if is_running:
     st.session_state.sim_time += dt
 
-    # Euler integration step for single-time-constant process dynamics:
-    # dy/dt = (y_target - y_current) / tau
     curr_temp = st.session_state.temp_history[-1]
     curr_inlet_flow = st.session_state.inlet_flow_history[-1]
     curr_spray_flow = st.session_state.spray_flow_history[-1]
@@ -204,7 +208,6 @@ if is_running:
     )
     new_outlet_flow = new_inlet_flow + new_spray_flow
 
-    # Append to rolling history buffers (keep last 300 points)
     st.session_state.time_history.append(st.session_state.sim_time)
     st.session_state.temp_history.append(new_temp)
     st.session_state.inlet_flow_history.append(new_inlet_flow)
