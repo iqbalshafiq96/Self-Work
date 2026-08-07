@@ -8,25 +8,43 @@ from plotly.subplots import make_subplots
 import streamlit as st
 
 st.set_page_config(
-    page_title="Real-Time Desuperheater Dynamics",
+    page_title="Real-Time Desuperheater Lead-Lag Dynamics",
     page_icon="💨",
     layout="wide",
 )
 
 st.title(
-    "💨 Real-Time Desuperheater Dynamic Simulation by Iqbal SHERPA 20260807"
+    "💨 Real-Time Desuperheater Dynamic Simulation (Lead-Lag Enthalpy Model) by Iqbal SHERPA 20260807"
 )
 
 # --- SIDEBAR CONTROLS ---
-st.sidebar.header("🕹️ Simulation Real-Time Controls")
+st.sidebar.header("🕹️ Dynamic & Lead-Lag Controls")
 is_running = st.sidebar.toggle("Run Live Simulation", value=True)
-tau = st.sidebar.slider(
-    "Response Time Constant τ (s)",
+
+tau_steam = st.sidebar.slider(
+    "Steam Flow Time Constant τ_steam (s)",
     1.0,
     30.0,
-    8.0,
-    help="Higher = slower response",
+    5.0,
+    help="Speed of steam flow response to step changes.",
 )
+
+tau_spray = st.sidebar.slider(
+    "Feedwater Flow Time Constant τ_spray (s)",
+    1.0,
+    30.0,
+    12.0,
+    help="Speed of spray water valve response. Set τ_spray > τ_steam to see temperature overshoot!",
+)
+
+tau_thermal = st.sidebar.slider(
+    "Thermal Mixing/Sensor Lag τ_thermal (s)",
+    0.5,
+    10.0,
+    2.0,
+    help="Thermal inertia/mixing lag inside the pipe line.",
+)
+
 dt = st.sidebar.slider("Step Delay Δt (s)", 0.1, 1.0, 0.2)
 
 st.sidebar.header("1. Operating Configuration")
@@ -191,23 +209,41 @@ if "time_history" not in st.session_state:
 if st.sidebar.button("Reset Dynamic Trends"):
     reset_to_steady_state()
 
-# --- NUMERICAL INTEGRATION STEP (FIRST-ORDER LAG) ---
+# --- NUMERICAL INTEGRATION WITH LEAD-LAG ENTHALPY BALANCE ---
 if is_running:
     st.session_state.sim_time += dt
 
-    curr_temp = st.session_state.temp_history[-1]
     curr_inlet_flow = st.session_state.inlet_flow_history[-1]
     curr_spray_flow = st.session_state.spray_flow_history[-1]
+    curr_temp = st.session_state.temp_history[-1]
 
-    new_temp = curr_temp + (dt / tau) * (target_temp_outlet - curr_temp)
-    new_inlet_flow = curr_inlet_flow + (dt / tau) * (
+    # 1. Independent first-order lag updates for flows
+    new_inlet_flow = curr_inlet_flow + (dt / tau_steam) * (
         target_inlet_flow - curr_inlet_flow
     )
-    new_spray_flow = curr_spray_flow + (dt / tau) * (
+    new_spray_flow = curr_spray_flow + (dt / tau_spray) * (
         target_fw_flow - curr_spray_flow
     )
     new_outlet_flow = new_inlet_flow + new_spray_flow
 
+    # 2. Instantaneous Enthalpy Balance from dynamic transient flow rates
+    if new_outlet_flow > 0:
+        dynamic_outlet_enthalpy = (
+            (new_inlet_flow * enthalpy_steam_inlet)
+            + (new_spray_flow * enthalpy_feedwater_inlet)
+        ) / new_outlet_flow
+        instantaneous_temp = (
+            IAPWS97(P=p_out_mpaa, h=dynamic_outlet_enthalpy).T - 273.15
+        )
+    else:
+        instantaneous_temp = curr_temp
+
+    # 3. Apply thermal lag to temperature reading (pipe wall/sensor thermal mass)
+    new_temp = curr_temp + (dt / tau_thermal) * (
+        instantaneous_temp - curr_temp
+    )
+
+    # Append to rolling history buffers (keep last 300 points)
     st.session_state.time_history.append(st.session_state.sim_time)
     st.session_state.temp_history.append(new_temp)
     st.session_state.inlet_flow_history.append(new_inlet_flow)
@@ -239,6 +275,20 @@ c3.metric(
     f"Target: {target_outlet_flow:.2f} t/h",
 )
 
+# Lead-Lag Ratio Indicator Banner
+lead_lag_ratio = tau_spray / tau_steam
+if lead_lag_ratio > 1.2:
+    st.warning(
+        f"⚠️ Water Lags Steam (τ_spray/τ_steam = {lead_lag_ratio:.2f}):"
+        " Expect transient temperature OVERSHOOT (upshoot) during flow"
+        " increases!"
+    )
+elif lead_lag_ratio < 0.8:
+    st.info(
+        f"ℹ️ Water Leads Steam (τ_spray/τ_steam = {lead_lag_ratio:.2f}):"
+        " Expect transient temperature UNDERSHOOT (dip) during flow increases."
+    )
+
 # --- RENDER DYNAMIC PLOTS ---
 fig = make_subplots(
     rows=2,
@@ -246,7 +296,7 @@ fig = make_subplots(
     shared_xaxes=True,
     vertical_spacing=0.1,
     subplot_titles=(
-        "Live Temperature Response (°C)",
+        "Live Temperature Transient Response (°C)",
         "Live Mass Flow Rates Response (t/h)",
     ),
 )
@@ -300,7 +350,7 @@ fig.add_trace(
 )
 
 fig.update_layout(
-    height=500,
+    height=520,
     template="plotly_white",
     font=dict(family="Segoe UI, Aptos, Arial", size=12),
     margin=dict(l=20, r=20, t=40, b=20),
