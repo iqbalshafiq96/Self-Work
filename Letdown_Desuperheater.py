@@ -27,10 +27,7 @@ High_Pressure_Inlet_Steam_Temperature_Degrees_Celsius = (
     st.sidebar.number_input("Inlet Temp (°C)", value=419.0)
 )
 
-st.sidebar.header("2. Desuperheater Outlet Parameters")
-Desuperheater_Outlet_Steam_Pressure = st.sidebar.number_input(
-    "Outlet Pressure", value=4.6
-)
+st.sidebar.header("2. Desuperheater Outlet Parameters & Mode")
 Outlet_Temperature_Calculation_Mode = st.sidebar.radio(
     "Calculation Mode",
     [
@@ -39,8 +36,23 @@ Outlet_Temperature_Calculation_Mode = st.sidebar.radio(
     ],
 )
 
+# Determine mode status for dynamic disabling
+is_calc_mode = (
+    Outlet_Temperature_Calculation_Mode
+    == "CALC - Calculate Outlet Temperature from Spray Flow"
+)
+
+Desuperheater_Outlet_Steam_Pressure = st.sidebar.number_input(
+    "Outlet Pressure", value=4.6
+)
+
+# Disabled when in CALC mode
 Desuperheater_Outlet_Steam_Target_Temperature_Degrees_Celsius = (
-    st.sidebar.number_input("Target Outlet Temp (°C)", value=160.0)
+    st.sidebar.number_input(
+        "Target Outlet Temp (°C)",
+        value=160.0,
+        disabled=is_calc_mode,  # <--- Dynamic Toggle
+    )
 )
 
 st.sidebar.header("3. Spray Feedwater Parameters")
@@ -50,8 +62,14 @@ Spray_Feedwater_Inlet_Pressure = st.sidebar.number_input(
 Spray_Feedwater_Inlet_Temperature_Degrees_Celsius = st.sidebar.number_input(
     "Feedwater Temp (°C)", value=90.0
 )
+
+# Disabled when in INPUT mode
 Specified_Spray_Feedwater_Mass_Flow_Rate_Tons_Per_Hour = (
-    st.sidebar.number_input("Specified Spray Flow (t/h)", value=2.35)
+    st.sidebar.number_input(
+        "Specified Spray Flow (t/h)",
+        value=2.35,
+        disabled=not is_calc_mode,  # <--- Dynamic Toggle
+    )
 )
 
 st.sidebar.header("4. Flow Rate Basis")
@@ -122,11 +140,6 @@ enthalpy_steam_inlet = IAPWS97(
 enthalpy_feedwater_inlet = IAPWS97(
     P=p_fw_mpaa, T=temperature_feedwater_inlet + 273.15
 ).h
-
-is_calc_mode = (
-    Outlet_Temperature_Calculation_Mode
-    == "CALC - Calculate Outlet Temperature from Spray Flow"
-)
 
 if is_calc_mode:
     mass_flow_feedwater_inlet = (
