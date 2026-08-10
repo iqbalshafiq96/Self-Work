@@ -87,22 +87,36 @@ def get_saturation_curve(fluid, num_points=120):
 def get_point_props(p_bara, t_degc, fluid):
     p_pa = p_bara * 1e5
     t_k = t_degc + 273.15
+    
+    # Enthalpy (kJ/kg)
     h_kj = CP.PropsSI('H', 'P', p_pa, 'T', t_k, fluid) / 1000.0
+    
+    # Heat Capacities (kJ/kg·K)
+    cp_kj = CP.PropsSI('Cpmass', 'P', p_pa, 'T', t_k, fluid) / 1000.0
+    cv_kj = CP.PropsSI('Cvmass', 'P', p_pa, 'T', t_k, fluid) / 1000.0
+    
+    # Saturation Temperature (°C)
     t_sat_k = CP.PropsSI('T', 'P', p_pa, 'Q', 0, fluid)
     t_sat_c = t_sat_k - 273.15
-    return h_kj, t_sat_c
+    
+    return h_kj, cp_kj, cv_kj, t_sat_c
 
 def calculate_cycle_points(p_suc_in, t_suc_in, p_dis_in, t_dis_in, t_cond_in, p_unit, fluid):
     p_suction = convert_to_bara(p_suc_in, p_unit)
     p_discharge = convert_to_bara(p_dis_in, p_unit)
 
-    s1_h, s1_tsat = get_point_props(p_suction, t_suc_in, fluid)
+    # State 1 (Suction)
+    s1_h, s1_cp, s1_cv, s1_tsat = get_point_props(p_suction, t_suc_in, fluid)
     s1_sh = t_suc_in - s1_tsat
 
-    s2_h, s2_tsat = get_point_props(p_discharge, t_dis_in, fluid)
+    # State 2 (Discharge)
+    s2_h, s2_cp, s2_cv, s2_tsat = get_point_props(p_discharge, t_dis_in, fluid)
     s2_sh = t_dis_in - s2_tsat
 
-    s3_h, s3_tsat = get_point_props(p_discharge, t_cond_in, fluid)
+    # State 3 (Condenser Outlet)
+    s3_h, s3_cp, s3_cv, s3_tsat = get_point_props(p_discharge, t_cond_in, fluid)
+    
+    # State 4 (Expansion Valve Outlet)
     s4_h = s3_h
     s4_tsat = CP.PropsSI('T', 'P', p_suction * 1e5, 'Q', 0, fluid) - 273.15
 
@@ -112,9 +126,9 @@ def calculate_cycle_points(p_suc_in, t_suc_in, p_dis_in, t_dis_in, t_cond_in, p_
 
     return {
         'p_suction': p_suction, 'p_discharge': p_discharge,
-        's1_h': s1_h, 's1_sh': s1_sh, 't_suc': t_suc_in, 's1_tsat': s1_tsat,
-        's2_h': s2_h, 's2_sh': s2_sh, 't_dis': t_dis_in, 's2_tsat': s2_tsat,
-        's3_h': s3_h, 's3_tsat': s3_tsat, 't_cond': t_cond_in,
+        's1_h': s1_h, 's1_cp': s1_cp, 's1_cv': s1_cv, 's1_sh': s1_sh, 't_suc': t_suc_in, 's1_tsat': s1_tsat,
+        's2_h': s2_h, 's2_cp': s2_cp, 's2_cv': s2_cv, 's2_sh': s2_sh, 't_dis': t_dis_in, 's2_tsat': s2_tsat,
+        's3_h': s3_h, 's3_cp': s3_cp, 's3_cv': s3_cv, 's3_tsat': s3_tsat, 't_cond': t_cond_in,
         's4_h': s4_h, 's4_tsat': s4_tsat,
         'cop': cop, 'q_in': q_in, 'w_in': w_in
     }
@@ -238,50 +252,58 @@ try:
         # Multiplier x_m flips the horizontal ax offset across a vertical mirror line
         x_m = -1 if vert_mirror else 1
 
-        # Point 1: Suction (Profile A points right (+ax), Profile B mirrors left (-ax))
+        # Point 1: Suction (Includes Cp and Cv)
         fig.add_annotation(
             x=prof['s1_h'], y=prof['p_suction'],
-            text=f"<b>{prefix}S1 (Suction)</b><br>P: {prof['p_suction']:.2f} bara<br>T: {prof['t_suc']:.1f}°C<br>Superheat: {prof['s1_sh']:.1f} K",
+            text=f"<b>{prefix}S1 (Suction)</b><br>"
+                 f"P: {prof['p_suction']:.2f} bara<br>"
+                 f"T: {prof['t_suc']:.1f}°C<br>"
+                 f"SH: {prof['s1_sh']:.1f} K<br>"
+                 f"Cp: {prof['s1_cp']:.3f} kJ/kg·K<br>"
+                 f"Cv: {prof['s1_cv']:.3f} kJ/kg·K",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=55 * x_m, ay=45,
+            ax=60 * x_m, ay=55,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
-        # Point 2: Discharge (Profile A points right (+ax), Profile B mirrors left (-ax))
+        # Point 2: Discharge (Includes Cp and Cv)
         fig.add_annotation(
             x=prof['s2_h'], y=prof['p_discharge'],
-            text=f"<b>{prefix}S2 (Discharge)</b><br>P: {prof['p_discharge']:.2f} bara<br>T: {prof['t_dis']:.1f}°C<br>Superheat: {prof['s2_sh']:.1f} K",
+            text=f"<b>{prefix}S2 (Discharge)</b><br>"
+                 f"P: {prof['p_discharge']:.2f} bara<br>"
+                 f"T: {prof['t_dis']:.1f}°C<br>"
+                 f"SH: {prof['s2_sh']:.1f} K<br>"
+                 f"Cp: {prof['s2_cp']:.3f} kJ/kg·K<br>"
+                 f"Cv: {prof['s2_cv']:.3f} kJ/kg·K",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=55 * x_m, ay=-45,
+            ax=60 * x_m, ay=-55,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
-        # Point 3: Condenser Outlet (Profile A points left (-ax), Profile B mirrors right (+ax))
+        # Point 3: Condenser Outlet
         subcool = prof['s3_tsat'] - prof['t_cond']
         subcool_str = f"Subcooled: {subcool:.1f} K" if subcool > 0 else "Sat Liquid"
         fig.add_annotation(
             x=prof['s3_h'], y=prof['p_discharge'],
             text=f"<b>{prefix}S3 (Cond. Out)</b><br>P: {prof['p_discharge']:.2f} bara<br>T: {prof['t_cond']:.1f}°C<br>{subcool_str}",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=-55 * x_m, ay=-45,
+            ax=-60 * x_m, ay=-55,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
-        # Point 4: Expansion Outlet (Profile A points left (-ax), Profile B mirrors right (+ax))
+        # Point 4: Expansion Outlet
         fig.add_annotation(
             x=prof['s4_h'], y=prof['p_suction'],
             text=f"<b>{prefix}S4 (Exp. Out)</b><br>P: {prof['p_suction']:.2f} bara<br>T_sat: {prof['s4_tsat']:.1f}°C",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=-55 * x_m, ay=45,
+            ax=-60 * x_m, ay=55,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
 
     # Attach annotations if toggle is enabled
     if show_callouts:
-        # Profile A standard callouts
         add_profile_annotations(fig, prof_A, prefix="A-" if prof_B else "", text_color="#059669", vert_mirror=False)
-        # Profile B mirrored across a vertical line (flipped horizontally)
         if prof_B:
             add_profile_annotations(fig, prof_B, prefix="B-", text_color="#D97706", vert_mirror=True)
 
@@ -294,7 +316,7 @@ try:
 
     fig.update_layout(
         title=dict(text=f'P-h Diagram ({refrigerant_choice}) - Mode: {analysis_mode}', font=dict(size=16)),
-        xaxis=dict(title='Enthalpy (kJ/kg)', range=[max(0, min(all_h) - 100), max(all_h) + 140], showgrid=True, gridcolor='#E5E7EB'),
+        xaxis=dict(title='Enthalpy (kJ/kg)', range=[max(0, min(all_h) - 100), max(all_h) + 160], showgrid=True, gridcolor='#E5E7EB'),
         yaxis=dict(title='Pressure (bara)', range=[0, max(all_p) + 8.0], showgrid=True, gridcolor='#E5E7EB'),
         plot_bgcolor='#FAFAFA', paper_bgcolor='#FFFFFF',
         legend=dict(orientation='h', y=1.05, x=1, xanchor='right'),
@@ -324,7 +346,7 @@ try:
                 <div class="metric-title">S1 - Suction</div>
                 <div class="metric-value">{prof_A['s1_h']:.1f} <span style="font-size:12px;">kJ/kg</span></div>
                 <div class="metric-sub">P: {prof_A['p_suction']:.2f} bara | T: {prof_A['t_suc']:.1f}°C</div>
-                <div class="metric-sub">Superheat: <b>{prof_A['s1_sh']:.1f} K</b></div>
+                <div class="metric-sub">Cp: <b>{prof_A['s1_cp']:.3f}</b> | Cv: <b>{prof_A['s1_cv']:.3f}</b> kJ/kg·K</div>
             </div>
             """, unsafe_allow_html=True)
         with sc2:
@@ -333,7 +355,7 @@ try:
                 <div class="metric-title">S2 - Discharge</div>
                 <div class="metric-value">{prof_A['s2_h']:.1f} <span style="font-size:12px;">kJ/kg</span></div>
                 <div class="metric-sub">P: {prof_A['p_discharge']:.2f} bara | T: {prof_A['t_dis']:.1f}°C</div>
-                <div class="metric-sub">Superheat: <b>{prof_A['s2_sh']:.1f} K</b></div>
+                <div class="metric-sub">Cp: <b>{prof_A['s2_cp']:.3f}</b> | Cv: <b>{prof_A['s2_cv']:.3f}</b> kJ/kg·K</div>
             </div>
             """, unsafe_allow_html=True)
         with sc3:
