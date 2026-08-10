@@ -172,12 +172,28 @@ try:
     CP.set_reference_state(fluid, 'IIR')
     
     # Calculate Profile A
-    prof_A = calculate_cycle_points(p_suc_A, t_suc_A, p_dis_A, t_dis_A, t_cond_A, p_unit, fluid)
+    prof_A = calculate_cycle_points(
+        p_suc_in=p_suc_A,
+        t_suc_in=t_suc_A,
+        p_dis_in=p_dis_A,
+        t_dis_in=t_dis_A,
+        t_cond_in=t_cond_A,
+        p_unit=p_unit,
+        fluid=fluid
+    )
     
     # Calculate Profile B if in comparison mode
     prof_B = None
     if analysis_mode == "Compare Profiles":
-        prof_B = calculate_cycle_points(p_suc_B, t_suc_B, p_dis_B, t_cond_B, p_unit, fluid)
+        prof_B = calculate_cycle_points(
+            p_suc_in=p_suc_B,
+            t_suc_in=t_suc_B,
+            p_dis_in=p_dis_B,
+            t_dis_in=t_dis_B,
+            t_cond_in=t_cond_B,
+            p_unit=p_unit,
+            fluid=fluid
+        )
 
     sat_liq_h, sat_vap_h, sat_p = get_saturation_curve(fluid)
 
@@ -238,8 +254,8 @@ try:
             font=dict(size=10, color="#111827")
         )
         # Point 3: Condenser Outlet
-        subcool_A = prof['s3_tsat'] - prof['t_cond']
-        subcool_str = f"SC: {subcool_A:.1f} K" if subcool_A > 0 else "Sat Liquid"
+        subcool = prof['s3_tsat'] - prof['t_cond']
+        subcool_str = f"SC: {subcool:.1f} K" if subcool > 0 else "Sat Liquid"
         fig.add_annotation(
             x=prof['s3_h'], y=prof['p_discharge'],
             text=f"<b>{prefix}S3 (Cond. Out)</b><br>P: {prof['p_discharge']:.2f} bara<br>T: {prof['t_cond']:.1f}°C<br>{subcool_str}",
