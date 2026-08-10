@@ -233,14 +233,17 @@ try:
     if prof_B:
         add_profile_trace(fig, prof_B, "Profile B", "#D97706", "#F59E0B", dash_style='dot')
 
-    # Helper function to add annotated callouts
-    def add_profile_annotations(fig, prof, prefix="", text_color="#10B981"):
+    # Helper function to add annotated callouts with mirrored direction options
+    def add_profile_annotations(fig, prof, prefix="", text_color="#10B981", mirror=False):
+        # Direction multiplier: +1 for Profile A, -1 for Profile B (mirrored)
+        m = -1 if mirror else 1
+
         # Point 1: Suction
         fig.add_annotation(
             x=prof['s1_h'], y=prof['p_suction'],
             text=f"<b>{prefix}S1 (Suction)</b><br>P: {prof['p_suction']:.2f} bara<br>T: {prof['t_suc']:.1f}°C<br>Superheat: {prof['s1_sh']:.1f} K",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=45, ay=45,
+            ax=55 * m, ay=55 * m,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
@@ -249,7 +252,7 @@ try:
             x=prof['s2_h'], y=prof['p_discharge'],
             text=f"<b>{prefix}S2 (Discharge)</b><br>P: {prof['p_discharge']:.2f} bara<br>T: {prof['t_dis']:.1f}°C<br>Superheat: {prof['s2_sh']:.1f} K",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=45, ay=-45,
+            ax=55 * m, ay=-55 * m,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
@@ -260,7 +263,7 @@ try:
             x=prof['s3_h'], y=prof['p_discharge'],
             text=f"<b>{prefix}S3 (Cond. Out)</b><br>P: {prof['p_discharge']:.2f} bara<br>T: {prof['t_cond']:.1f}°C<br>{subcool_str}",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=-45, ay=-45,
+            ax=-55 * m, ay=-55 * m,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
@@ -269,16 +272,18 @@ try:
             x=prof['s4_h'], y=prof['p_suction'],
             text=f"<b>{prefix}S4 (Exp. Out)</b><br>P: {prof['p_suction']:.2f} bara<br>T_sat: {prof['s4_tsat']:.1f}°C",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=-45, ay=45,
+            ax=-55 * m, ay=55 * m,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
 
     # Attach annotations if toggle is enabled
     if show_callouts:
-        add_profile_annotations(fig, prof_A, prefix="A-" if prof_B else "", text_color="#059669")
+        # Profile A standard offsets
+        add_profile_annotations(fig, prof_A, prefix="A-" if prof_B else "", text_color="#059669", mirror=False)
+        # Profile B mirrored offsets
         if prof_B:
-            add_profile_annotations(fig, prof_B, prefix="B-", text_color="#D97706")
+            add_profile_annotations(fig, prof_B, prefix="B-", text_color="#D97706", mirror=True)
 
     # Axis Formatting
     all_h = sat_liq_h + [prof_A['s1_h'], prof_A['s2_h'], prof_A['s3_h'], prof_A['s4_h']]
@@ -289,11 +294,11 @@ try:
 
     fig.update_layout(
         title=dict(text=f'P-h Diagram ({refrigerant_choice}) - Mode: {analysis_mode}', font=dict(size=16)),
-        xaxis=dict(title='Enthalpy (kJ/kg)', range=[max(0, min(all_h) - 80), max(all_h) + 120], showgrid=True, gridcolor='#E5E7EB'),
-        yaxis=dict(title='Pressure (bara)', range=[0, max(all_p) + 6.0], showgrid=True, gridcolor='#E5E7EB'),
+        xaxis=dict(title='Enthalpy (kJ/kg)', range=[max(0, min(all_h) - 100), max(all_h) + 140], showgrid=True, gridcolor='#E5E7EB'),
+        yaxis=dict(title='Pressure (bara)', range=[0, max(all_p) + 8.0], showgrid=True, gridcolor='#E5E7EB'),
         plot_bgcolor='#FAFAFA', paper_bgcolor='#FFFFFF',
         legend=dict(orientation='h', y=1.05, x=1, xanchor='right'),
-        height=600, margin=dict(l=60, r=40, t=60, b=50)
+        height=620, margin=dict(l=60, r=40, t=60, b=50)
     )
 
     st.plotly_chart(fig, use_container_width=True)
