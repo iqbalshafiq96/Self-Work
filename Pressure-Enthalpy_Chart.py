@@ -1,7 +1,7 @@
 import streamlit as st
-import matplotlib.pyplot as plt
 import numpy as np
 import CoolProp.CoolProp as CP
+import plotly.graph_objects as go
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -10,16 +10,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS for a clean, modern, high-contrast light theme
+# Custom CSS for a clean metric cards display
 st.markdown("""
 <style>
-    /* Global Background and Fonts */
     .stApp {
         background-color: #FAFAFA;
         font-family: 'Helvetica Neue', 'Segoe UI', Arial, sans-serif;
     }
-    
-    /* Elegant Metric Cards for Light Mode */
     .metric-card {
         background: #FFFFFF;
         border-radius: 8px;
@@ -40,7 +37,6 @@ st.markdown("""
         font-size: 22px;
         color: #111827;
         font-weight: 300;
-        font-family: 'Helvetica Neue Light', 'Segoe UI Light', sans-serif;
     }
     .metric-sub {
         font-size: 12px;
@@ -50,26 +46,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-# Classy, Light-Theme Matplotlib styling with thin typography
-plt.rcParams.update({
-    'font.family': 'sans-serif',
-    'font.sans-serif': ['Helvetica Neue Light', 'Helvetica Neue', 'Segoe UI Light', 'Segoe UI', 'Arial'],
-    'font.weight': 'light',
-    'figure.facecolor': '#FFFFFF',
-    'axes.facecolor': '#FAFAFA',
-    'axes.edgecolor': '#E5E7EB',
-    'axes.labelcolor': '#374151',
-    'axes.titlecolor': '#111827',
-    'axes.labelweight': 'light',
-    'axes.titleweight': 'light',
-    'xtick.color': '#6B7280',
-    'ytick.color': '#6B7280',
-    'grid.color': '#E5E7EB',
-    'grid.linestyle': ':',
-    'grid.alpha': 0.8,
-    'text.color': '#111827'
-})
 
 P_ATM_BAR = 1.01325  # Standard atmospheric pressure in bar
 
@@ -137,7 +113,7 @@ with st.sidebar:
     refrigerant_choice = st.selectbox(
         "Refrigerant",
         ["Ammonia", "R134a"],
-        index=0  # Pre-selected to Ammonia
+        index=0
     )
     fluid_map = {"Ammonia": "Ammonia", "R134a": "R134a"}
     fluid = fluid_map[refrigerant_choice]
@@ -145,13 +121,12 @@ with st.sidebar:
     p_unit = st.selectbox(
         "Pressure Unit",
         ["barg", "bara", "kpag", "kpaa"],
-        index=1  # Pre-selected to bara
+        index=1
     )
     
     st.markdown("---")
     st.subheader("Process Parameters")
     
-    # Defaults set to your initial condition parameters
     p_suction_in = st.number_input(f"Suction Pressure ({p_unit})", value=7.41, step=0.1, format="%.2f")
     t_suction_in = st.number_input("Suction Temperature (°C)", value=15.60, step=0.1, format="%.2f")
     
@@ -181,69 +156,122 @@ try:
 
     sat_liq_h, sat_vap_h, sat_p = get_saturation_curve(fluid)
 
-    # --- Light & Classy Plotting ---
-    fig, ax = plt.subplots(figsize=(11, 5.5), dpi=300)
+    # --- Plotly Interactive Chart ---
+    fig = go.Figure()
 
-    # Saturation Envelopes
-    ax.plot(sat_liq_h, sat_p, color='#0284C7', linestyle='--', linewidth=1.2, label='Liquid Saturation')
-    ax.plot(sat_vap_h, sat_p, color='#E11D48', linestyle='--', linewidth=1.2, label='Vapor Saturation')
+    # 1. Saturation Curves
+    fig.add_trace(go.Scatter(
+        x=sat_liq_h, y=sat_p,
+        mode='lines',
+        name='Liquid Saturation',
+        line=dict(color='#0284C7', width=1.5, dash='dash'),
+        hovertemplate='Enthalpy: %{x:.1f} kJ/kg<br>Pressure: %{y:.2f} bara<extra>Saturated Liquid</extra>'
+    ))
 
-    # Refrigeration Cycle Path
+    fig.add_trace(go.Scatter(
+        x=sat_vap_h, y=sat_p,
+        mode='lines',
+        name='Vapor Saturation',
+        line=dict(color='#E11D48', width=1.5, dash='dash'),
+        hovertemplate='Enthalpy: %{x:.1f} kJ/kg<br>Pressure: %{y:.2f} bara<extra>Saturated Vapor</extra>'
+    ))
+
+    # 2. Cycle Loop Path
     h_vals = [s1_h, s2_h, s3_h, s4_h]
     p_vals = [p_suction, p_discharge, p_discharge, p_suction]
-    
     h_loop = h_vals + [h_vals[0]]
     p_loop = p_vals + [p_vals[0]]
 
-    # Core cycle loop line
-    ax.plot(h_loop, p_loop, color='#059669', linewidth=1.8, marker='o', 
-            markersize=5, markerfacecolor='#10B981', markeredgecolor='#FFFFFF', markeredgewidth=1, label='Refrigeration Cycle')
+    fig.add_trace(go.Scatter(
+        x=h_loop, y=p_loop,
+        mode='lines+markers',
+        name='Refrigeration Cycle',
+        line=dict(color='#059669', width=2.5),
+        marker=dict(size=8, color='#10B981', line=dict(color='#FFFFFF', width=1.5)),
+        hoverinfo='skip'
+    ))
 
-    # Mid-segment Directional Arrows
-    for k in range(len(h_vals)):
-        mid_h = (h_loop[k] + h_loop[k+1]) / 2
-        mid_p = (p_loop[k] + p_loop[k+1]) / 2
-        dh = (h_loop[k+1] - h_loop[k]) * 0.012
-        dp = (p_loop[k+1] - p_loop[k]) * 0.012
-        ax.annotate('', xy=(mid_h + dh, mid_p + dp), xytext=(mid_h, mid_p),
-                    arrowprops=dict(arrowstyle='->', color='#059669', lw=1.2, mutation_scale=12))
-
-    # Clean Callout Cards on Plot
-    labels = [
-        (f"S1: Suction\n{p_suction:.2f} bara | {s1_h:.1f} kJ/kg\nSH: {s1_sh:.1f} K", (12, -15), 'left', 'top'),
-        (f"S2: Discharge\n{p_discharge:.2f} bara | {s2_h:.1f} kJ/kg\nSH: {s2_sh:.1f} K", (12, 10), 'left', 'bottom'),
-        (f"S3: Condenser\n{p_discharge:.2f} bara | {s3_h:.1f} kJ/kg", (-12, 10), 'right', 'bottom'),
-        (f"S4: Expansion\n{p_suction:.2f} bara | {s4_h:.1f} kJ/kg", (-12, -15), 'right', 'top')
+    # 3. State Point Markers & Annotations
+    point_labels = ["S1: Suction", "S2: Discharge", "S3: Condenser", "S4: Expansion"]
+    point_texts = [
+        f"<b>S1: Suction</b><br>{p_suction:.2f} bara | {s1_h:.1f} kJ/kg<br>SH: {s1_sh:.1f} K",
+        f"<b>S2: Discharge</b><br>{p_discharge:.2f} bara | {s2_h:.1f} kJ/kg<br>SH: {s2_sh:.1f} K",
+        f"<b>S3: Condenser</b><br>{p_discharge:.2f} bara | {s3_h:.1f} kJ/kg",
+        f"<b>S4: Expansion</b><br>{p_suction:.2f} bara | {s4_h:.1f} kJ/kg"
     ]
+    
+    # Text offset positions for annotations
+    text_positions = ["top right", "top right", "top left", "bottom left"]
 
-    for j, (text, offset, ha, va) in enumerate(labels):
-        ax.annotate(text, xy=(h_vals[j], p_vals[j]), xytext=offset,
-                    textcoords='offset points', fontsize=8, fontweight='light',
-                    color='#1F2937', ha=ha, va=va,
-                    bbox=dict(facecolor='#FFFFFF', alpha=0.9, edgecolor='#E5E7EB', boxstyle='round,pad=0.4'))
+    for idx in range(4):
+        fig.add_trace(go.Scatter(
+            x=[h_vals[idx]], y=[p_vals[idx]],
+            mode='markers+text',
+            name=point_labels[idx],
+            text=[f"  S{idx+1}  "],
+            textposition=text_positions[idx],
+            marker=dict(size=10, color='#059669'),
+            hovertemplate=f"%{{text}}<br>Enthalpy: %{{x:.1f}} kJ/kg<br>Pressure: %{{y:.2f}} bara<extra>{point_labels[idx]}</extra>"
+        ))
 
-    # Axis Limits: Cap Y-max at Discharge Pressure (19.95 bara) + 5.0 bar = 24.95 bara
-    h_min = min(sat_liq_h + h_vals) - 60
+        # Callout Annotations
+        fig.add_annotation(
+            x=h_vals[idx],
+            y=p_vals[idx],
+            text=point_texts[idx],
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=0.8,
+            arrowcolor="#6B7280",
+            ax=45 if idx in [0, 1] else -45,
+            ay=-35 if idx in [1, 2] else 35,
+            bgcolor="#FFFFFF",
+            bordercolor="#E5E7EB",
+            borderwidth=1,
+            borderpad=4,
+            font=dict(size=11, color="#1F2937")
+        )
+
+    # Axis Limits Setup
+    h_min = max(0, min(sat_liq_h + h_vals) - 60)
     h_max = max(sat_vap_h + h_vals) + 120
-    
-    max_specified_pressure = max(p_vals)
-    p_max_limit = max_specified_pressure + 5.0
+    p_max_limit = max(p_vals) + 5.0
 
-    ax.set_xlim(max(0, h_min), h_max)
-    ax.set_ylim(0, p_max_limit)
-    
-    ax.set_xlabel('Enthalpy (kJ/kg)', fontsize=9.5, labelpad=8)
-    ax.set_ylabel('Pressure (bara)', fontsize=9.5, labelpad=8)
-    ax.set_title(f'P-h Diagram ({refrigerant_choice})', fontsize=11, pad=12, loc='left')
-    ax.grid(True, which="both")
-    
-    # Custom Legend
-    legend = ax.legend(loc='upper right', frameon=True, facecolor='#FFFFFF', edgecolor='#E5E7EB', fontsize=8)
-    for text in legend.get_texts():
-        text.set_color('#374151')
+    # Layout Configuration
+    fig.update_layout(
+        title=dict(text=f'P-h Diagram ({refrigerant_choice})', font=dict(size=16, color='#111827')),
+        xaxis=dict(
+            title='Enthalpy (kJ/kg)',
+            range=[h_min, h_max],
+            showgrid=True,
+            gridcolor='#E5E7EB',
+            zeroline=False
+        ),
+        yaxis=dict(
+            title='Pressure (bara)',
+            range=[0, p_max_limit],
+            showgrid=True,
+            gridcolor='#E5E7EB',
+            zeroline=False
+        ),
+        plot_bgcolor='#FAFAFA',
+        paper_bgcolor='#FFFFFF',
+        legend=dict(
+            orientation='h',
+            yanchor='bottom',
+            y=1.02,
+            xanchor='right',
+            x=1,
+            bgcolor='rgba(255,255,255,0.8)',
+            bordercolor='#E5E7EB',
+            borderwidth=1
+        ),
+        margin=dict(l=60, r=40, t=60, b=50),
+        height=550,
+        hovermode='closest'
+    )
 
-    plt.tight_layout()
-    st.pyplot(fig)
+    st.plotly_chart(fig, use_container_width=True)
 
     # --- Metric Cards Display ---
     st.markdown("### State Points Summary")
