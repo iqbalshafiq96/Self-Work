@@ -238,7 +238,7 @@ try:
         # Point 1: Suction
         fig.add_annotation(
             x=prof['s1_h'], y=prof['p_suction'],
-            text=f"<b>{prefix}S1 (Suction)</b><br>P: {prof['p_suction']:.2f} bara<br>T: {prof['t_suc']:.1f}°C<br>SH: {prof['s1_sh']:.1f} K",
+            text=f"<b>{prefix}S1 (Suction)</b><br>P: {prof['p_suction']:.2f} bara<br>T: {prof['t_suc']:.1f}°C<br>Superheat: {prof['s1_sh']:.1f} K",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
             ax=45, ay=45,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
@@ -247,7 +247,7 @@ try:
         # Point 2: Discharge
         fig.add_annotation(
             x=prof['s2_h'], y=prof['p_discharge'],
-            text=f"<b>{prefix}S2 (Discharge)</b><br>P: {prof['p_discharge']:.2f} bara<br>T: {prof['t_dis']:.1f}°C<br>SH: {prof['s2_sh']:.1f} K",
+            text=f"<b>{prefix}S2 (Discharge)</b><br>P: {prof['p_discharge']:.2f} bara<br>T: {prof['t_dis']:.1f}°C<br>Superheat: {prof['s2_sh']:.1f} K",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
             ax=45, ay=-45,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
@@ -255,7 +255,7 @@ try:
         )
         # Point 3: Condenser Outlet
         subcool = prof['s3_tsat'] - prof['t_cond']
-        subcool_str = f"SC: {subcool:.1f} K" if subcool > 0 else "Sat Liquid"
+        subcool_str = f"Subcooled: {subcool:.1f} K" if subcool > 0 else "Sat Liquid"
         fig.add_annotation(
             x=prof['s3_h'], y=prof['p_discharge'],
             text=f"<b>{prefix}S3 (Cond. Out)</b><br>P: {prof['p_discharge']:.2f} bara<br>T: {prof['t_cond']:.1f}°C<br>{subcool_str}",
@@ -310,6 +310,9 @@ try:
 
         st.markdown("### State Points Summary (Profile A)")
         sc1, sc2, sc3, sc4 = st.columns(4)
+        subcool_val_A = prof_A['s3_tsat'] - prof_A['t_cond']
+        subcool_card_str = f"Subcooled: <b>{subcool_val_A:.1f} K</b>" if subcool_val_A > 0 else "Sat Liquid"
+        
         with sc1:
             st.markdown(f"""
             <div class="metric-card">
@@ -334,7 +337,7 @@ try:
                 <div class="metric-title">S3 - Condenser Outlet</div>
                 <div class="metric-value">{prof_A['s3_h']:.1f} <span style="font-size:12px;">kJ/kg</span></div>
                 <div class="metric-sub">P: {prof_A['p_discharge']:.2f} bara | T: {prof_A['t_cond']:.1f}°C</div>
-                <div class="metric-sub">Sat Temp: {prof_A['s3_tsat']:.1f}°C</div>
+                <div class="metric-sub">{subcool_card_str}</div>
             </div>
             """, unsafe_allow_html=True)
         with sc4:
