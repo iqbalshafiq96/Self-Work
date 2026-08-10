@@ -252,29 +252,29 @@ try:
         # Multiplier x_m flips the horizontal ax offset across a vertical mirror line
         x_m = -1 if vert_mirror else 1
 
-        # Point 1: Suction (Includes Cp and Cv)
+        # Point 1: Suction (Cp, Cv formatted to 1 decimal point)
         fig.add_annotation(
             x=prof['s1_h'], y=prof['p_suction'],
             text=f"<b>{prefix}S1 (Suction)</b><br>"
                  f"P: {prof['p_suction']:.2f} bara<br>"
                  f"T: {prof['t_suc']:.1f}°C<br>"
                  f"SH: {prof['s1_sh']:.1f} K<br>"
-                 f"Cp: {prof['s1_cp']:.3f} kJ/kg·K<br>"
-                 f"Cv: {prof['s1_cv']:.3f} kJ/kg·K",
+                 f"Cp: {prof['s1_cp']:.1f} kJ/kg·K<br>"
+                 f"Cv: {prof['s1_cv']:.1f} kJ/kg·K",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
             ax=60 * x_m, ay=55,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
-        # Point 2: Discharge (Includes Cp and Cv)
+        # Point 2: Discharge (Cp, Cv formatted to 1 decimal point)
         fig.add_annotation(
             x=prof['s2_h'], y=prof['p_discharge'],
             text=f"<b>{prefix}S2 (Discharge)</b><br>"
                  f"P: {prof['p_discharge']:.2f} bara<br>"
                  f"T: {prof['t_dis']:.1f}°C<br>"
                  f"SH: {prof['s2_sh']:.1f} K<br>"
-                 f"Cp: {prof['s2_cp']:.3f} kJ/kg·K<br>"
-                 f"Cv: {prof['s2_cv']:.3f} kJ/kg·K",
+                 f"Cp: {prof['s2_cp']:.1f} kJ/kg·K<br>"
+                 f"Cv: {prof['s2_cv']:.1f} kJ/kg·K",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
             ax=60 * x_m, ay=-55,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
@@ -346,7 +346,7 @@ try:
                 <div class="metric-title">S1 - Suction</div>
                 <div class="metric-value">{prof_A['s1_h']:.1f} <span style="font-size:12px;">kJ/kg</span></div>
                 <div class="metric-sub">P: {prof_A['p_suction']:.2f} bara | T: {prof_A['t_suc']:.1f}°C</div>
-                <div class="metric-sub">Cp: <b>{prof_A['s1_cp']:.3f}</b> | Cv: <b>{prof_A['s1_cv']:.3f}</b> kJ/kg·K</div>
+                <div class="metric-sub">Cp: <b>{prof_A['s1_cp']:.1f}</b> | Cv: <b>{prof_A['s1_cv']:.1f}</b> kJ/kg·K</div>
             </div>
             """, unsafe_allow_html=True)
         with sc2:
@@ -355,7 +355,7 @@ try:
                 <div class="metric-title">S2 - Discharge</div>
                 <div class="metric-value">{prof_A['s2_h']:.1f} <span style="font-size:12px;">kJ/kg</span></div>
                 <div class="metric-sub">P: {prof_A['p_discharge']:.2f} bara | T: {prof_A['t_dis']:.1f}°C</div>
-                <div class="metric-sub">Cp: <b>{prof_A['s2_cp']:.3f}</b> | Cv: <b>{prof_A['s2_cv']:.3f}</b> kJ/kg·K</div>
+                <div class="metric-sub">Cp: <b>{prof_A['s2_cp']:.1f}</b> | Cv: <b>{prof_A['s2_cv']:.1f}</b> kJ/kg·K</div>
             </div>
             """, unsafe_allow_html=True)
         with sc3:
