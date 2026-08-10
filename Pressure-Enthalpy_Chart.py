@@ -233,57 +233,57 @@ try:
     if prof_B:
         add_profile_trace(fig, prof_B, "Profile B", "#D97706", "#F59E0B", dash_style='dot')
 
-    # Helper function to add annotated callouts with mirrored direction options
-    def add_profile_annotations(fig, prof, prefix="", text_color="#10B981", mirror=False):
-        # Direction multiplier: +1 for Profile A, -1 for Profile B (mirrored)
-        m = -1 if mirror else 1
+    # Helper function to add annotated callouts with vertical mirror (x-flip) for Profile B
+    def add_profile_annotations(fig, prof, prefix="", text_color="#10B981", vert_mirror=False):
+        # Multiplier x_m flips the horizontal ax offset across a vertical mirror line
+        x_m = -1 if vert_mirror else 1
 
-        # Point 1: Suction
+        # Point 1: Suction (Profile A points right (+ax), Profile B mirrors left (-ax))
         fig.add_annotation(
             x=prof['s1_h'], y=prof['p_suction'],
             text=f"<b>{prefix}S1 (Suction)</b><br>P: {prof['p_suction']:.2f} bara<br>T: {prof['t_suc']:.1f}°C<br>Superheat: {prof['s1_sh']:.1f} K",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=55 * m, ay=55 * m,
+            ax=55 * x_m, ay=45,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
-        # Point 2: Discharge
+        # Point 2: Discharge (Profile A points right (+ax), Profile B mirrors left (-ax))
         fig.add_annotation(
             x=prof['s2_h'], y=prof['p_discharge'],
             text=f"<b>{prefix}S2 (Discharge)</b><br>P: {prof['p_discharge']:.2f} bara<br>T: {prof['t_dis']:.1f}°C<br>Superheat: {prof['s2_sh']:.1f} K",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=55 * m, ay=-55 * m,
+            ax=55 * x_m, ay=-45,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
-        # Point 3: Condenser Outlet
+        # Point 3: Condenser Outlet (Profile A points left (-ax), Profile B mirrors right (+ax))
         subcool = prof['s3_tsat'] - prof['t_cond']
         subcool_str = f"Subcooled: {subcool:.1f} K" if subcool > 0 else "Sat Liquid"
         fig.add_annotation(
             x=prof['s3_h'], y=prof['p_discharge'],
             text=f"<b>{prefix}S3 (Cond. Out)</b><br>P: {prof['p_discharge']:.2f} bara<br>T: {prof['t_cond']:.1f}°C<br>{subcool_str}",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=-55 * m, ay=-55 * m,
+            ax=-55 * x_m, ay=-45,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
-        # Point 4: Expansion Outlet
+        # Point 4: Expansion Outlet (Profile A points left (-ax), Profile B mirrors right (+ax))
         fig.add_annotation(
             x=prof['s4_h'], y=prof['p_suction'],
             text=f"<b>{prefix}S4 (Exp. Out)</b><br>P: {prof['p_suction']:.2f} bara<br>T_sat: {prof['s4_tsat']:.1f}°C",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=-55 * m, ay=55 * m,
+            ax=-55 * x_m, ay=45,
             bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
 
     # Attach annotations if toggle is enabled
     if show_callouts:
-        # Profile A standard offsets
-        add_profile_annotations(fig, prof_A, prefix="A-" if prof_B else "", text_color="#059669", mirror=False)
-        # Profile B mirrored offsets
+        # Profile A standard callouts
+        add_profile_annotations(fig, prof_A, prefix="A-" if prof_B else "", text_color="#059669", vert_mirror=False)
+        # Profile B mirrored across a vertical line (flipped horizontally)
         if prof_B:
-            add_profile_annotations(fig, prof_B, prefix="B-", text_color="#D97706", mirror=True)
+            add_profile_annotations(fig, prof_B, prefix="B-", text_color="#D97706", vert_mirror=True)
 
     # Axis Formatting
     all_h = sat_liq_h + [prof_A['s1_h'], prof_A['s2_h'], prof_A['s3_h'], prof_A['s4_h']]
