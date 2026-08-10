@@ -10,63 +10,72 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS for a modern, digital dashboard look
+# Custom CSS for a refined, modern light aesthetic
 st.markdown("""
 <style>
-    /* Dark theme background tweaks */
-    .stApp {
-        background-color: #0e1117;
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        color: #1a1a1a;
     }
     
-    /* Card containers for state point summary */
+    .stApp {
+        background-color: #f8fafc;
+    }
+    
+    /* Clean Minimalist Cards */
     .metric-card {
-        background: #1e222d;
-        border-radius: 10px;
-        padding: 16px;
-        border: 1px solid #2e3545;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        background: #ffffff;
+        border-radius: 8px;
+        padding: 16px 20px;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
         margin-bottom: 12px;
     }
     .metric-title {
-        font-size: 13px;
-        color: #8b949e;
+        font-size: 11px;
+        color: #64748b;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
-        font-weight: 600;
-        margin-bottom: 4px;
+        letter-spacing: 0.8px;
+        font-weight: 500;
+        margin-bottom: 6px;
     }
     .metric-value {
-        font-size: 20px;
-        color: #58a6ff;
-        font-weight: 700;
-        font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+        font-size: 22px;
+        color: #0f172a;
+        font-weight: 400;
+        letter-spacing: -0.5px;
     }
     .metric-sub {
         font-size: 12px;
-        color: #8b949e;
+        color: #64748b;
+        font-weight: 300;
         margin-top: 4px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Modern, dark-mode Matplotlib styling
+# Elegant, clean, and light Matplotlib styling
 plt.rcParams.update({
     'font.family': 'sans-serif',
-    'font.sans-serif': ['Inter', 'SF Pro Text', 'Segoe UI', 'DejaVu Sans', 'Arial'],
-    'font.weight': 'normal',
-    'figure.facecolor': '#161b22',
-    'axes.facecolor': '#0d1117',
-    'axes.edgecolor': '#30363d',
-    'axes.labelcolor': '#c9d1d9',
-    'axes.titlecolor': '#f0f6fc',
-    'axes.labelweight': 'bold',
-    'axes.titleweight': 'bold',
-    'xtick.color': '#8b949e',
-    'ytick.color': '#8b949e',
-    'grid.color': '#21262d',
-    'grid.linestyle': '--',
-    'grid.alpha': 0.7,
-    'text.color': '#c9d1d9'
+    'font.sans-serif': ['Helvetica Neue', 'Segoe UI', 'Avenir', 'Inter', 'Arial'],
+    'font.weight': '300',
+    'figure.facecolor': '#ffffff',
+    'axes.facecolor': '#ffffff',
+    'axes.edgecolor': '#cbd5e1',
+    'axes.linewidth': 0.8,
+    'axes.labelcolor': '#334155',
+    'axes.titlecolor': '#0f172a',
+    'axes.labelweight': '300',
+    'axes.titleweight': '400',
+    'xtick.color': '#64748b',
+    'ytick.color': '#64748b',
+    'grid.color': '#f1f5f9',
+    'grid.linestyle': '-',
+    'grid.linewidth': 0.8,
+    'grid.alpha': 1.0,
+    'text.color': '#1e293b'
 })
 
 P_ATM_BAR = 1.01325  # Standard atmospheric pressure in bar
@@ -87,11 +96,9 @@ def convert_to_bara(pressure_val, unit):
 def get_saturation_curve(fluid, num_points=120):
     """Generates saturation liquid and vapor curves using CoolProp."""
     try:
-        # Fixed: Use 'P_min' instead of 'Pmin' to prevent CoolProp parsing errors
-        p_crit = CP.PropsSI('Pcrit', fluid) / 1e5  # in bara
-        p_min = CP.PropsSI('P_min', fluid) / 1e5   # in bara
+        p_crit = CP.PropsSI('Pcrit', fluid) / 1e5
+        p_min = CP.PropsSI('P_min', fluid) / 1e5
         
-        # Logarithmic spacing gives better density at low pressures
         p_start = max(p_min, 0.1)
         p_end = p_crit * 0.98
         pressures = np.geomspace(p_start, p_end, num_points)
@@ -102,8 +109,8 @@ def get_saturation_curve(fluid, num_points=120):
         for p in pressures:
             p_pa = p * 1e5
             try:
-                h_l = CP.PropsSI('H', 'P', p_pa, 'Q', 0, fluid) / 1000.0  # kJ/kg
-                h_v = CP.PropsSI('H', 'P', p_pa, 'Q', 1, fluid) / 1000.0  # kJ/kg
+                h_l = CP.PropsSI('H', 'P', p_pa, 'Q', 0, fluid) / 1000.0
+                h_v = CP.PropsSI('H', 'P', p_pa, 'Q', 1, fluid) / 1000.0
                 sat_liq_h.append(h_l)
                 sat_vap_h.append(h_v)
                 valid_p.append(p)
@@ -127,12 +134,12 @@ def get_point_props(p_bara, t_degc, fluid):
     return h_kj, t_sat_c
 
 # --- Header Section ---
-st.title("❄️ Digital Chiller Cycle Analyzer")
-st.caption("Interactive Pressure-Enthalpy ($P-h$) Diagram & Thermodynamic State Calculation")
+st.title("Refrigeration Cycle Analysis")
+st.caption("Pressure-Enthalpy ($P-h$) thermodynamic diagram & process calculations")
 
 # --- Sidebar Inputs ---
 with st.sidebar:
-    st.header("⚙️ Settings & Inputs")
+    st.header("Configuration")
     
     refrigerant_choice = st.selectbox(
         "Refrigerant",
@@ -149,7 +156,7 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.subheader("Process Parameters")
+    st.subheader("Process Operating Points")
     
     p_suction_in = st.number_input(f"Suction Pressure ({p_unit})", value=2.0, step=0.1)
     t_suction_in = st.number_input("Suction Temperature (°C)", value=-10.0, step=0.5)
@@ -180,100 +187,103 @@ try:
 
     sat_liq_h, sat_vap_h, sat_p = get_saturation_curve(fluid)
 
-    # --- Modern Dark Plotting ---
-    fig, ax = plt.subplots(figsize=(11, 5.5), dpi=300)
+    # --- Plotting ---
+    fig, ax = plt.subplots(figsize=(11, 5.2), dpi=300)
 
-    # Saturation Envelopes with modern subtle colors
-    ax.plot(sat_liq_h, sat_p, color='#1f6beb', linestyle='--', linewidth=1.8, label='Liquid Saturation')
-    ax.plot(sat_vap_h, sat_p, color='#da3633', linestyle='--', linewidth=1.8, label='Vapor Saturation')
+    # Saturation Envelopes (Thin, understated lines)
+    ax.plot(sat_liq_h, sat_p, color='#0284c7', linestyle='--', linewidth=1.2, label='Liquid Saturation')
+    ax.plot(sat_vap_h, sat_p, color='#e11d48', linestyle='--', linewidth=1.2, label='Vapor Saturation')
 
-    # Refrigeration Cycle Path
+    # Cycle Loop
     h_vals = [s1_h, s2_h, s3_h, s4_h]
     p_vals = [p_suction, p_discharge, p_discharge, p_suction]
     
     h_loop = h_vals + [h_vals[0]]
     p_loop = p_vals + [p_vals[0]]
 
-    # Glow effect line under the main loop
-    ax.plot(h_loop, p_loop, color='#238636', alpha=0.3, linewidth=6)
-    # Core loop line
-    ax.plot(h_loop, p_loop, color='#3fb950', linewidth=2.2, marker='o', 
-            markersize=6, markerfacecolor='#56d364', markeredgecolor='#ffffff', label='Refrigeration Cycle')
+    # Sleek Cycle Path
+    ax.plot(h_loop, p_loop, color='#0f172a', linewidth=1.5, marker='o', 
+            markersize=5, markerfacecolor='#0f172a', markeredgecolor='#ffffff', markeredgewidth=1.2, label='Cycle Path')
 
-    # Dynamic Arrows
+    # Mid-segment directional arrows
     for k in range(len(h_vals)):
         mid_h = (h_loop[k] + h_loop[k+1]) / 2
         mid_p = (p_loop[k] + p_loop[k+1]) / 2
         dh = (h_loop[k+1] - h_loop[k]) * 0.012
         dp = (p_loop[k+1] - p_loop[k]) * 0.012
         ax.annotate('', xy=(mid_h + dh, mid_p + dp), xytext=(mid_h, mid_p),
-                    arrowprops=dict(arrowstyle='->', color='#ffffff', lw=1.5, mutation_scale=12))
+                    arrowprops=dict(arrowstyle='->', color='#0f172a', lw=1.2, mutation_scale=10))
 
-    # Clean Dark Callout Cards on Plot
+    # Refined Callout Boxes
     labels = [
-        (f"S1: Suction\n{p_suction:.2f} bara | {s1_h:.1f} kJ/kg\nSH: {s1_sh:.1f} K", (12, -15), 'left', 'top'),
-        (f"S2: Discharge\n{p_discharge:.2f} bara | {s2_h:.1f} kJ/kg\nSH: {s2_sh:.1f} K", (12, 10), 'left', 'bottom'),
-        (f"S3: Condenser\n{p_discharge:.2f} bara | {s3_h:.1f} kJ/kg", (-12, 10), 'right', 'bottom'),
-        (f"S4: Expansion\n{p_suction:.2f} bara | {s4_h:.1f} kJ/kg", (-12, -15), 'right', 'top')
+        (f"S1: Suction\n{p_suction:.2f} bara | {s1_h:.1f} kJ/kg\nSH: {s1_sh:.1f} K", (10, -12), 'left', 'top'),
+        (f"S2: Discharge\n{p_discharge:.2f} bara | {s2_h:.1f} kJ/kg\nSH: {s2_sh:.1f} K", (10, 10), 'left', 'bottom'),
+        (f"S3: Condenser\n{p_discharge:.2f} bara | {s3_h:.1f} kJ/kg", (-10, 10), 'right', 'bottom'),
+        (f"S4: Expansion\n{p_suction:.2f} bara | {s4_h:.1f} kJ/kg", (-10, -12), 'right', 'top')
     ]
 
     for j, (text, offset, ha, va) in enumerate(labels):
         ax.annotate(text, xy=(h_vals[j], p_vals[j]), xytext=offset,
-                    textcoords='offset points', fontsize=8.5, fontweight='medium',
-                    color='#f0f6fc', ha=ha, va=va,
-                    bbox=dict(facecolor='#161b22', alpha=0.9, edgecolor='#30363d', boxstyle='round,pad=0.4'))
+                    textcoords='offset points', fontsize=8, fontweight='300',
+                    color='#334155', ha=ha, va=va,
+                    bbox=dict(facecolor='#ffffff', alpha=0.9, edgecolor='#e2e8f0', boxstyle='round,pad=0.4', lw=0.8))
 
-    # Axis Formatting & Scaling
+    # Axis Limits & Scaling
     h_min = min(sat_liq_h + h_vals) - 60
     h_max = max(sat_vap_h + h_vals) + 120
-    p_max = max(sat_p + p_vals) * 1.15
+    
+    # Set Y max exactly +5 bar above the specified discharge pressure
+    p_max_limit = p_discharge + 5.0
 
     ax.set_xlim(max(0, h_min), h_max)
-    ax.set_ylim(0, p_max)
-    ax.set_xlabel('Enthalpy (kJ/kg)', fontsize=10, labelpad=8)
-    ax.set_ylabel('Pressure (bara)', fontsize=10, labelpad=8)
-    ax.set_title(f'P-h Diagram ({refrigerant_choice})', fontsize=12, pad=12, loc='left')
+    ax.set_ylim(0, p_max_limit)
+    
+    ax.set_xlabel('Enthalpy (kJ/kg)', fontsize=9.5, fontweight='300', labelpad=8)
+    ax.set_ylabel('Pressure (bara)', fontsize=9.5, fontweight='300', labelpad=8)
+    ax.set_title(f'P-h Diagram — {refrigerant_choice}', fontsize=11, fontweight='400', pad=12, loc='left')
     ax.grid(True, which="both")
     
-    # Custom Legend
-    legend = ax.legend(loc='upper right', frameon=True, facecolor='#161b22', edgecolor='#30363d', fontsize=8.5)
-    for text in legend.get_texts():
-        text.set_color('#c9d1d9')
+    # Clean, borderless legend
+    ax.legend(loc='upper right', frameon=True, facecolor='#ffffff', edgecolor='#e2e8f0', fontsize=8)
+
+    # Remove top and right spines for a modern minimalist look
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
 
     plt.tight_layout()
     st.pyplot(fig)
 
-    # --- Digital Metric Cards Display ---
-    st.markdown("### 📊 State Points Summary")
+    # --- Minimalist Metric Display Cards ---
+    st.markdown("##### State Point Overview")
     
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-title">S1 - Suction</div>
-            <div class="metric-value">{s1_h:.1f} <span style="font-size:13px;">kJ/kg</span></div>
-            <div class="metric-sub">P: {p_suction:.2f} bara | T: {t_suction_in:.1f}°C</div>
-            <div class="metric-sub">Superheat: <b>{s1_sh:.1f} K</b></div>
+            <div class="metric-title">S1 Suction</div>
+            <div class="metric-value">{s1_h:.1f} <span style="font-size:12px; color:#64748b;">kJ/kg</span></div>
+            <div class="metric-sub">{p_suction:.2f} bara · {t_suction_in:.1f}°C</div>
+            <div class="metric-sub">Superheat: {s1_sh:.1f} K</div>
         </div>
         """, unsafe_allow_html=True)
 
     with col2:
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-title">S2 - Discharge</div>
-            <div class="metric-value">{s2_h:.1f} <span style="font-size:13px;">kJ/kg</span></div>
-            <div class="metric-sub">P: {p_discharge:.2f} bara | T: {t_discharge_in:.1f}°C</div>
-            <div class="metric-sub">Superheat: <b>{s2_sh:.1f} K</b></div>
+            <div class="metric-title">S2 Discharge</div>
+            <div class="metric-value">{s2_h:.1f} <span style="font-size:12px; color:#64748b;">kJ/kg</span></div>
+            <div class="metric-sub">{p_discharge:.2f} bara · {t_discharge_in:.1f}°C</div>
+            <div class="metric-sub">Superheat: {s2_sh:.1f} K</div>
         </div>
         """, unsafe_allow_html=True)
 
     with col3:
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-title">S3 - Condenser Outlet</div>
-            <div class="metric-value">{s3_h:.1f} <span style="font-size:13px;">kJ/kg</span></div>
-            <div class="metric-sub">P: {p_discharge:.2f} bara | T: {t_condenser_in:.1f}°C</div>
+            <div class="metric-title">S3 Condenser Outlet</div>
+            <div class="metric-value">{s3_h:.1f} <span style="font-size:12px; color:#64748b;">kJ/kg</span></div>
+            <div class="metric-sub">{p_discharge:.2f} bara · {t_condenser_in:.1f}°C</div>
             <div class="metric-sub">Sat Temp: {s3_tsat:.1f}°C</div>
         </div>
         """, unsafe_allow_html=True)
@@ -281,12 +291,12 @@ try:
     with col4:
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-title">S4 - Expansion</div>
-            <div class="metric-value">{s4_h:.1f} <span style="font-size:13px;">kJ/kg</span></div>
-            <div class="metric-sub">P: {p_suction:.2f} bara | Isenthalpic</div>
+            <div class="metric-title">S4 Expansion</div>
+            <div class="metric-value">{s4_h:.1f} <span style="font-size:12px; color:#64748b;">kJ/kg</span></div>
+            <div class="metric-sub">{p_suction:.2f} bara · Isenthalpic</div>
             <div class="metric-sub">Sat Temp: {s4_tsat:.1f}°C</div>
         </div>
         """, unsafe_allow_html=True)
 
 except Exception as e:
-    st.error(f"Calculation Error: Verify that input pressures and temperatures fall within a valid thermodynamic range. Details: {e}")
+    st.error(f"Calculation Error: Please verify the input values. Details: {e}")
