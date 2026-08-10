@@ -184,8 +184,8 @@ with st.sidebar:
     fluid = refrigerant_choice
     p_unit = st.selectbox("Pressure Unit", ["barg", "bara", "kpag", "kpaa"], index=1)
     
-    # Toggle Mass Flow Rate
-    enable_mdot = st.checkbox("Enable Mass Flow Rate", value=True)
+    # Toggle Mass Flow Rate (Disabled by default)
+    enable_mdot = st.checkbox("Enable Mass Flow Rate", value=False)
     if enable_mdot:
         m_dot = st.number_input("Mass Flow Rate (kg/s)", value=1.0, step=0.1, key="m_dot")
         energy_unit = "kW"
@@ -299,7 +299,7 @@ try:
             text=f"<b>{prefix}S1 (Suction)</b><br>"
                  f"P: {prof['p_suction']:.2f} bara<br>"
                  f"T: {prof['t_suc']:.1f}°C<br>"
-                 f"SH: {prof['s1_sh']:.1f} K<br>"
+                 f"Superheat: {prof['s1_sh']:.1f} K<br>"
                  f"Cp: {prof['s1_cp']:.1f} kJ/kg·K<br>"
                  f"Cv: {prof['s1_cv']:.1f} kJ/kg·K",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
@@ -313,7 +313,7 @@ try:
             text=f"<b>{prefix}S2 (Discharge)</b><br>"
                  f"P: {prof['p_discharge']:.2f} bara<br>"
                  f"T: {prof['t_dis']:.1f}°C<br>"
-                 f"SH: {prof['s2_sh']:.1f} K<br>"
+                 f"Superheat: {prof['s2_sh']:.1f} K<br>"
                  f"Cp: {prof['s2_cp']:.1f} kJ/kg·K<br>"
                  f"Cv: {prof['s2_cv']:.1f} kJ/kg·K",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
