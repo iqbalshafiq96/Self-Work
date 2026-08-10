@@ -13,8 +13,10 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title(
-    "💨 Real-Time Desuperheater Dynamic Simulation (Lead-Lag Enthalpy Model) by Iqbal SHERPA 20260807"
+st.title("💨 Real-Time Desuperheater Dynamic Simulation (Lead-Lag Enthalpy Model)")
+st.caption(
+    "Developed by Iqbal SHERPA 20260807. Contact me for further information"
+    " @iqbalshafiq96@gmail.com"
 )
 
 # --- SIDEBAR CONTROLS ---
@@ -34,7 +36,10 @@ tau_spray = st.sidebar.slider(
     1.0,
     30.0,
     12.0,
-    help="Speed of spray water valve response. Set τ_spray > τ_steam to see temperature overshoot!",
+    help=(
+        "Speed of spray water valve response. Set τ_spray > τ_steam to see"
+        " temperature overshoot!"
+    ),
 )
 
 tau_thermal = st.sidebar.slider(
@@ -102,8 +107,10 @@ Specified_Spray_Feedwater_Mass_Flow_Rate_Tons_Per_Hour = (
 Mass_Flow_Rate_Basis = st.sidebar.selectbox(
     "Basis", ["Inlet Steam Flow Rate", "Outlet Target Steam Flow Rate"]
 )
+
+# Updated default value from 107.0 to 10.0 t/h
 Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour = st.sidebar.number_input(
-    "Specified Steam Flow (t/h)", value=107.0
+    "Specified Steam Flow (t/h)", value=10.0
 )
 
 # --- STEADY-STATE TARGET CALCULATION ---
