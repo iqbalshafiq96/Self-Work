@@ -407,6 +407,7 @@ try:
 
     else:
         st.markdown("#### Profile Comparison Metrics")
+        st.caption("Displaying **Profile B** baseline values; deltas in brackets show shift relative to **Profile A**.")
         m1, m2, m3, m4, m5, m6 = st.columns(6)
         
         # Differences (Profile B - Profile A)
@@ -417,42 +418,42 @@ try:
         w_comp_diff = prof_B['w_comp_kw'] - prof_A['w_comp_kw']
         cr_diff = prof_B['cr'] - prof_A['cr']
 
-        # 1. Isentropic Efficiency (Lower is Red -> normal: increase is green)
+        # 1. Isentropic Efficiency (Higher is Green -> normal)
         m1.metric(
             "Isentropic Efficiency",
-            f"{prof_A['eta_isen']:.1f} %",
-            delta=f"{eta_diff:+.1f} % (Profile B)",
+            f"{prof_B['eta_isen']:.1f} %",
+            delta=f"{eta_diff:+.1f} %",
             delta_color="normal"
         )
 
-        # 2. Suction Superheat (Higher is Red -> inverse: increase is red)
+        # 2. Suction Superheat (Higher is Red -> inverse)
         m2.metric(
             "Suction Superheat",
-            f"{prof_A['s1_sh']:.1f} K",
+            f"{prof_B['s1_sh']:.1f} K",
             delta=f"{suc_sh_diff:+.1f} K",
             delta_color="inverse"
         )
 
-        # 3. Discharge Superheat (Higher is Red -> inverse: increase is red)
+        # 3. Discharge Superheat (Higher is Red -> inverse)
         m3.metric(
             "Discharge Superheat",
-            f"{prof_A['s2_sh']:.1f} K",
+            f"{prof_B['s2_sh']:.1f} K",
             delta=f"{dis_sh_diff:+.1f} K",
             delta_color="inverse"
         )
 
-        # 4. Discharge Superheat kW (Higher is Red -> inverse: increase is red)
+        # 4. Discharge Superheat Load (Higher is Red -> inverse)
         m4.metric(
             "Discharge Superheat",
-            f"{prof_A['dis_sh_kw']:.1f} kW",
+            f"{prof_B['dis_sh_kw']:.1f} kW",
             delta=f"{dis_sh_kw_diff:+.1f} kW",
             delta_color="inverse"
         )
 
-        # 5. Compressor Power (Higher is Red -> inverse: increase is red)
+        # 5. Compressor Power (Higher is Red -> inverse)
         m5.metric(
             "Compressor Power",
-            f"{prof_A['w_comp_kw']:.1f} kW",
+            f"{prof_B['w_comp_kw']:.1f} kW",
             delta=f"{w_comp_diff:+.1f} kW",
             delta_color="inverse"
         )
@@ -460,7 +461,7 @@ try:
         # 6. Compression Ratio (Neutral color)
         m6.metric(
             "Compression Ratio",
-            f"{prof_A['cr']:.2f}",
+            f"{prof_B['cr']:.2f}",
             delta=f"{cr_diff:+.2f}",
             delta_color="off"
         )
