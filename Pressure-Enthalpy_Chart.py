@@ -10,7 +10,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS for Light Theme Metric Cards
+# Custom CSS for Light Theme Metric Cards & Threshold Badges
 st.markdown("""
 <style>
     .stApp {
@@ -42,6 +42,18 @@ st.markdown("""
         font-size: 11px;
         color: #4B5563;
         margin-top: 4px;
+    }
+    .badge-red {
+        color: #D9534F;
+        font-weight: 600;
+    }
+    .badge-green {
+        color: #2E7D32;
+        font-weight: 600;
+    }
+    .badge-neutral {
+        color: #4B5563;
+        font-weight: 600;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -88,10 +100,10 @@ def get_point_props(p_bara, t_degc, fluid):
     p_pa = p_bara * 1e5
     t_k = t_degc + 273.15
     
-    # Enthalpy (kJ/kg)
+    # Specific Enthalpy (kJ/kg)
     h_kj = CP.PropsSI('H', 'P', p_pa, 'T', t_k, fluid) / 1000.0
     
-    # Heat Capacities (kJ/kg·K)
+    # Specific Heat Capacities (kJ/kg·K)
     cp_kj = CP.PropsSI('Cpmass', 'P', p_pa, 'T', t_k, fluid) / 1000.0
     cv_kj = CP.PropsSI('Cvmass', 'P', p_pa, 'T', t_k, fluid) / 1000.0
     
@@ -120,9 +132,27 @@ def calculate_cycle_points(p_suc_in, t_suc_in, p_dis_in, t_dis_in, t_cond_in, p_
     s4_h = s3_h
     s4_tsat = CP.PropsSI('T', 'P', p_suction * 1e5, 'Q', 0, fluid) - 273.15
 
+    # Basic Cycle Quantities
     q_in = s1_h - s4_h
     w_in = s2_h - s1_h
     cop = q_in / w_in if w_in != 0 else 0
+
+    # --- Profile Comparison Metric Calculations ---
+    comp_ratio = p_discharge / p_suction if p_suction > 0 else 0
+    
+    # Isentropic Efficiency Equation: eta_isen = (T1 / (T2 - T1)) * [ (P2 / P1)**((k - 1) / k) - 1 ]
+    t1_k = t_suc_in + 273.15
+    t2_k = t_dis_in + 273.15
+    k = s1_cp / s1_cv if s1_cv > 0 else 1.3
+    
+    if (t2_k - t1_k) > 0 and k > 1:
+        eta_isen = (t1_k / (t2_k - t1_k)) * ((comp_ratio ** ((k - 1.0) / k)) - 1.0) * 100.0
+    else:
+        eta_isen = 0.0
+
+    # Specific Enthalpy Difference above Vapor Saturation Line at Discharge Pressure (kJ/kg)
+    h_g_disch = CP.PropsSI('H', 'P', p_discharge * 1e5, 'Q', 1, fluid) / 1000.0
+    disch_sh_kj_kg = max(0.0, s2_h - h_g_disch)
 
     return {
         'p_suction': p_suction, 'p_discharge': p_discharge,
@@ -130,7 +160,11 @@ def calculate_cycle_points(p_suc_in, t_suc_in, p_dis_in, t_dis_in, t_cond_in, p_
         's2_h': s2_h, 's2_cp': s2_cp, 's2_cv': s2_cv, 's2_sh': s2_sh, 't_dis': t_dis_in, 's2_tsat': s2_tsat,
         's3_h': s3_h, 's3_cp': s3_cp, 's3_cv': s3_cv, 's3_tsat': s3_tsat, 't_cond': t_cond_in,
         's4_h': s4_h, 's4_tsat': s4_tsat,
-        'cop': cop, 'q_in': q_in, 'w_in': w_in
+        'cop': cop, 'q_in': q_in, 'w_in': w_in,
+        'comp_ratio': comp_ratio,
+        'eta_isen': eta_isen,
+        'disch_sh_kj_kg': disch_sh_kj_kg,
+        'k_ratio': k
     }
 
 # --- Header Section ---
@@ -155,6 +189,14 @@ with st.sidebar:
     refrigerant_choice = st.selectbox("Refrigerant", ["Ammonia", "R134a"], index=0)
     fluid = refrigerant_choice
     p_unit = st.selectbox("Pressure Unit", ["barg", "bara", "kpag", "kpaa"], index=1)
+
+    st.markdown("---")
+    st.header("3. Alert Thresholds")
+    eta_min_thresh = st.number_input("Min Isentropic Eff (%)", value=75.0, step=1.0)
+    suc_sh_max_thresh = st.number_input("Max Suction Superheat (K)", value=10.0, step=0.5)
+    dis_sh_max_thresh = st.number_input("Max Discharge Superheat (K)", value=30.0, step=1.0)
+    dis_sh_kj_max_thresh = st.number_input("Max Disch SH Enthalpy (kJ/kg)", value=50.0, step=5.0)
+    work_max_thresh = st.number_input("Max Compressor Work (kJ/kg)", value=250.0, step=5.0)
 
     st.markdown("---")
     
@@ -187,26 +229,16 @@ try:
     
     # Calculate Profile A
     prof_A = calculate_cycle_points(
-        p_suc_in=p_suc_A,
-        t_suc_in=t_suc_A,
-        p_dis_in=p_dis_A,
-        t_dis_in=t_dis_A,
-        t_cond_in=t_cond_A,
-        p_unit=p_unit,
-        fluid=fluid
+        p_suc_in=p_suc_A, t_suc_in=t_suc_A, p_dis_in=p_dis_A,
+        t_dis_in=t_dis_A, t_cond_in=t_cond_A, p_unit=p_unit, fluid=fluid
     )
     
-    # Calculate Profile B if in comparison mode
+    # Calculate Profile B if comparing
     prof_B = None
     if analysis_mode == "Compare Profiles":
         prof_B = calculate_cycle_points(
-            p_suc_in=p_suc_B,
-            t_suc_in=t_suc_B,
-            p_dis_in=p_dis_B,
-            t_dis_in=t_dis_B,
-            t_cond_in=t_cond_B,
-            p_unit=p_unit,
-            fluid=fluid
+            p_suc_in=p_suc_B, t_suc_in=t_suc_B, p_dis_in=p_dis_B,
+            t_dis_in=t_dis_B, t_cond_in=t_cond_B, p_unit=p_unit, fluid=fluid
         )
 
     sat_liq_h, sat_vap_h, sat_p = get_saturation_curve(fluid)
@@ -224,7 +256,7 @@ try:
         line=dict(color='#E11D48', width=1.5, dash='dash')
     ))
 
-    # Helper function to plot profile loop
+    # Helper function to plot profile trace
     def add_profile_trace(fig, prof, name, line_color, marker_color, dash_style='solid'):
         h_vals = [prof['s1_h'], prof['s2_h'], prof['s3_h'], prof['s4_h']]
         p_vals = [prof['p_suction'], prof['p_discharge'], prof['p_discharge'], prof['p_suction']]
@@ -240,74 +272,49 @@ try:
             hovertemplate='Enthalpy: %{x:.1f} kJ/kg<br>Pressure: %{y:.2f} bara'
         ))
 
-    # Add Profile A
     add_profile_trace(fig, prof_A, "Profile A", "#059669", "#10B981")
-
-    # Add Profile B if comparing
     if prof_B:
         add_profile_trace(fig, prof_B, "Profile B", "#D97706", "#F59E0B", dash_style='dot')
 
-    # Helper function to add annotated callouts with vertical mirror (x-flip) for Profile B
     def add_profile_annotations(fig, prof, prefix="", text_color="#10B981", vert_mirror=False):
-        # Multiplier x_m flips the horizontal ax offset across a vertical mirror line
         x_m = -1 if vert_mirror else 1
 
-        # Point 1: Suction (Cp, Cv formatted to 1 decimal point)
         fig.add_annotation(
             x=prof['s1_h'], y=prof['p_suction'],
-            text=f"<b>{prefix}S1 (Suction)</b><br>"
-                 f"P: {prof['p_suction']:.2f} bara<br>"
-                 f"T: {prof['t_suc']:.1f}°C<br>"
-                 f"SH: {prof['s1_sh']:.1f} K<br>"
-                 f"Cp: {prof['s1_cp']:.1f} kJ/kg·K<br>"
-                 f"Cv: {prof['s1_cv']:.1f} kJ/kg·K",
+            text=f"<b>{prefix}S1 (Suction)</b><br>P: {prof['p_suction']:.2f} bara<br>T: {prof['t_suc']:.1f}°C<br>SH: {prof['s1_sh']:.1f} K<br>Cp: {prof['s1_cp']:.1f}<br>Cv: {prof['s1_cv']:.1f}",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=60 * x_m, ay=55,
-            bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
+            ax=60 * x_m, ay=55, bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
-        # Point 2: Discharge (Cp, Cv formatted to 1 decimal point)
         fig.add_annotation(
             x=prof['s2_h'], y=prof['p_discharge'],
-            text=f"<b>{prefix}S2 (Discharge)</b><br>"
-                 f"P: {prof['p_discharge']:.2f} bara<br>"
-                 f"T: {prof['t_dis']:.1f}°C<br>"
-                 f"SH: {prof['s2_sh']:.1f} K<br>"
-                 f"Cp: {prof['s2_cp']:.1f} kJ/kg·K<br>"
-                 f"Cv: {prof['s2_cv']:.1f} kJ/kg·K",
+            text=f"<b>{prefix}S2 (Discharge)</b><br>P: {prof['p_discharge']:.2f} bara<br>T: {prof['t_dis']:.1f}°C<br>SH: {prof['s2_sh']:.1f} K<br>Cp: {prof['s2_cp']:.1f}<br>Cv: {prof['s2_cv']:.1f}",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=60 * x_m, ay=-55,
-            bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
+            ax=60 * x_m, ay=-55, bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
-        # Point 3: Condenser Outlet
         subcool = prof['s3_tsat'] - prof['t_cond']
         subcool_str = f"Subcooled: {subcool:.1f} K" if subcool > 0 else "Sat Liquid"
         fig.add_annotation(
             x=prof['s3_h'], y=prof['p_discharge'],
             text=f"<b>{prefix}S3 (Cond. Out)</b><br>P: {prof['p_discharge']:.2f} bara<br>T: {prof['t_cond']:.1f}°C<br>{subcool_str}",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=-60 * x_m, ay=-55,
-            bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
+            ax=-60 * x_m, ay=-55, bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
-        # Point 4: Expansion Outlet
         fig.add_annotation(
             x=prof['s4_h'], y=prof['p_suction'],
             text=f"<b>{prefix}S4 (Exp. Out)</b><br>P: {prof['p_suction']:.2f} bara<br>T_sat: {prof['s4_tsat']:.1f}°C",
             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
-            ax=-60 * x_m, ay=55,
-            bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
+            ax=-60 * x_m, ay=55, bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
             font=dict(size=10, color="#111827")
         )
 
-    # Attach annotations if toggle is enabled
     if show_callouts:
         add_profile_annotations(fig, prof_A, prefix="A-" if prof_B else "", text_color="#059669", vert_mirror=False)
         if prof_B:
             add_profile_annotations(fig, prof_B, prefix="B-", text_color="#D97706", vert_mirror=True)
 
-    # Axis Formatting
     all_h = sat_liq_h + [prof_A['s1_h'], prof_A['s2_h'], prof_A['s3_h'], prof_A['s4_h']]
     all_p = [prof_A['p_suction'], prof_A['p_discharge']]
     if prof_B:
@@ -325,70 +332,129 @@ try:
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- Summary Metrics Display ---
-    st.markdown("### Thermodynamic Performance")
-    
-    if analysis_mode == "Single Profile":
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("COP (Cooling)", f"{prof_A['cop']:.2f}")
-        c2.metric("Refrigeration Effect", f"{prof_A['q_in']:.1f} kJ/kg")
-        c3.metric("Compressor Work", f"{prof_A['w_in']:.1f} kJ/kg")
-        c4.metric("Suction Superheat", f"{prof_A['s1_sh']:.1f} K")
+    # --- Profile Performance Metrics Section ---
+    def render_metric_card(title, value_str, sub_text, color_class):
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">{title}</div>
+            <div class="metric-value {color_class}">{value_str}</div>
+            <div class="metric-sub">{sub_text}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        st.markdown("### State Points Summary (Profile A)")
-        sc1, sc2, sc3, sc4 = st.columns(4)
-        subcool_val_A = prof_A['s3_tsat'] - prof_A['t_cond']
-        subcool_card_str = f"Subcooled: <b>{subcool_val_A:.1f} K</b>" if subcool_val_A > 0 else "Sat Liquid"
-        
-        with sc1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-title">S1 - Suction</div>
-                <div class="metric-value">{prof_A['s1_h']:.1f} <span style="font-size:12px;">kJ/kg</span></div>
-                <div class="metric-sub">P: {prof_A['p_suction']:.2f} bara | T: {prof_A['t_suc']:.1f}°C</div>
-                <div class="metric-sub">Cp: <b>{prof_A['s1_cp']:.1f}</b> | Cv: <b>{prof_A['s1_cv']:.1f}</b> kJ/kg·K</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with sc2:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-title">S2 - Discharge</div>
-                <div class="metric-value">{prof_A['s2_h']:.1f} <span style="font-size:12px;">kJ/kg</span></div>
-                <div class="metric-sub">P: {prof_A['p_discharge']:.2f} bara | T: {prof_A['t_dis']:.1f}°C</div>
-                <div class="metric-sub">Cp: <b>{prof_A['s2_cp']:.1f}</b> | Cv: <b>{prof_A['s2_cv']:.1f}</b> kJ/kg·K</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with sc3:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-title">S3 - Condenser Outlet</div>
-                <div class="metric-value">{prof_A['s3_h']:.1f} <span style="font-size:12px;">kJ/kg</span></div>
-                <div class="metric-sub">P: {prof_A['p_discharge']:.2f} bara | T: {prof_A['t_cond']:.1f}°C</div>
-                <div class="metric-sub">{subcool_card_str}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with sc4:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-title">S4 - Expansion</div>
-                <div class="metric-value">{prof_A['s4_h']:.1f} <span style="font-size:12px;">kJ/kg</span></div>
-                <div class="metric-sub">P: {prof_A['p_suction']:.2f} bara | Isenthalpic</div>
-                <div class="metric-sub">Sat Temp: {prof_A['s4_tsat']:.1f}°C</div>
-            </div>
-            """, unsafe_allow_html=True)
+    st.markdown("### Profile Comparison Metrics")
 
-    else:
-        st.markdown("#### Profile Comparison Metrics")
-        m1, m2, m3, m4 = st.columns(4)
-        
-        cop_diff = prof_B['cop'] - prof_A['cop']
-        q_diff = prof_B['q_in'] - prof_A['q_in']
-        w_diff = prof_B['w_in'] - prof_A['w_in']
+    profiles_to_show = [("Profile A", prof_A)]
+    if prof_B:
+        profiles_to_show.append(("Profile B", prof_B))
 
-        m1.metric("COP (Cooling)", f"{prof_A['cop']:.2f}", delta=f"{cop_diff:+.2f} (Profile B)")
-        m2.metric("Refrigeration Effect", f"{prof_A['q_in']:.1f} kJ/kg", delta=f"{q_diff:+.1f} kJ/kg")
-        m3.metric("Compressor Work", f"{prof_A['w_in']:.1f} kJ/kg", delta=f"{w_diff:+.1f} kJ/kg")
-        m4.metric("Discharge Pressure", f"{prof_A['p_discharge']:.2f} bara", delta=f"{prof_B['p_discharge'] - prof_A['p_discharge']:+.2f} bara")
+    for p_name, p_data in profiles_to_show:
+        if len(profiles_to_show) > 1:
+            st.markdown(f"#### {p_name}")
+
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
+
+        # 1. Isentropic Efficiency (%) - Lower is Red
+        eta_cls = "badge-red" if p_data['eta_isen'] < eta_min_thresh else "badge-green"
+        with c1:
+            render_metric_card(
+                "Isentropic Eff. (η_isen)",
+                f"{p_data['eta_isen']:.1f} %",
+                f"Min Limit: {eta_min_thresh}% | Lower is Red",
+                eta_cls
+            )
+
+        # 2. Suction Superheat (K) - Higher is Red
+        suc_sh_cls = "badge-red" if p_data['s1_sh'] > suc_sh_max_thresh else "badge-green"
+        with c2:
+            render_metric_card(
+                "Suction Superheat",
+                f"{p_data['s1_sh']:.1f} K",
+                f"Max Limit: {suc_sh_max_thresh} K | Higher is Red",
+                suc_sh_cls
+            )
+
+        # 3. Discharge Superheat (K) - Higher is Red
+        dis_sh_cls = "badge-red" if p_data['s2_sh'] > dis_sh_max_thresh else "badge-green"
+        with c3:
+            render_metric_card(
+                "Discharge Superheat",
+                f"{p_data['s2_sh']:.1f} K",
+                f"Max Limit: {dis_sh_max_thresh} K | Higher is Red",
+                dis_sh_cls
+            )
+
+        # 4. Discharge Superheat Penalty (kJ/kg above saturated vapor) - Higher is Red
+        dis_sh_kj_cls = "badge-red" if p_data['disch_sh_kj_kg'] > dis_sh_kj_max_thresh else "badge-green"
+        with c4:
+            render_metric_card(
+                "Disch. Superheat (kJ/kg)",
+                f"{p_data['disch_sh_kj_kg']:.1f} kJ/kg",
+                f"Above Sat Line | Limit: {dis_sh_kj_max_thresh} | Higher is Red",
+                dis_sh_kj_cls
+            )
+
+        # 5. Compressor Power / Specific Work (kJ/kg) - Higher is Red
+        w_cls = "badge-red" if p_data['w_in'] > work_max_thresh else "badge-green"
+        with c5:
+            render_metric_card(
+                "Compressor Power",
+                f"{p_data['w_in']:.1f} kJ/kg",
+                f"Max Limit: {work_max_thresh} kJ/kg | Higher is Red",
+                w_cls
+            )
+
+        # 6. Compression Ratio - Neutral
+        with c6:
+            render_metric_card(
+                "Compression Ratio",
+                f"{p_data['comp_ratio']:.2f}",
+                "P2 / P1 | Neutral",
+                "badge-neutral"
+            )
+
+    # --- State Points Summary (Profile A Detailed Cards) ---
+    st.markdown("### State Points Summary (Profile A)")
+    sc1, sc2, sc3, sc4 = st.columns(4)
+    subcool_val_A = prof_A['s3_tsat'] - prof_A['t_cond']
+    subcool_card_str = f"Subcooled: <b>{subcool_val_A:.1f} K</b>" if subcool_val_A > 0 else "Sat Liquid"
+
+    with sc1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">S1 - Suction</div>
+            <div class="metric-value">{prof_A['s1_h']:.1f} <span style="font-size:12px;">kJ/kg</span></div>
+            <div class="metric-sub">P: {prof_A['p_suction']:.2f} bara | T: {prof_A['t_suc']:.1f}°C</div>
+            <div class="metric-sub">Cp: <b>{prof_A['s1_cp']:.1f}</b> | Cv: <b>{prof_A['s1_cv']:.1f}</b> kJ/kg·K</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with sc2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">S2 - Discharge</div>
+            <div class="metric-value">{prof_A['s2_h']:.1f} <span style="font-size:12px;">kJ/kg</span></div>
+            <div class="metric-sub">P: {prof_A['p_discharge']:.2f} bara | T: {prof_A['t_dis']:.1f}°C</div>
+            <div class="metric-sub">Cp: <b>{prof_A['s2_cp']:.1f}</b> | Cv: <b>{prof_A['s2_cv']:.1f}</b> kJ/kg·K</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with sc3:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">S3 - Condenser Outlet</div>
+            <div class="metric-value">{prof_A['s3_h']:.1f} <span style="font-size:12px;">kJ/kg</span></div>
+            <div class="metric-sub">P: {prof_A['p_discharge']:.2f} bara | T: {prof_A['t_cond']:.1f}°C</div>
+            <div class="metric-sub">{subcool_card_str}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with sc4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">S4 - Expansion Outlet</div>
+            <div class="metric-value">{prof_A['s4_h']:.1f} <span style="font-size:12px;">kJ/kg</span></div>
+            <div class="metric-sub">P: {prof_A['p_suction']:.2f} bara | Isenthalpic</div>
+            <div class="metric-sub">Sat Temp: {prof_A['s4_tsat']:.1f}°C</div>
+        </div>
+        """, unsafe_allow_html=True)
 
 except Exception as e:
     st.error(f"Calculation Error: Please review thermodynamic parameters. Details: {e}")
