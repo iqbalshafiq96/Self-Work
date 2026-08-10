@@ -101,7 +101,7 @@ def get_point_props(p_bara, t_degc, fluid):
     
     return h_kj, cp_kj, cv_kj, t_sat_c
 
-def calculate_cycle_points(p_suc_in, t_suc_in, p_dis_in, t_dis_in, t_cond_in, m_dot, p_unit, fluid):
+def calculate_cycle_points(p_suc_in, t_suc_in, p_dis_in, t_dis_in, t_cond_in, m_dot, enable_mdot, p_unit, fluid):
     p_suction = convert_to_bara(p_suc_in, p_unit)
     p_discharge = convert_to_bara(p_dis_in, p_unit)
 
@@ -134,12 +134,16 @@ def calculate_cycle_points(p_suc_in, t_suc_in, p_dis_in, t_dis_in, t_cond_in, m_
     else:
         eta_isen = 0.0
 
-    # Discharge Superheat Heat Load in kW: m_dot * (h_actual_dis - h_sat_vap_dis)
+    # Discharge Superheat Heat Load
     h_s2_sat_vap = CP.PropsSI('H', 'P', p_discharge * 1e5, 'Q', 1, fluid) / 1000.0
-    dis_sh_kw = m_dot * (s2_h - h_s2_sat_vap)
-
-    # Compressor Power (kW)
-    w_comp_kw = m_dot * w_in
+    
+    # Compute energy metric according to mass flow enable toggle
+    if enable_mdot:
+        dis_sh_energy = m_dot * (s2_h - h_s2_sat_vap)
+        w_comp_energy = m_dot * w_in
+    else:
+        dis_sh_energy = s2_h - h_s2_sat_vap
+        w_comp_energy = w_in
 
     # Compression Ratio
     cr = p_discharge / p_suction
@@ -152,8 +156,8 @@ def calculate_cycle_points(p_suc_in, t_suc_in, p_dis_in, t_dis_in, t_cond_in, m_
         's4_h': s4_h, 's4_tsat': s4_tsat,
         'cop': cop, 'q_in': q_in, 'w_in': w_in,
         'eta_isen': eta_isen,
-        'dis_sh_kw': dis_sh_kw,
-        'w_comp_kw': w_comp_kw,
+        'dis_sh_energy': dis_sh_energy,
+        'w_comp_energy': w_comp_energy,
         'cr': cr
     }
 
@@ -168,7 +172,7 @@ with st.sidebar:
     analysis_mode = st.radio(
         "Select Operating Mode",
         ["Single Profile", "Compare Profiles"],
-        index=0,
+        index=1,  # Set default to "Compare Profiles"
         help="Choose whether to analyze one profile or overlay two profiles for comparison."
     )
     
@@ -179,7 +183,16 @@ with st.sidebar:
     refrigerant_choice = st.selectbox("Refrigerant", ["Ammonia", "R134a"], index=0)
     fluid = refrigerant_choice
     p_unit = st.selectbox("Pressure Unit", ["barg", "bara", "kpag", "kpaa"], index=1)
-    m_dot = st.number_input("Mass Flow Rate (kg/s)", value=1.0, step=0.1, key="m_dot")
+    
+    # Toggle Mass Flow Rate
+    enable_mdot = st.checkbox("Enable Mass Flow Rate", value=True)
+    if enable_mdot:
+        m_dot = st.number_input("Mass Flow Rate (kg/s)", value=1.0, step=0.1, key="m_dot")
+        energy_unit = "kW"
+    else:
+        m_dot = 1.0  # Default specific mass basis
+        energy_unit = "kJ/kg"
+        st.info("Mass flow rate disabled. Energy metrics will be displayed in **kJ/kg**.")
 
     st.markdown("---")
     
@@ -218,6 +231,7 @@ try:
         t_dis_in=t_dis_A,
         t_cond_in=t_cond_A,
         m_dot=m_dot,
+        enable_mdot=enable_mdot,
         p_unit=p_unit,
         fluid=fluid
     )
@@ -232,6 +246,7 @@ try:
             t_dis_in=t_dis_B,
             t_cond_in=t_cond_B,
             m_dot=m_dot,
+            enable_mdot=enable_mdot,
             p_unit=p_unit,
             fluid=fluid
         )
@@ -274,7 +289,7 @@ try:
     if prof_B:
         add_profile_trace(fig, prof_B, "Profile B", "#D97706", "#F59E0B", dash_style='dot')
 
-    # Helper function to add annotated callouts with vertical mirror (x-flip) for Profile B
+    # Helper function to add annotated callouts
     def add_profile_annotations(fig, prof, prefix="", text_color="#10B981", vert_mirror=False):
         x_m = -1 if vert_mirror else 1
 
@@ -359,8 +374,8 @@ try:
         c1.metric("Isentropic Efficiency", f"{prof_A['eta_isen']:.1f} %")
         c2.metric("Suction Superheat", f"{prof_A['s1_sh']:.1f} K")
         c3.metric("Discharge Superheat", f"{prof_A['s2_sh']:.1f} K")
-        c4.metric("Discharge Superheat", f"{prof_A['dis_sh_kw']:.1f} kW")
-        c5.metric("Compressor Power", f"{prof_A['w_comp_kw']:.1f} kW")
+        c4.metric(f"Discharge Superheat ({energy_unit})", f"{prof_A['dis_sh_energy']:.1f} {energy_unit}")
+        c5.metric(f"Compressor Work ({energy_unit})", f"{prof_A['w_comp_energy']:.1f} {energy_unit}")
         c6.metric("Compression Ratio", f"{prof_A['cr']:.2f}")
 
         st.markdown("### State Points Summary (Profile A)")
@@ -407,15 +422,15 @@ try:
 
     else:
         st.markdown("#### Profile Comparison Metrics")
-        st.caption("Displaying **Profile B** baseline values; deltas in brackets show shift relative to **Profile A**.")
+        st.caption(f"Displaying **Profile B** baseline values; deltas in brackets show shift relative to **Profile A** (Units: **{energy_unit}**).")
         m1, m2, m3, m4, m5, m6 = st.columns(6)
         
         # Differences (Profile B - Profile A)
         eta_diff = prof_B['eta_isen'] - prof_A['eta_isen']
         suc_sh_diff = prof_B['s1_sh'] - prof_A['s1_sh']
         dis_sh_diff = prof_B['s2_sh'] - prof_A['s2_sh']
-        dis_sh_kw_diff = prof_B['dis_sh_kw'] - prof_A['dis_sh_kw']
-        w_comp_diff = prof_B['w_comp_kw'] - prof_A['w_comp_kw']
+        dis_sh_energy_diff = prof_B['dis_sh_energy'] - prof_A['dis_sh_energy']
+        w_comp_diff = prof_B['w_comp_energy'] - prof_A['w_comp_energy']
         cr_diff = prof_B['cr'] - prof_A['cr']
 
         # 1. Isentropic Efficiency (Higher is Green -> normal)
@@ -442,19 +457,19 @@ try:
             delta_color="inverse"
         )
 
-        # 4. Discharge Superheat Load (Higher is Red -> inverse)
+        # 4. Discharge Superheat Energy (Higher is Red -> inverse)
         m4.metric(
-            "Discharge Superheat",
-            f"{prof_B['dis_sh_kw']:.1f} kW",
-            delta=f"{dis_sh_kw_diff:+.1f} kW",
+            f"Discharge Superheat ({energy_unit})",
+            f"{prof_B['dis_sh_energy']:.1f} {energy_unit}",
+            delta=f"{dis_sh_energy_diff:+.1f} {energy_unit}",
             delta_color="inverse"
         )
 
-        # 5. Compressor Power (Higher is Red -> inverse)
+        # 5. Compressor Work/Power (Higher is Red -> inverse)
         m5.metric(
-            "Compressor Power",
-            f"{prof_B['w_comp_kw']:.1f} kW",
-            delta=f"{w_comp_diff:+.1f} kW",
+            f"Compressor Work ({energy_unit})",
+            f"{prof_B['w_comp_energy']:.1f} {energy_unit}",
+            delta=f"{w_comp_diff:+.1f} {energy_unit}",
             delta_color="inverse"
         )
 
