@@ -5,7 +5,11 @@ st.set_page_config(
     page_title="Desuperheater Calculator", page_icon="💨", layout="wide"
 )
 
-st.title("💨 Desuperheater Letdown Mass & Energy Balance by Iqbal SHERPA _20260708")
+st.title("💨 Desuperheater Letdown Mass & Energy Balance")
+st.caption(
+    "Developed by Iqbal SHERPA 20260708. Contact me for further information"
+    " @iqbalshafiq96@gmail.com"
+)
 
 # --- SIDEBAR INPUTS ---
 st.sidebar.header("Configuration")
