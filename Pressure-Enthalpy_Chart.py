@@ -112,8 +112,8 @@ def calculate_cycle_points(p_suc_in, t_suc_in, p_dis_in, t_dis_in, t_cond_in, p_
 
     return {
         'p_suction': p_suction, 'p_discharge': p_discharge,
-        's1_h': s1_h, 's1_sh': s1_sh, 't_suc': t_suc_in,
-        's2_h': s2_h, 's2_sh': s2_sh, 't_dis': t_dis_in,
+        's1_h': s1_h, 's1_sh': s1_sh, 't_suc': t_suc_in, 's1_tsat': s1_tsat,
+        's2_h': s2_h, 's2_sh': s2_sh, 't_dis': t_dis_in, 's2_tsat': s2_tsat,
         's3_h': s3_h, 's3_tsat': s3_tsat, 't_cond': t_cond_in,
         's4_h': s4_h, 's4_tsat': s4_tsat,
         'cop': cop, 'q_in': q_in, 'w_in': w_in
@@ -133,6 +133,8 @@ with st.sidebar:
         index=0,
         help="Choose whether to analyze one profile or overlay two profiles for comparison."
     )
+    
+    show_callouts = st.checkbox("Show Graph Callouts", value=True, help="Toggle on-graph annotations for state points.")
     
     st.markdown("---")
     st.header("2. Fluid & Units")
@@ -175,7 +177,7 @@ try:
     # Calculate Profile B if in comparison mode
     prof_B = None
     if analysis_mode == "Compare Profiles":
-        prof_B = calculate_cycle_points(p_suc_B, t_suc_B, p_dis_B, t_dis_B, t_cond_B, p_unit, fluid)
+        prof_B = calculate_cycle_points(p_suc_B, t_suc_B, p_dis_B, t_cond_B, p_unit, fluid)
 
     sat_liq_h, sat_vap_h, sat_p = get_saturation_curve(fluid)
 
@@ -204,7 +206,7 @@ try:
             mode='lines+markers',
             name=name,
             line=dict(color=line_color, width=2.5, dash=dash_style),
-            marker=dict(size=7, color=marker_color, line=dict(color='#FFFFFF', width=1)),
+            marker=dict(size=8, color=marker_color, line=dict(color='#FFFFFF', width=1)),
             hovertemplate='Enthalpy: %{x:.1f} kJ/kg<br>Pressure: %{y:.2f} bara'
         ))
 
@@ -215,6 +217,53 @@ try:
     if prof_B:
         add_profile_trace(fig, prof_B, "Profile B", "#D97706", "#F59E0B", dash_style='dot')
 
+    # Helper function to add annotated callouts
+    def add_profile_annotations(fig, prof, prefix="", text_color="#10B981"):
+        # Point 1: Suction
+        fig.add_annotation(
+            x=prof['s1_h'], y=prof['p_suction'],
+            text=f"<b>{prefix}S1 (Suction)</b><br>P: {prof['p_suction']:.2f} bara<br>T: {prof['t_suc']:.1f}°C<br>SH: {prof['s1_sh']:.1f} K",
+            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
+            ax=45, ay=45,
+            bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
+            font=dict(size=10, color="#111827")
+        )
+        # Point 2: Discharge
+        fig.add_annotation(
+            x=prof['s2_h'], y=prof['p_discharge'],
+            text=f"<b>{prefix}S2 (Discharge)</b><br>P: {prof['p_discharge']:.2f} bara<br>T: {prof['t_dis']:.1f}°C<br>SH: {prof['s2_sh']:.1f} K",
+            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
+            ax=45, ay=-45,
+            bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
+            font=dict(size=10, color="#111827")
+        )
+        # Point 3: Condenser Outlet
+        subcool_A = prof['s3_tsat'] - prof['t_cond']
+        subcool_str = f"SC: {subcool_A:.1f} K" if subcool_A > 0 else "Sat Liquid"
+        fig.add_annotation(
+            x=prof['s3_h'], y=prof['p_discharge'],
+            text=f"<b>{prefix}S3 (Cond. Out)</b><br>P: {prof['p_discharge']:.2f} bara<br>T: {prof['t_cond']:.1f}°C<br>{subcool_str}",
+            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
+            ax=-45, ay=-45,
+            bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
+            font=dict(size=10, color="#111827")
+        )
+        # Point 4: Expansion Outlet
+        fig.add_annotation(
+            x=prof['s4_h'], y=prof['p_suction'],
+            text=f"<b>{prefix}S4 (Exp. Out)</b><br>P: {prof['p_suction']:.2f} bara<br>T_sat: {prof['s4_tsat']:.1f}°C",
+            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor=text_color,
+            ax=-45, ay=45,
+            bordercolor=text_color, borderwidth=1, borderpad=4, bgcolor="#FFFFFF", opacity=0.9,
+            font=dict(size=10, color="#111827")
+        )
+
+    # Attach annotations if toggle is enabled
+    if show_callouts:
+        add_profile_annotations(fig, prof_A, prefix="A-" if prof_B else "", text_color="#059669")
+        if prof_B:
+            add_profile_annotations(fig, prof_B, prefix="B-", text_color="#D97706")
+
     # Axis Formatting
     all_h = sat_liq_h + [prof_A['s1_h'], prof_A['s2_h'], prof_A['s3_h'], prof_A['s4_h']]
     all_p = [prof_A['p_suction'], prof_A['p_discharge']]
@@ -224,11 +273,11 @@ try:
 
     fig.update_layout(
         title=dict(text=f'P-h Diagram ({refrigerant_choice}) - Mode: {analysis_mode}', font=dict(size=16)),
-        xaxis=dict(title='Enthalpy (kJ/kg)', range=[max(0, min(all_h) - 60), max(all_h) + 100], showgrid=True, gridcolor='#E5E7EB'),
-        yaxis=dict(title='Pressure (bara)', range=[0, max(all_p) + 5.0], showgrid=True, gridcolor='#E5E7EB'),
+        xaxis=dict(title='Enthalpy (kJ/kg)', range=[max(0, min(all_h) - 80), max(all_h) + 120], showgrid=True, gridcolor='#E5E7EB'),
+        yaxis=dict(title='Pressure (bara)', range=[0, max(all_p) + 6.0], showgrid=True, gridcolor='#E5E7EB'),
         plot_bgcolor='#FAFAFA', paper_bgcolor='#FFFFFF',
         legend=dict(orientation='h', y=1.05, x=1, xanchor='right'),
-        height=550, margin=dict(l=60, r=40, t=60, b=50)
+        height=600, margin=dict(l=60, r=40, t=60, b=50)
     )
 
     st.plotly_chart(fig, use_container_width=True)
