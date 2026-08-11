@@ -1,20 +1,15 @@
-import math
-from iapws import IAPWS97
 import matplotlib.lines as mlines
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import streamlit as st
 
-# ----------------------------------------------------------------------
-# COLOUR PALETTE (Using Matplotlib theme defaults for text/lines)
-# ----------------------------------------------------------------------
-STEAM_COLOR = "#708090"  # neutral pipe color (slate grey)
-FW_COLOR = "#1e88e5"  # feedwater (soft sky blue)
-EQUIP_COLOR = "#d97706"  # warm amber for valve / venturi outline
-EQUIP_FILL = "none"  # transparent fill to match any theme background
-
-LW_PIPE = 4.2
-LW_EQUIP = 2.0
+# Custom Styling Constants
+STEAM_COLOR = "#0083B0"
+FW_COLOR = "#2E7D32"
+EQUIP_COLOR = "#333333"
+EQUIP_FILL = "#F0F2F6"
+LW_PIPE = 3.5
+LW_EQUIP = 1.8
 
 
 def build_figure(
@@ -28,7 +23,7 @@ def build_figure(
     t_out,
     m_out,
     p_unit,
-    figsize=(15, 6),
+    figsize=(15, 4.2),  # Reduced height ratio to match tightened bounds
 ):
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -40,7 +35,8 @@ def build_figure(
     text_color = plt.rcParams.get("text.color", "currentColor")
 
     ax.set_xlim(0, 16)
-    ax.set_ylim(1.5, 8.8)
+    # Tighter vertical limits to remove top/bottom white space
+    ax.set_ylim(3.2, 8.5)
     ax.set_aspect("equal")
     ax.axis("off")
 
@@ -165,7 +161,7 @@ def build_figure(
         )
         ax.add_patch(nozzle)
 
-        # Restored Atomized Spray Cone lines inside throat
+        # Atomized Spray Cone
         spray_y_top = cy + r_throat + 0.05
         spray_y_bot = cy - r_throat + 0.05
         ax.add_line(
@@ -199,7 +195,7 @@ def build_figure(
             )
         )
 
-        # Label placed at y = cy - 0.34 - 0.28 = cy - 0.62 to align perfectly with valve label
+        # Label aligned on same y-axis height as control valve label
         ax.text(
             cx,
             cy - 0.62,
@@ -278,267 +274,29 @@ def build_figure(
     )
     label(11.8, Y + 0.95, outlet_txt, fs=9.5)
 
-    fig.tight_layout()
+    # Zero-margin layout to strip surrounding whitespace
+    fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
     return fig
 
 
-# ----------------------------------------------------------------------
-# STREAMLIT APPLICATION
-# ----------------------------------------------------------------------
-st.set_page_config(
-    page_title="Desuperheater Calculator", page_icon="💨", layout="wide"
-)
+# Streamlit Execution Example
+if __name__ == "__main__":
+    st.set_page_config(layout="wide")
+    st.title("PRDS Diagram")
 
-st.title("💨 Desuperheater Letdown Mass & Energy Balance")
-st.caption(
-    "Developed by Iqbal SHERPA 20260708. Contact me for further information"
-    " @iqbalshafiq96@gmail.com"
-)
-
-# --- SIDEBAR INPUTS ---
-st.sidebar.header("Configuration")
-Pressure_Unit_Type = st.sidebar.selectbox(
-    "Pressure Unit Type",
-    [
-        "Bar Gauge (barG)",
-        "Bar Absolute (barA)",
-        "Megapascals Gauge (MPaG)",
-        "Megapascals Absolute (MPaA)",
-    ],
-)
-
-st.sidebar.header("1. High-Pressure Inlet Steam")
-High_Pressure_Inlet_Steam_Pressure = st.sidebar.number_input(
-    "Inlet Pressure", value=50.0
-)
-High_Pressure_Inlet_Steam_Temperature_Degrees_Celsius = (
-    st.sidebar.number_input("Inlet Temp (°C)", value=419.0)
-)
-
-st.sidebar.header("2. Desuperheater Outlet Parameters & Mode")
-Outlet_Temperature_Calculation_Mode = st.sidebar.radio(
-    "Calculation Mode",
-    [
-        "INPUT - Specify Target Outlet Temperature",
-        "CALC - Calculate Outlet Temperature from Spray Flow",
-    ],
-)
-
-is_calc_mode = (
-    Outlet_Temperature_Calculation_Mode
-    == "CALC - Calculate Outlet Temperature from Spray Flow"
-)
-
-Desuperheater_Outlet_Steam_Pressure = st.sidebar.number_input(
-    "Outlet Pressure", value=4.6
-)
-
-Desuperheater_Outlet_Steam_Target_Temperature_Degrees_Celsius = (
-    st.sidebar.number_input(
-        "Target Outlet Temp (°C)", value=160.0, disabled=is_calc_mode
+    # Sample input values
+    fig = build_figure(
+        p_in=40.0,
+        t_in=400.0,
+        m_in=100.0,
+        p_fw=50.0,
+        t_fw=130.0,
+        m_fw=8.5,
+        p_out=10.0,
+        t_out=220.0,
+        m_out=108.5,
+        p_unit="bar(g)",
     )
-)
 
-st.sidebar.header("3. Spray Feedwater Parameters")
-Spray_Feedwater_Inlet_Pressure = st.sidebar.number_input(
-    "Feedwater Pressure", value=70.0
-)
-Spray_Feedwater_Inlet_Temperature_Degrees_Celsius = st.sidebar.number_input(
-    "Feedwater Temp (°C)", value=90.0
-)
-
-Specified_Spray_Feedwater_Mass_Flow_Rate_Tons_Per_Hour = (
-    st.sidebar.number_input(
-        "Specified Spray Flow (t/h)", value=2.35, disabled=not is_calc_mode
-    )
-)
-
-st.sidebar.header("4. Flow Rate Basis")
-Mass_Flow_Rate_Basis = st.sidebar.selectbox(
-    "Basis", ["Inlet Steam Flow Rate", "Outlet Target Steam Flow Rate"]
-)
-Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour = st.sidebar.number_input(
-    "Specified Steam Flow (t/h)", value=107.0
-)
-
-# --- CALCULATION LOGIC ---
-ATMOSPHERIC_PRESSURE_MEGAPASCALS = 0.101325
-ATMOSPHERIC_PRESSURE_BAR = 1.01325
-
-if Pressure_Unit_Type == "Bar Gauge (barG)":
-    p_in_mpaa = (
-        High_Pressure_Inlet_Steam_Pressure + ATMOSPHERIC_PRESSURE_BAR
-    ) / 10.0
-    p_out_mpaa = (
-        Desuperheater_Outlet_Steam_Pressure + ATMOSPHERIC_PRESSURE_BAR
-    ) / 10.0
-    p_fw_mpaa = (
-        Spray_Feedwater_Inlet_Pressure + ATMOSPHERIC_PRESSURE_BAR
-    ) / 10.0
-    unit_label = "barG"
-elif Pressure_Unit_Type == "Bar Absolute (barA)":
-    p_in_mpaa = High_Pressure_Inlet_Steam_Pressure / 10.0
-    p_out_mpaa = Desuperheater_Outlet_Steam_Pressure / 10.0
-    p_fw_mpaa = Spray_Feedwater_Inlet_Pressure / 10.0
-    unit_label = "barA"
-elif Pressure_Unit_Type == "Megapascals Gauge (MPaG)":
-    p_in_mpaa = (
-        High_Pressure_Inlet_Steam_Pressure + ATMOSPHERIC_PRESSURE_MEGAPASCALS
-    )
-    p_out_mpaa = (
-        Desuperheater_Outlet_Steam_Pressure + ATMOSPHERIC_PRESSURE_MEGAPASCALS
-    )
-    p_fw_mpaa = (
-        Spray_Feedwater_Inlet_Pressure + ATMOSPHERIC_PRESSURE_MEGAPASCALS
-    )
-    unit_label = "MPaG"
-else:
-    p_in_mpaa = High_Pressure_Inlet_Steam_Pressure
-    p_out_mpaa = Desuperheater_Outlet_Steam_Pressure
-    p_fw_mpaa = Spray_Feedwater_Inlet_Pressure
-    unit_label = "MPaA"
-
-# Pressure Display Conversions
-p_in_bara, p_in_barg = p_in_mpaa * 10.0, (
-    p_in_mpaa * 10.0
-) - ATMOSPHERIC_PRESSURE_BAR
-p_out_bara, p_out_barg = p_out_mpaa * 10.0, (
-    p_out_mpaa * 10.0
-) - ATMOSPHERIC_PRESSURE_BAR
-p_fw_bara, p_fw_barg = p_fw_mpaa * 10.0, (
-    p_fw_mpaa * 10.0
-) - ATMOSPHERIC_PRESSURE_BAR
-
-temperature_steam_inlet = High_Pressure_Inlet_Steam_Temperature_Degrees_Celsius
-temperature_feedwater_inlet = (
-    Spray_Feedwater_Inlet_Temperature_Degrees_Celsius
-)
-
-# Enthalpies via IAPWS-IF97
-enthalpy_steam_inlet = IAPWS97(
-    P=p_in_mpaa, T=temperature_steam_inlet + 273.15
-).h
-enthalpy_feedwater_inlet = IAPWS97(
-    P=p_fw_mpaa, T=temperature_feedwater_inlet + 273.15
-).h
-
-if is_calc_mode:
-    mass_flow_feedwater_inlet = (
-        Specified_Spray_Feedwater_Mass_Flow_Rate_Tons_Per_Hour
-    )
-    if Mass_Flow_Rate_Basis == "Inlet Steam Flow Rate":
-        mass_flow_steam_inlet = Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
-        mass_flow_steam_outlet = mass_flow_steam_inlet + mass_flow_feedwater_inlet
-    else:
-        mass_flow_steam_outlet = Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
-        mass_flow_steam_inlet = mass_flow_steam_outlet - mass_flow_feedwater_inlet
-
-    enthalpy_steam_outlet = (
-        (mass_flow_steam_inlet * enthalpy_steam_inlet)
-        + (mass_flow_feedwater_inlet * enthalpy_feedwater_inlet)
-    ) / mass_flow_steam_outlet
-
-    outlet_state = IAPWS97(P=p_out_mpaa, h=enthalpy_steam_outlet)
-    temperature_steam_outlet = outlet_state.T - 273.15
-else:
-    temperature_steam_outlet = (
-        Desuperheater_Outlet_Steam_Target_Temperature_Degrees_Celsius
-    )
-    enthalpy_steam_outlet = IAPWS97(
-        P=p_out_mpaa, T=temperature_steam_outlet + 273.15
-    ).h
-
-    if Mass_Flow_Rate_Basis == "Inlet Steam Flow Rate":
-        mass_flow_steam_inlet = Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
-        mass_flow_feedwater_inlet = (
-            mass_flow_steam_inlet
-            * (enthalpy_steam_outlet - enthalpy_steam_inlet)
-            / (enthalpy_feedwater_inlet - enthalpy_steam_outlet)
-        )
-        mass_flow_steam_outlet = mass_flow_steam_inlet + mass_flow_feedwater_inlet
-    else:
-        mass_flow_steam_outlet = Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
-        mass_flow_steam_inlet = (
-            mass_flow_steam_outlet
-            * (enthalpy_steam_outlet - enthalpy_feedwater_inlet)
-            / (enthalpy_steam_inlet - enthalpy_feedwater_inlet)
-        )
-        mass_flow_feedwater_inlet = mass_flow_steam_outlet - mass_flow_steam_inlet
-
-# Saturation Properties
-saturated_liquid = IAPWS97(P=p_out_mpaa, x=0)
-saturation_temp = saturated_liquid.T - 273.15
-superheat_margin = temperature_steam_outlet - saturation_temp
-
-if superheat_margin > 0.1:
-    outlet_steam_condition = "SUPERHEATED STEAM"
-elif abs(superheat_margin) <= 0.1:
-    outlet_steam_condition = "SATURATED STEAM (Dry Saturated)"
-else:
-    outlet_steam_condition = "WET STEAM (Two-Phase Liquid and Vapor)"
-
-pressure_drop_bar = (p_in_mpaa - p_out_mpaa) * 10.0
-
-# --- RENDER DYNAMIC PROCESS FLOW DIAGRAM ---
-fig = build_figure(
-    p_in=High_Pressure_Inlet_Steam_Pressure,
-    t_in=temperature_steam_inlet,
-    m_in=mass_flow_steam_inlet,
-    p_fw=Spray_Feedwater_Inlet_Pressure,
-    t_fw=temperature_feedwater_inlet,
-    m_fw=mass_flow_feedwater_inlet,
-    p_out=Desuperheater_Outlet_Steam_Pressure,
-    t_out=temperature_steam_outlet,
-    m_out=mass_flow_steam_outlet,
-    p_unit=unit_label,
-)
-st.pyplot(fig, use_container_width=True)
-
-st.markdown("---")
-
-# Safety Alert Banners
-if superheat_margin < 0:
-    st.error(
-        "CRITICAL ALERT: Outlet temperature is below saturation! Liquid"
-        " droplets will be present in the steam line."
-    )
-elif superheat_margin < 2.0:
-    st.warning(
-        "WARNING: Low superheat margin (< 2.0 °C)! High risk of incomplete"
-        " vaporization and water carryover."
-    )
-else:
-    st.success(f"System State: {outlet_steam_condition}")
-
-# Detailed Results Table
-st.subheader("Process Results Breakdown")
-
-col_left, col_right = st.columns(2)
-
-with col_left:
-    st.markdown("##### Pressure & Thermal Summary")
-    st.write(
-        f"**Inlet Pressure:** {p_in_barg:.2f} barG | {p_in_bara:.2f} barA |"
-        f" {p_in_mpaa:.3f} MPaA"
-    )
-    st.write(
-        f"**Outlet Pressure:** {p_out_barg:.2f} barG | {p_out_bara:.2f} barA |"
-        f" {p_out_mpaa:.3f} MPaA"
-    )
-    st.write(
-        f"**Spray Pressure:** {p_fw_barg:.2f} barG | {p_fw_bara:.2f} barA |"
-        f" {p_fw_mpaa:.3f} MPaA"
-    )
-    st.write(f"**Steam Pressure Drop:** {pressure_drop_bar:.2f} bar")
-    st.write(f"**Resulting Outlet Temp:** {temperature_steam_outlet:.2f} °C")
-    st.write(f"**Outlet Saturation Temp:** {saturation_temp:.2f} °C")
-    st.write(f"**Superheat Margin:** {superheat_margin:.2f} °C")
-
-with col_right:
-    st.markdown("##### Enthalpy & Mass Balance")
-    st.write(f"**Inlet Steam Enthalpy:** {enthalpy_steam_inlet:.2f} kJ/kg")
-    st.write(f"**Spray Water Enthalpy:** {enthalpy_feedwater_inlet:.2f} kJ/kg")
-    st.write(f"**Outlet Steam Enthalpy:** {enthalpy_steam_outlet:.2f} kJ/kg")
-    st.write(f"**Inlet Steam Mass Flow:** {mass_flow_steam_inlet:.2f} t/h")
-    st.write(f"**Spray Water Mass Flow:** {mass_flow_feedwater_inlet:.2f} t/h")
-    st.write(f"**Outlet Steam Mass Flow:** {mass_flow_steam_outlet:.2f} t/h")
+    st.pyplot(fig, use_container_width=True)
+    st.write("Components below render closer to the diagram.")
