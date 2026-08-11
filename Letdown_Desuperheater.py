@@ -1,23 +1,25 @@
+import io
 import math
 from iapws import IAPWS97
 import matplotlib.lines as mlines
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import streamlit as st
+import streamlit.components.v1 as components
 
 # ----------------------------------------------------------------------
-# COLOUR PALETTE (Using Matplotlib theme defaults for text/lines)
+# COLOUR PALETTE & STYLE CONFIGURATION
 # ----------------------------------------------------------------------
-STEAM_COLOR = "#708090"  # neutral pipe color (slate grey)
-FW_COLOR = "#1e88e5"  # feedwater (soft sky blue)
-EQUIP_COLOR = "#d97706"  # warm amber for valve / venturi outline
-EQUIP_FILL = "none"  # transparent fill to match any theme background
+STEAM_COLOR = "#64748B"  # Slate grey for steam piping
+FW_COLOR = "#0EA5E9"  # Vivid sky blue for feedwater spray
+EQUIP_COLOR = "#D97706"  # Amber for control valve & desuperheater outline
+EQUIP_FILL = "none"  # Transparent background integration
 
 LW_PIPE = 4.2
 LW_EQUIP = 2.0
 
 
-def build_figure(
+def build_svg_figure(
     p_in,
     t_in,
     m_in,
@@ -28,25 +30,33 @@ def build_figure(
     t_out,
     m_out,
     p_unit,
-    figsize=(15, 4.2),
+    figsize=(14, 4.0),
 ):
+    # Set high-DPI font parameters for technical legibility
+    plt.rcParams.update(
+        {
+            "font.sans-serif": ["Segoe UI", "Aptos", "Arial", "DejaVu Sans"],
+            "font.family": "sans-serif",
+        }
+    )
+
     fig, ax = plt.subplots(figsize=figsize)
 
-    # Set background to transparent so it blends with Streamlit theme
+    # Set background to fully transparent
     fig.patch.set_alpha(0.0)
     ax.patch.set_alpha(0.0)
 
-    # Inherit standard theme text color dynamically
-    text_color = plt.rcParams.get("text.color", "currentColor")
+    # Technical text color
+    text_color = "#334155"
 
-    # Tightened bounding box limits to trim excess vertical and horizontal margin
+    # Tight bounding box setup
     ax.set_xlim(0.4, 15.6)
     ax.set_ylim(3.2, 8.7)
     ax.set_aspect("equal")
     ax.axis("off")
 
     # ------------------------------------------------------------------
-    # Helper functions
+    # Drawing Helper Functions
     # ------------------------------------------------------------------
     def pipe(x1, y1, x2, y2, color=STEAM_COLOR, lw=LW_PIPE, zorder=2):
         ax.add_line(
@@ -86,6 +96,7 @@ def build_figure(
                     zorder=4,
                 )
             )
+        # Actuator Stem
         ax.add_line(
             mlines.Line2D(
                 [x, x],
@@ -95,6 +106,7 @@ def build_figure(
                 zorder=4,
             )
         )
+        # Actuator Diaphragm/Dome
         ax.add_patch(
             patches.Circle(
                 (x, y + s + 0.6),
@@ -113,6 +125,7 @@ def build_figure(
             va="top",
             color=text_color,
             fontsize=10,
+            fontweight="medium",
             zorder=5,
             linespacing=1.35,
         )
@@ -150,14 +163,11 @@ def build_figure(
             )
         )
 
-        # --------------------------------------------------------------
-        # Atomized Spray Cone lines (Rotated 90° to point Rightward)
-        # --------------------------------------------------------------
+        # Atomized Spray Cone lines
         spray_origin_x = cx
         spray_origin_y = cy
-        spray_len = 0.35  # Length of spray lines along steam flow
+        spray_len = 0.35
 
-        # Center spray ray
         ax.add_line(
             mlines.Line2D(
                 [spray_origin_x, spray_origin_x + spray_len],
@@ -168,7 +178,6 @@ def build_figure(
                 zorder=5,
             )
         )
-        # Upper spray ray
         ax.add_line(
             mlines.Line2D(
                 [spray_origin_x, spray_origin_x + spray_len],
@@ -179,7 +188,6 @@ def build_figure(
                 zorder=5,
             )
         )
-        # Lower spray ray
         ax.add_line(
             mlines.Line2D(
                 [spray_origin_x, spray_origin_x + spray_len],
@@ -191,7 +199,6 @@ def build_figure(
             )
         )
 
-        # Label aligned with valve tag
         ax.text(
             cx,
             cy - 0.62,
@@ -200,12 +207,13 @@ def build_figure(
             va="top",
             color=text_color,
             fontsize=10,
+            fontweight="medium",
             zorder=5,
         )
 
         return x0, x3
 
-    def label(x, y, txt, color=text_color, fs=10, ha="left"):
+    def label(x, y, txt, color=text_color, fs=9.5, ha="left"):
         ax.text(
             x,
             y,
@@ -220,36 +228,28 @@ def build_figure(
 
     Y = 4.6
 
-    # ------------------------------------------------------------------
     # HP Steam Line (Inlet)
-    # ------------------------------------------------------------------
     pipe(0.6, Y, 4.1, Y)
     flow_arrow(1.6, Y, 0.8, 0)
     inlet_txt = (
         f"High Pressure Steam Line\nFlow: {m_in:.2f} t/h\nPress: {p_in:.2f}"
         f" {p_unit}\nTemp: {t_in:.1f} °C"
     )
-    label(0.6, Y + 0.95, inlet_txt, fs=9.5)
+    label(0.6, Y + 0.95, inlet_txt)
 
-    # ------------------------------------------------------------------
     # Pressure Control Valve
-    # ------------------------------------------------------------------
     pcv_x = 5.0
     control_valve(pcv_x, Y, "Isenthalpic Expansion")
     pipe(4.1, Y, pcv_x - 0.34, Y)
     pipe(pcv_x + 0.34, Y, 6.1, Y)
     flow_arrow(5.65, Y, 0.35, 0)
 
-    # ------------------------------------------------------------------
     # Venturi Spray Desuperheater
-    # ------------------------------------------------------------------
     vessel_x = 8.7
     v_in, v_out = venturi_desuperheater(vessel_x, Y)
     pipe(6.1, Y, v_in, Y)
 
-    # ------------------------------------------------------------------
     # Feedwater Spray Line
-    # ------------------------------------------------------------------
     fw_top = 7.35
     pipe(vessel_x, fw_top, vessel_x, Y, color=FW_COLOR, zorder=3)
     flow_arrow(vessel_x, 6.2, 0, -0.42, color=FW_COLOR)
@@ -259,21 +259,25 @@ def build_figure(
         f"Feedwater Spray Line\nFlow: {m_fw:.2f} t/h\nPress: {p_fw:.2f}"
         f" {p_unit}\nTemp: {t_fw:.1f} °C"
     )
-    label(6.6, fw_top + 0.75, fw_txt, color=FW_COLOR, fs=9.5)
+    label(6.6, fw_top + 0.75, fw_txt, color=FW_COLOR)
 
-    # ------------------------------------------------------------------
     # LP Steam Line (Outlet)
-    # ------------------------------------------------------------------
     pipe(v_out, Y, 15.4, Y)
     flow_arrow(14.2, Y, 0.8, 0)
     outlet_txt = (
         f"Low Pressure Steam Line\nFlow: {m_out:.2f} t/h\nPress: {p_out:.2f}"
         f" {p_unit}\nTemp: {t_out:.1f} °C"
     )
-    label(11.8, Y + 0.95, outlet_txt, fs=9.5)
+    label(11.8, Y + 0.95, outlet_txt)
 
-    fig.tight_layout(pad=0.1)
-    return fig
+    fig.tight_layout(pad=0.05)
+
+    # Render Matplotlib figure to an SVG memory buffer
+    svg_buffer = io.StringIO()
+    fig.savefig(svg_buffer, format="svg", bbox_inches="tight", transparent=True)
+    plt.close(fig)
+
+    return svg_buffer.getvalue()
 
 
 # ----------------------------------------------------------------------
@@ -473,8 +477,8 @@ else:
 
 pressure_drop_bar = (p_in_mpaa - p_out_mpaa) * 10.0
 
-# --- RENDER DYNAMIC PROCESS FLOW DIAGRAM ---
-fig = build_figure(
+# --- RENDER Crisp Vector SVG PROCESS FLOW DIAGRAM ---
+svg_data = build_svg_figure(
     p_in=High_Pressure_Inlet_Steam_Pressure,
     t_in=temperature_steam_inlet,
     m_in=mass_flow_steam_inlet,
@@ -486,7 +490,16 @@ fig = build_figure(
     m_out=mass_flow_steam_outlet,
     p_unit=unit_label,
 )
-st.pyplot(fig, use_container_width=True, bbox_inches="tight", pad_inches=0.05)
+
+# Inject SVG directly into Streamlit DOM
+components.html(
+    f"""
+    <div style="display: flex; justify-content: center; align-items: center; width: 100%;">
+        {svg_data}
+    </div>
+    """,
+    height=280,
+)
 
 st.markdown("---")
 
