@@ -165,9 +165,44 @@ def build_figure(
         )
         ax.add_patch(nozzle)
 
+        # Restored Atomized Spray Cone lines inside throat
+        spray_y_top = cy + r_throat + 0.05
+        spray_y_bot = cy - r_throat + 0.05
+        ax.add_line(
+            mlines.Line2D(
+                [cx, cx - 0.35],
+                [spray_y_top, spray_y_bot],
+                color=FW_COLOR,
+                linestyle="--",
+                lw=1.2,
+                zorder=5,
+            )
+        )
+        ax.add_line(
+            mlines.Line2D(
+                [cx, cx],
+                [spray_y_top, spray_y_bot],
+                color=FW_COLOR,
+                linestyle="--",
+                lw=1.2,
+                zorder=5,
+            )
+        )
+        ax.add_line(
+            mlines.Line2D(
+                [cx, cx + 0.35],
+                [spray_y_top, spray_y_bot],
+                color=FW_COLOR,
+                linestyle="--",
+                lw=1.2,
+                zorder=5,
+            )
+        )
+
+        # Label placed at y = cy - 0.34 - 0.28 = cy - 0.62 to align perfectly with valve label
         ax.text(
             cx,
-            cy - r_in - 0.42,
+            cy - 0.62,
             "Desuperheater",
             ha="center",
             va="top",
@@ -233,7 +268,7 @@ def build_figure(
     label(6.6, fw_top + 0.75, fw_txt, color=FW_COLOR, fs=9.5)
 
     # ------------------------------------------------------------------
-    # LP Steam Line (Outlet) - Starts exactly at desuperheater exit flange (v_out)
+    # LP Steam Line (Outlet)
     # ------------------------------------------------------------------
     pipe(v_out, Y, 15.4, Y)
     flow_arrow(14.2, Y, 0.8, 0)
