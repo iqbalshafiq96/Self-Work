@@ -235,8 +235,6 @@ def build_figure(
     vessel_x = 8.7
     v_in, v_out, nozzle_top = venturi_desuperheater(vessel_x, Y)
     pipe(6.1, Y, v_in, Y)
-    pipe(v_out, Y, 10.3, Y)
-    flow_arrow(10.0, Y, 0.28, 0)
 
     # Feedwater Spray Line
     fw_top = 7.35
@@ -251,9 +249,9 @@ def build_figure(
     label(6.6, fw_top + 0.75, fw_txt, color=FW_COLOR, fs=9.5)
 
     # ------------------------------------------------------------------
-    # LP Steam Line (Outlet)
+    # LP Steam Line (Outlet) - Starts exactly at desuperheater exit flange (v_out)
     # ------------------------------------------------------------------
-    pipe(10.3, Y, 15.4, Y)
+    pipe(v_out, Y, 15.4, Y)
     flow_arrow(14.2, Y, 0.8, 0)
     outlet_txt = (
         f"Low Pressure Steam Line\nFlow: {m_out:.2f} t/h\nPress: {p_out:.2f}"
