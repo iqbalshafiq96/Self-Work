@@ -1,6 +1,288 @@
+import math
 from iapws import IAPWS97
+import matplotlib.lines as mlines
+import matplotlib.patches as patches
+import matplotlib.pyplot as plt
 import streamlit as st
 
+# Configure matplotlib global fonts (as per Code B)
+plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'Helvetica', 'sans-serif']
+plt.rcParams['font.family'] = 'sans-serif'
+
+# ----------------------------------------------------------------------
+# COLOUR PALETTE
+# ----------------------------------------------------------------------
+BG_COLOR      = "#0f2438"   # deep slate blue
+STEAM_COLOR   = "#eef3f7"   # near-white steam pipe
+FW_COLOR      = "#4fb6e6"   # feedwater (soft sky blue)
+EQUIP_COLOR   = "#f0b429"   # warm amber for valve / venturi outline
+EQUIP_FILL    = "#16324a"   # subtle fill inside equipment shapes
+TEXT_COLOR    = "#f2f6f9"
+
+LW_PIPE  = 4.2
+LW_EQUIP = 2.0
+
+
+def build_figure(
+    p_in,
+    t_in,
+    m_in,
+    p_fw,
+    t_fw,
+    m_fw,
+    p_out,
+    t_out,
+    m_out,
+    p_unit,
+    figsize=(15, 6),
+):
+    fig, ax = plt.subplots(figsize=figsize)
+    fig.patch.set_facecolor(BG_COLOR)
+    ax.set_facecolor(BG_COLOR)
+    ax.set_xlim(0, 16)
+    ax.set_ylim(1.5, 8.8)
+    ax.set_aspect("equal")
+    ax.axis("off")
+
+    # ------------------------------------------------------------------
+    # Helper functions
+    # ------------------------------------------------------------------
+    def pipe(x1, y1, x2, y2, color=STEAM_COLOR, lw=LW_PIPE, zorder=2):
+        ax.add_line(
+            mlines.Line2D(
+                [x1, x2],
+                [y1, y2],
+                color=color,
+                lw=lw,
+                solid_capstyle="round",
+                zorder=zorder,
+            )
+        )
+
+    def flow_arrow(x, y, dx, dy, color=STEAM_COLOR):
+        ax.annotate(
+            "",
+            xy=(x + dx, y + dy),
+            xytext=(x, y),
+            arrowprops=dict(
+                arrowstyle="-|>", color=color, lw=1.8, mutation_scale=15
+            ),
+            zorder=3,
+        )
+
+    def control_valve(x, y, tag_lines, size=0.34):
+        s = size
+        top, bot = (x, y + s), (x, y - s)
+        left, right = (x - s, y), (x + s, y)
+        for tri_pts in ([left, top, bot], [right, top, bot]):
+            ax.add_patch(
+                patches.Polygon(
+                    tri_pts,
+                    closed=True,
+                    facecolor=EQUIP_FILL,
+                    edgecolor=EQUIP_COLOR,
+                    lw=LW_EQUIP,
+                    zorder=4,
+                )
+            )
+        ax.add_line(
+            mlines.Line2D(
+                [x, x],
+                [y + s, y + s + 0.38],
+                color=EQUIP_COLOR,
+                lw=LW_EQUIP,
+                zorder=4,
+            )
+        )
+        ax.add_patch(
+            patches.Circle(
+                (x, y + s + 0.6),
+                0.22,
+                facecolor=EQUIP_FILL,
+                edgecolor=EQUIP_COLOR,
+                lw=LW_EQUIP,
+                zorder=4,
+            )
+        )
+        ax.text(
+            x,
+            y - s - 0.28,
+            tag_lines,
+            ha="center",
+            va="top",
+            color=TEXT_COLOR,
+            fontsize=10,
+            fontweight="600",
+            zorder=5,
+            linespacing=1.35,
+        )
+
+    def venturi_desuperheater(
+        cx, cy, w=4.2, r_in=0.62, r_throat=0.22, throat_w=0.7
+    ):
+        x0 = cx - w / 2
+        x1 = cx - throat_w / 2
+        x2 = cx + throat_w / 2
+        x3 = cx + w / 2
+
+        top = [
+            (x0, cy + r_in),
+            (x1, cy + r_throat),
+            (x2, cy + r_throat),
+            (x3, cy + r_in),
+        ]
+        bot = [
+            (x3, cy - r_in),
+            (x2, cy - r_throat),
+            (x1, cy - r_throat),
+            (x0, cy - r_in),
+        ]
+        outline = top + bot
+        ax.add_patch(
+            patches.Polygon(
+                outline,
+                closed=True,
+                facecolor=EQUIP_FILL,
+                edgecolor=EQUIP_COLOR,
+                lw=LW_EQUIP,
+                zorder=4,
+                joinstyle="round",
+            )
+        )
+
+        flow_arrow(cx - 0.28, cy, 0.56, 0, color=STEAM_COLOR)
+
+        nozzle_w = 0.26
+        nozzle = patches.Polygon(
+            [
+                (cx - nozzle_w, cy + r_throat + 0.55),
+                (cx + nozzle_w, cy + r_throat + 0.55),
+                (cx + 0.06, cy + r_throat + 0.05),
+                (cx - 0.06, cy + r_throat + 0.05),
+            ],
+            closed=True,
+            facecolor=EQUIP_FILL,
+            edgecolor=FW_COLOR,
+            lw=LW_EQUIP,
+            zorder=5,
+        )
+        ax.add_patch(nozzle)
+
+        tip_y = cy + r_throat + 0.02
+        for ang, ln in [(-26, 0.20), (-9, 0.24), (9, 0.24), (26, 0.20)]:
+            rad = math.radians(ang)
+            dx, dy = ln * math.sin(rad), -ln * math.cos(rad)
+            ax.add_line(
+                mlines.Line2D(
+                    [cx, cx + dx],
+                    [tip_y, tip_y + dy],
+                    color=FW_COLOR,
+                    lw=1.3,
+                    zorder=6,
+                )
+            )
+
+        ax.text(
+            cx,
+            cy - r_in - 0.42,
+            "SPRAY DESUPERHEATER",
+            ha="center",
+            va="top",
+            color=TEXT_COLOR,
+            fontsize=10,
+            fontweight="600",
+            zorder=5,
+        )
+
+        return x0, x3, cy + r_throat + 0.55
+
+    def label(x, y, txt, color=TEXT_COLOR, fs=10, weight="600", ha="left"):
+        ax.text(
+            x,
+            y,
+            txt,
+            color=color,
+            fontsize=fs,
+            fontweight=weight,
+            ha=ha,
+            va="center",
+            zorder=6,
+            linespacing=1.35,
+        )
+
+    Y = 4.6
+
+    # ------------------------------------------------------------------
+    # HP Steam Line (Inlet)
+    # ------------------------------------------------------------------
+    pipe(0.6, Y, 4.1, Y)
+    flow_arrow(1.6, Y, 0.8, 0)
+    inlet_txt = (
+        f"High Pressure Steam Line\nFlow: {m_in:.2f} t/h\nPress: {p_in:.2f}"
+        f" {p_unit}\nTemp: {t_in:.1f} °C"
+    )
+    label(0.6, Y + 0.95, inlet_txt, fs=9.5)
+
+    # ------------------------------------------------------------------
+    # Pressure Control Valve
+    # ------------------------------------------------------------------
+    pcv_x = 5.0
+    control_valve(pcv_x, Y, "Pressure Control Valve\n(PCV)")
+    pipe(4.1, Y, pcv_x - 0.34, Y)
+    pipe(pcv_x + 0.34, Y, 6.1, Y)
+    flow_arrow(5.65, Y, 0.35, 0)
+
+    # ------------------------------------------------------------------
+    # Venturi Spray Desuperheater
+    # ------------------------------------------------------------------
+    vessel_x = 8.7
+    v_in, v_out, nozzle_top = venturi_desuperheater(vessel_x, Y)
+    pipe(6.1, Y, v_in, Y)
+    pipe(v_out, Y, 10.3, Y)
+    flow_arrow(10.0, Y, 0.28, 0)
+
+    # Feedwater Spray Line
+    fw_top = 7.35
+    pipe(vessel_x, fw_top, vessel_x, nozzle_top, color=FW_COLOR)
+    flow_arrow(vessel_x, 7.0, 0, -0.42, color=FW_COLOR)
+    pipe(6.6, fw_top, vessel_x, fw_top, color=FW_COLOR)
+    flow_arrow(7.2, fw_top, 0.4, 0, color=FW_COLOR)
+    fw_txt = (
+        f"Feedwater Spray Line\nFlow: {m_fw:.2f} t/h\nPress: {p_fw:.2f}"
+        f" {p_unit}\nTemp: {t_fw:.1f} °C"
+    )
+    label(6.6, fw_top + 0.75, fw_txt, color=FW_COLOR, fs=9.5)
+
+    # ------------------------------------------------------------------
+    # LP Steam Line (Outlet)
+    # ------------------------------------------------------------------
+    pipe(10.3, Y, 15.4, Y)
+    flow_arrow(14.2, Y, 0.8, 0)
+    outlet_txt = (
+        f"Low Pressure Steam Line\nFlow: {m_out:.2f} t/h\nPress: {p_out:.2f}"
+        f" {p_unit}\nTemp: {t_out:.1f} °C"
+    )
+    label(11.8, Y + 0.95, outlet_txt, fs=9.5)
+
+    # Outer frame
+    frame = patches.FancyBboxPatch(
+        (0.18, 1.8),
+        15.64,
+        6.8,
+        boxstyle="round,pad=0,rounding_size=0.18",
+        fill=False,
+        edgecolor="#2c4a63",
+        lw=1.4,
+    )
+    ax.add_patch(frame)
+
+    fig.tight_layout()
+    return fig
+
+
+# ----------------------------------------------------------------------
+# STREAMLIT APPLICATION
+# ----------------------------------------------------------------------
 st.set_page_config(
     page_title="Desuperheater Calculator", page_icon="💨", layout="wide"
 )
@@ -40,7 +322,6 @@ Outlet_Temperature_Calculation_Mode = st.sidebar.radio(
     ],
 )
 
-# Determine mode status for dynamic disabling
 is_calc_mode = (
     Outlet_Temperature_Calculation_Mode
     == "CALC - Calculate Outlet Temperature from Spray Flow"
@@ -50,12 +331,9 @@ Desuperheater_Outlet_Steam_Pressure = st.sidebar.number_input(
     "Outlet Pressure", value=4.6
 )
 
-# Disabled when in CALC mode
 Desuperheater_Outlet_Steam_Target_Temperature_Degrees_Celsius = (
     st.sidebar.number_input(
-        "Target Outlet Temp (°C)",
-        value=160.0,
-        disabled=is_calc_mode,  # <--- Dynamic Toggle
+        "Target Outlet Temp (°C)", value=160.0, disabled=is_calc_mode
     )
 )
 
@@ -67,12 +345,9 @@ Spray_Feedwater_Inlet_Temperature_Degrees_Celsius = st.sidebar.number_input(
     "Feedwater Temp (°C)", value=90.0
 )
 
-# Disabled when in INPUT mode
 Specified_Spray_Feedwater_Mass_Flow_Rate_Tons_Per_Hour = (
     st.sidebar.number_input(
-        "Specified Spray Flow (t/h)",
-        value=2.35,
-        disabled=not is_calc_mode,  # <--- Dynamic Toggle
+        "Specified Spray Flow (t/h)", value=2.35, disabled=not is_calc_mode
     )
 )
 
@@ -98,10 +373,12 @@ if Pressure_Unit_Type == "Bar Gauge (barG)":
     p_fw_mpaa = (
         Spray_Feedwater_Inlet_Pressure + ATMOSPHERIC_PRESSURE_BAR
     ) / 10.0
+    unit_label = "barG"
 elif Pressure_Unit_Type == "Bar Absolute (barA)":
     p_in_mpaa = High_Pressure_Inlet_Steam_Pressure / 10.0
     p_out_mpaa = Desuperheater_Outlet_Steam_Pressure / 10.0
     p_fw_mpaa = Spray_Feedwater_Inlet_Pressure / 10.0
+    unit_label = "barA"
 elif Pressure_Unit_Type == "Megapascals Gauge (MPaG)":
     p_in_mpaa = (
         High_Pressure_Inlet_Steam_Pressure + ATMOSPHERIC_PRESSURE_MEGAPASCALS
@@ -112,10 +389,12 @@ elif Pressure_Unit_Type == "Megapascals Gauge (MPaG)":
     p_fw_mpaa = (
         Spray_Feedwater_Inlet_Pressure + ATMOSPHERIC_PRESSURE_MEGAPASCALS
     )
+    unit_label = "MPaG"
 else:
     p_in_mpaa = High_Pressure_Inlet_Steam_Pressure
     p_out_mpaa = Desuperheater_Outlet_Steam_Pressure
     p_fw_mpaa = Spray_Feedwater_Inlet_Pressure
+    unit_label = "MPaA"
 
 # Pressure Display Conversions
 p_in_bara, p_in_barg = p_in_mpaa * 10.0, (
@@ -128,16 +407,12 @@ p_fw_bara, p_fw_barg = p_fw_mpaa * 10.0, (
     p_fw_mpaa * 10.0
 ) - ATMOSPHERIC_PRESSURE_BAR
 
-p_in_mpag = p_in_mpaa - ATMOSPHERIC_PRESSURE_MEGAPASCALS
-p_out_mpag = p_out_mpaa - ATMOSPHERIC_PRESSURE_MEGAPASCALS
-p_fw_mpag = p_fw_mpaa - ATMOSPHERIC_PRESSURE_MEGAPASCALS
-
 temperature_steam_inlet = High_Pressure_Inlet_Steam_Temperature_Degrees_Celsius
 temperature_feedwater_inlet = (
     Spray_Feedwater_Inlet_Temperature_Degrees_Celsius
 )
 
-# Inlet Specific Enthalpies via IAPWS-IF97
+# Enthalpies via IAPWS-IF97
 enthalpy_steam_inlet = IAPWS97(
     P=p_in_mpaa, T=temperature_steam_inlet + 273.15
 ).h
@@ -151,14 +426,10 @@ if is_calc_mode:
     )
     if Mass_Flow_Rate_Basis == "Inlet Steam Flow Rate":
         mass_flow_steam_inlet = Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
-        mass_flow_steam_outlet = (
-            mass_flow_steam_inlet + mass_flow_feedwater_inlet
-        )
+        mass_flow_steam_outlet = mass_flow_steam_inlet + mass_flow_feedwater_inlet
     else:
         mass_flow_steam_outlet = Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
-        mass_flow_steam_inlet = (
-            mass_flow_steam_outlet - mass_flow_feedwater_inlet
-        )
+        mass_flow_steam_inlet = mass_flow_steam_outlet - mass_flow_feedwater_inlet
 
     enthalpy_steam_outlet = (
         (mass_flow_steam_inlet * enthalpy_steam_inlet)
@@ -182,9 +453,7 @@ else:
             * (enthalpy_steam_outlet - enthalpy_steam_inlet)
             / (enthalpy_feedwater_inlet - enthalpy_steam_outlet)
         )
-        mass_flow_steam_outlet = (
-            mass_flow_steam_inlet + mass_flow_feedwater_inlet
-        )
+        mass_flow_steam_outlet = mass_flow_steam_inlet + mass_flow_feedwater_inlet
     else:
         mass_flow_steam_outlet = Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
         mass_flow_steam_inlet = (
@@ -192,9 +461,7 @@ else:
             * (enthalpy_steam_outlet - enthalpy_feedwater_inlet)
             / (enthalpy_steam_inlet - enthalpy_feedwater_inlet)
         )
-        mass_flow_feedwater_inlet = (
-            mass_flow_steam_outlet - mass_flow_steam_inlet
-        )
+        mass_flow_feedwater_inlet = mass_flow_steam_outlet - mass_flow_steam_inlet
 
 # Saturation Properties
 saturated_liquid = IAPWS97(P=p_out_mpaa, x=0)
@@ -210,13 +477,20 @@ else:
 
 pressure_drop_bar = (p_in_mpaa - p_out_mpaa) * 10.0
 
-# --- DISPLAY STREAMLIT UI ---
-
-# Top Summary KPI Cards
-c1, c2, c3 = st.columns(3)
-c1.metric("Inlet Steam Flow", f"{mass_flow_steam_inlet:.2f} t/h")
-c2.metric("Spray Water Flow", f"{mass_flow_feedwater_inlet:.2f} t/h")
-c3.metric("Outlet Steam Flow", f"{mass_flow_steam_outlet:.2f} t/h")
+# --- RENDER DYNAMIC PROCESS FLOW DIAGRAM (REPLACES TOP KPI CARDS) ---
+fig = build_figure(
+    p_in=High_Pressure_Inlet_Steam_Pressure,
+    t_in=temperature_steam_inlet,
+    m_in=mass_flow_steam_inlet,
+    p_fw=Spray_Feedwater_Inlet_Pressure,
+    t_fw=temperature_feedwater_inlet,
+    m_fw=mass_flow_feedwater_inlet,
+    p_out=Desuperheater_Outlet_Steam_Pressure,
+    t_out=temperature_steam_outlet,
+    m_out=mass_flow_steam_outlet,
+    p_unit=unit_label,
+)
+st.pyplot(fig, use_container_width=True)
 
 st.markdown("---")
 
@@ -254,33 +528,15 @@ with col_left:
         f" {p_fw_mpaa:.3f} MPaA"
     )
     st.write(f"**Steam Pressure Drop:** {pressure_drop_bar:.2f} bar")
-    st.write(
-        f"**Resulting Outlet Temp:** {temperature_steam_outlet:.2f} °C"
-    )
-    st.write(
-        f"**Outlet Saturation Temp:** {saturation_temp:.2f} °C"
-    )
-    st.write(
-        f"**Superheat Margin:** {superheat_margin:.2f} °C"
-    )
+    st.write(f"**Resulting Outlet Temp:** {temperature_steam_outlet:.2f} °C")
+    st.write(f"**Outlet Saturation Temp:** {saturation_temp:.2f} °C")
+    st.write(f"**Superheat Margin:** {superheat_margin:.2f} °C")
 
 with col_right:
     st.markdown("##### Enthalpy & Mass Balance")
-    st.write(
-        f"**Inlet Steam Enthalpy:** {enthalpy_steam_inlet:.2f} kJ/kg"
-    )
-    st.write(
-        f"**Spray Water Enthalpy:** {enthalpy_feedwater_inlet:.2f} kJ/kg"
-    )
-    st.write(
-        f"**Outlet Steam Enthalpy:** {enthalpy_steam_outlet:.2f} kJ/kg"
-    )
-    st.write(
-        f"**Inlet Steam Mass Flow:** {mass_flow_steam_inlet:.2f} t/h"
-    )
-    st.write(
-        f"**Spray Water Mass Flow:** {mass_flow_feedwater_inlet:.2f} t/h"
-    )
-    st.write(
-        f"**Outlet Steam Mass Flow:** {mass_flow_steam_outlet:.2f} t/h"
-    )
+    st.write(f"**Inlet Steam Enthalpy:** {enthalpy_steam_inlet:.2f} kJ/kg")
+    st.write(f"**Spray Water Enthalpy:** {enthalpy_feedwater_inlet:.2f} kJ/kg")
+    st.write(f"**Outlet Steam Enthalpy:** {enthalpy_steam_outlet:.2f} kJ/kg")
+    st.write(f"**Inlet Steam Mass Flow:** {mass_flow_steam_inlet:.2f} t/h")
+    st.write(f"**Spray Water Mass Flow:** {mass_flow_feedwater_inlet:.2f} t/h")
+    st.write(f"**Outlet Steam Mass Flow:** {mass_flow_steam_outlet:.2f} t/h")
