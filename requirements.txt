@@ -6,3 +6,5 @@ plotly
 matplotlib
 CoolProp
 graphviz
+schemdraw
+pillow
