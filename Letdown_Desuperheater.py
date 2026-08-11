@@ -167,20 +167,6 @@ def build_figure(
         )
         ax.add_patch(nozzle)
 
-        tip_y = cy + r_throat + 0.02
-        for ang, ln in [(-26, 0.20), (-9, 0.24), (9, 0.24), (26, 0.20)]:
-            rad = math.radians(ang)
-            dx, dy = ln * math.sin(rad), -ln * math.cos(rad)
-            ax.add_line(
-                mlines.Line2D(
-                    [cx, cx + dx],
-                    [tip_y, tip_y + dy],
-                    color=FW_COLOR,
-                    lw=1.3,
-                    zorder=6,
-                )
-            )
-
         ax.text(
             cx,
             cy - r_in - 0.42,
