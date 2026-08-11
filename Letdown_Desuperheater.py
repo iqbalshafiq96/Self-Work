@@ -29,7 +29,7 @@ def build_svg_figure(
     t_out,
     m_out,
     p_unit,
-    figsize=(14, 4.5),
+    figsize=(14, 3.4),
 ):
     # Set high-DPI font parameters for technical legibility
     plt.rcParams.update(
@@ -48,9 +48,9 @@ def build_svg_figure(
     # Technical text color
     text_color = "#334155"
 
-    # Expanded limits to prevent label clipping at top and bottom
+    # Tight bounding limits: Bottom boundary cuts off right below Desuperheater label (~3.6)
     ax.set_xlim(0.4, 15.6)
-    ax.set_ylim(2.8, 9.2)
+    ax.set_ylim(3.6, 9.0)
     ax.set_aspect("equal")
     ax.axis("off")
 
@@ -269,11 +269,15 @@ def build_svg_figure(
     )
     label(11.8, Y + 1.15, outlet_txt)
 
-    fig.tight_layout(pad=0.05)
-
-    # Render Matplotlib figure to an SVG memory buffer
+    # Render Matplotlib figure to an SVG memory buffer with zero padding
     svg_buffer = io.StringIO()
-    fig.savefig(svg_buffer, format="svg", bbox_inches="tight", transparent=True)
+    fig.savefig(
+        svg_buffer,
+        format="svg",
+        bbox_inches="tight",
+        pad_inches=0.0,
+        transparent=True,
+    )
     plt.close(fig)
 
     return svg_buffer.getvalue()
@@ -490,10 +494,8 @@ svg_data = build_svg_figure(
     p_unit=unit_label,
 )
 
-# Native rendering via st.image eliminates fixed-height iframe overlap
+# Render native SVG with zero padding directly above the status message
 st.image(svg_data, use_container_width=True)
-
-st.markdown("---")
 
 # Safety Alert Banners
 if superheat_margin < 0:
