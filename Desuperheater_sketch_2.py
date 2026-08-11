@@ -1,673 +1,204 @@
-import streamlit as st
-import plotly.graph_objects as go
-import numpy as np
-
-# ============================================================
-# PAGE CONFIG
-# ============================================================
-
-st.set_page_config(
-    page_title="Steam Letdown System",
-    page_icon="⚙️",
-    layout="wide"
-)
-
-# ============================================================
-# CUSTOM CSS
-# ============================================================
-
-st.markdown("""
-<style>
-
-.stApp {
-    background-color: #0b1117;
-    color: #e6edf3;
-}
-
-/* Main title */
-.main-title {
-    font-size: 30px;
-    font-weight: 700;
-    color: #f0f6fc;
-    margin-bottom: 0px;
-}
-
-.subtitle {
-    color: #8b949e;
-    font-size: 14px;
-    margin-bottom: 20px;
-}
-
-/* KPI cards */
-.kpi {
-    background: linear-gradient(145deg, #111a23, #0d141c);
-    border: 1px solid #263341;
-    border-radius: 10px;
-    padding: 15px;
-    text-align: center;
-}
-
-.kpi-title {
-    color: #8b949e;
-    font-size: 12px;
-    text-transform: uppercase;
-}
-
-.kpi-value {
-    color: #58a6ff;
-    font-size: 27px;
-    font-weight: 700;
-}
-
-.kpi-unit {
-    color: #8b949e;
-    font-size: 12px;
-}
-
-/* Process equipment */
-.equipment {
-    background-color: #121b24;
-    border: 1px solid #30404f;
-    border-radius: 10px;
-    padding: 20px;
-    text-align: center;
-}
-
-.equipment-title {
-    color: #f0f6fc;
-    font-weight: 700;
-}
-
-.status-running {
-    color: #3fb950;
-    font-weight: 700;
-}
-
-.status-warning {
-    color: #d29922;
-    font-weight: 700;
-}
-
-.status-alarm {
-    color: #f85149;
-    font-weight: 700;
-}
-
-/* Section */
-.section-title {
-    font-size: 18px;
-    font-weight: 700;
-    color: #f0f6fc;
-    margin-top: 20px;
-    margin-bottom: 10px;
-}
-
-/* Pipe */
-.pipe {
-    height: 8px;
-    background: #4ea1ff;
-    border-radius: 4px;
-    margin-top: 50px;
-}
-
-/* Flow arrow */
-.arrow {
-    font-size: 35px;
-    color: #58a6ff;
-    text-align: center;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-
-# ============================================================
-# HEADER
-# ============================================================
-
-st.markdown(
-    '<div class="main-title">STEAM LETDOWN & DESUPERHEATING SYSTEM</div>',
-    unsafe_allow_html=True
-)
-
-st.markdown(
-    '<div class="subtitle">Real-time thermodynamic monitoring & control simulation</div>',
-    unsafe_allow_html=True
-)
-
-
-# ============================================================
-# INPUT / CONTROL PANEL
-# ============================================================
-
-with st.sidebar:
-
-    st.header("⚙️ OPERATING INPUTS")
-
-    st.subheader("HP Steam")
-
-    steam_flow = st.number_input(
-        "Steam Flow (tph)",
-        min_value=1.0,
-        max_value=200.0,
-        value=107.0,
-        step=1.0
-    )
-
-    inlet_pressure = st.number_input(
-        "Inlet Pressure (barg)",
-        min_value=1.0,
-        max_value=100.0,
-        value=50.0,
-        step=0.5
-    )
-
-    inlet_temp = st.number_input(
-        "Inlet Temperature (°C)",
-        min_value=100.0,
-        max_value=600.0,
-        value=419.0,
-        step=1.0
-    )
-
-    st.divider()
-
-    st.subheader("Letdown Valve")
-
-    valve_opening = st.slider(
-        "Valve Opening (%)",
-        min_value=0,
-        max_value=100,
-        value=35
-    )
-
-    st.divider()
-
-    st.subheader("Spray Water")
-
-    spray_temp = st.number_input(
-        "Spray Water Temperature (°C)",
-        min_value=20.0,
-        max_value=200.0,
-        value=90.0
-    )
-
-    spray_flow = st.slider(
-        "Spray Water Flow (tph)",
-        min_value=0.0,
-        max_value=15.0,
-        value=3.0,
-        step=0.1
-    )
-
-
-# ============================================================
-# SIMPLE PROCESS MODEL
-# ============================================================
-
-# Approximate pressure drop model
-# Higher valve opening → higher downstream pressure
-
-outlet_pressure = 1.0 + (
-    inlet_pressure - 1.0
-) * (valve_opening / 100) ** 0.55
-
-# Approximate desuperheating effect
-# More water → lower outlet temperature
-
-base_temp = inlet_temp - 120 * (valve_opening / 100)
-
-temp_reduction = spray_flow * 18
-
-outlet_temp = base_temp - temp_reduction
-
-# Prevent unrealistic values
-outlet_temp = max(outlet_temp, 120)
-
-# Simple velocity / flow indication
-steam_flow_m3h = steam_flow * 20
-
-
-# ============================================================
-# STATUS
-# ============================================================
-
-if outlet_temp > 200:
-    status = "HIGH TEMPERATURE"
-    status_class = "status-warning"
-elif outlet_pressure < 2:
-    status = "LOW PRESSURE"
-    status_class = "status-warning"
-else:
-    status = "NORMAL"
-    status_class = "status-running"
-
-
-# ============================================================
-# KPI ROW
-# ============================================================
-
-c1, c2, c3, c4, c5 = st.columns(5)
-
-with c1:
-    st.markdown(
-        f"""
-        <div class="kpi">
-            <div class="kpi-title">HP Steam Flow</div>
-            <div class="kpi-value">{steam_flow:.1f}</div>
-            <div class="kpi-unit">TPH</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-with c2:
-    st.markdown(
-        f"""
-        <div class="kpi">
-            <div class="kpi-title">Valve Position</div>
-            <div class="kpi-value">{valve_opening}%</div>
-            <div class="kpi-unit">CONTROL VALVE</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-with c3:
-    st.markdown(
-        f"""
-        <div class="kpi">
-            <div class="kpi-title">LP Pressure</div>
-            <div class="kpi-value">{outlet_pressure:.2f}</div>
-            <div class="kpi-unit">BARG</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-with c4:
-    st.markdown(
-        f"""
-        <div class="kpi">
-            <div class="kpi-title">LP Temperature</div>
-            <div class="kpi-value">{outlet_temp:.1f}</div>
-            <div class="kpi-unit">°C</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-with c5:
-    st.markdown(
-        f"""
-        <div class="kpi">
-            <div class="kpi-title">System Status</div>
-            <div class="kpi-value" style="font-size:20px">
-                {status}
-            </div>
-            <div class="kpi-unit">LETdown SYSTEM</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-# ============================================================
-# PROCESS GRAPHIC
-# ============================================================
-
-st.markdown(
-    '<div class="section-title">PROCESS OVERVIEW</div>',
-    unsafe_allow_html=True
-)
-
-
-# Use columns to construct process graphic
-p1, p2, p3, p4, p5 = st.columns(
-    [1.4, 0.35, 1.5, 0.35, 1.8]
-)
-
-
-# ------------------------------------------------------------
-# HP STEAM
-# ------------------------------------------------------------
-
-with p1:
-
-    st.markdown("""
-    <div class="equipment">
-
-    <div class="equipment-title">
-    🔥 HP STEAM
-    </div>
-
-    <hr>
-
-    <b>50.0 barg</b><br>
-    <span style="color:#58a6ff;font-size:22px">
-    419 °C
-    </span>
-
-    <br><br>
-
-    Flow<br>
-    <b>107.0 TPH</b>
-
-    <br><br>
-
-    <span class="status-running">
-    ● AVAILABLE
-    </span>
-
-    </div>
-    """, unsafe_allow_html=True)
-
-
-# ------------------------------------------------------------
-# ARROW
-# ------------------------------------------------------------
-
-with p2:
-
-    st.markdown(
-        '<div class="arrow">➜</div>',
-        unsafe_allow_html=True
-    )
-
-
-# ------------------------------------------------------------
-# CONTROL VALVE
-# ------------------------------------------------------------
-
-with p3:
-
-    st.markdown(f"""
-    <div class="equipment">
-
-    <div class="equipment-title">
-    CONTROL VALVE
-    </div>
-
-    <br>
-
-    <div style="
-        width:120px;
-        height:65px;
-        margin:auto;
-        border-top:5px solid #58a6ff;
-        border-bottom:5px solid #58a6ff;
-        position:relative;
-    ">
-
-        <div style="
-            position:absolute;
-            left:45%;
-            top:5px;
-            width:0;
-            height:0;
-            border-left:12px solid transparent;
-            border-right:12px solid transparent;
-            border-top:25px solid #d0d7de;
-        ">
-        </div>
-
-        <div style="
-            position:absolute;
-            left:45%;
-            bottom:5px;
-            width:0;
-            height:0;
-            border-left:12px solid transparent;
-            border-right:12px solid transparent;
-            border-bottom:25px solid #d0d7de;
-        ">
-        </div>
-
-    </div>
-
-    <br>
-
-    <b>{valve_opening}% OPEN</b>
-
-    <br><br>
-
-    <span style="color:#58a6ff">
-    ΔP = {inlet_pressure-outlet_pressure:.1f} bar
-    </span>
-
-    </div>
-    """, unsafe_allow_html=True)
-
-
-# ------------------------------------------------------------
-# ARROW
-# ------------------------------------------------------------
-
-with p4:
-
-    st.markdown(
-        '<div class="arrow">➜</div>',
-        unsafe_allow_html=True
-    )
-
-
-# ------------------------------------------------------------
-# DESUPERHEATER
-# ------------------------------------------------------------
-
-with p5:
-
-    st.markdown(f"""
-    <div class="equipment">
-
-    <div class="equipment-title">
-    💧 SPRAY DESUPERHEATER
-    </div>
-
-    <br>
-
-    <div style="
-        border:3px solid #58a6ff;
-        border-radius:50%;
-        width:100px;
-        height:100px;
-        margin:auto;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        font-size:30px;
-    ">
-    💧
-    </div>
-
-    <br>
-
-    Spray Water<br>
-
-    <b>{spray_flow:.1f} TPH</b>
-
-    <br><br>
-
-    Outlet<br>
-
-    <b>{outlet_pressure:.2f} barg</b><br>
-
-    <span style="color:#58a6ff;font-size:22px">
-    {outlet_temp:.1f} °C
-    </span>
-
-    </div>
-    """, unsafe_allow_html=True)
-
-
-# ============================================================
-# SPRAY WATER LINE
-# ============================================================
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-w1, w2, w3 = st.columns([3, 1, 3])
-
-with w1:
-    st.markdown(
-        """
-        <div style="
-        text-align:right;
-        color:#58a6ff;
-        font-weight:bold;
-        ">
-        💧 SPRAY WATER<br>
-        70 barg / 90°C
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-with w2:
-    st.markdown(
-        """
-        <div style="
-        text-align:center;
-        color:#58a6ff;
-        font-size:28px;
-        ">
-        ↓
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-with w3:
-    st.markdown(
-        f"""
-        <div style="
-        text-align:left;
-        color:#58a6ff;
-        font-weight:bold;
-        ">
-        INJECTION<br>
-        {spray_flow:.1f} TPH
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-# ============================================================
-# CONTROL LOOP
-# ============================================================
-
-st.markdown(
-    '<div class="section-title">CONTROL LOOP</div>',
-    unsafe_allow_html=True
-)
-
-ctrl1, ctrl2, ctrl3 = st.columns(3)
-
-with ctrl1:
-
-    st.metric(
-        "PIC — Outlet Pressure",
-        f"{outlet_pressure:.2f} barg"
-    )
-
-with ctrl2:
-
-    st.metric(
-        "TIC — Outlet Temperature",
-        f"{outlet_temp:.1f} °C"
-    )
-
-with ctrl3:
-
-    st.metric(
-        "Spray Water Flow",
-        f"{spray_flow:.1f} TPH"
-    )
-
-
-# ============================================================
-# TREND
-# ============================================================
-
-st.markdown(
-    '<div class="section-title">PROCESS TREND</div>',
-    unsafe_allow_html=True
-)
-
-time = np.arange(0, 60)
-
-pressure_trend = (
-    outlet_pressure
-    + 0.15 * np.sin(time / 5)
-)
-
-temperature_trend = (
-    outlet_temp
-    + 3 * np.sin(time / 6)
-)
-
-fig = go.Figure()
-
-fig.add_trace(
-    go.Scatter(
-        x=time,
-        y=pressure_trend,
-        name="Pressure",
-        mode="lines"
-    )
-)
-
-fig.add_trace(
-    go.Scatter(
-        x=time,
-        y=temperature_trend,
-        name="Temperature",
-        mode="lines",
-        yaxis="y2"
-    )
-)
-
-fig.update_layout(
-
-    height=350,
-
-    template="plotly_dark",
-
-    paper_bgcolor="#0b1117",
-
-    plot_bgcolor="#0b1117",
-
-    xaxis=dict(
-        title="Time (min)",
-        gridcolor="#263341"
-    ),
-
-    yaxis=dict(
-        title="Pressure (barg)",
-        gridcolor="#263341"
-    ),
-
-    yaxis2=dict(
-        title="Temperature (°C)",
-        overlaying="y",
-        side="right"
-    ),
-
-    legend=dict(
-        orientation="h",
-        y=1.1
-    ),
-
-    margin=dict(
-        l=20,
-        r=20,
-        t=30,
-        b=20
-    )
-)
-
-st.plotly_chart(
-    fig,
-    use_container_width=True
-)
+"""
+diagram.py
+==========
+Builds the Letdown Steam System process graphic as a matplotlib Figure.
+
+Kept separate from the Streamlit app so it can also be run standalone:
+    python diagram.py        -> saves letdown_steam_system.png
+
+Design intent: a clean, formal process-overview graphic (not a busy
+control-room mimic) - just the process line, the pressure control valve,
+and a venturi-type spray desuperheater with the feedwater injected at
+the throat.
+"""
+
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import matplotlib.lines as mlines
+
+
+# ----------------------------------------------------------------------
+# COLOUR PALETTE - softer / more formal than a raw DCS mimic
+# ----------------------------------------------------------------------
+BG_COLOR      = "#0f2438"   # deep slate blue
+STEAM_COLOR   = "#eef3f7"   # near-white steam pipe
+FW_COLOR      = "#4fb6e6"   # feedwater (soft sky blue)
+EQUIP_COLOR   = "#f0b429"   # warm amber for valve / venturi outline
+EQUIP_FILL    = "#16324a"   # subtle fill inside equipment shapes
+TEXT_COLOR    = "#f2f6f9"
+SUBTEXT_COLOR = "#9fb6c9"
+TAG_EDGE      = "#3d5a73"
+
+LW_PIPE  = 4.2
+LW_EQUIP = 2.0
+
+
+def build_figure(figsize=(15, 8.5)):
+    fig, ax = plt.subplots(figsize=figsize)
+    fig.patch.set_facecolor(BG_COLOR)
+    ax.set_facecolor(BG_COLOR)
+    ax.set_xlim(0, 16)
+    ax.set_ylim(0, 9.2)
+    ax.set_aspect("equal")
+    ax.axis("off")
+
+    # ------------------------------------------------------------------
+    # Helper functions (local so the module has no other globals)
+    # ------------------------------------------------------------------
+    def pipe(x1, y1, x2, y2, color=STEAM_COLOR, lw=LW_PIPE, zorder=2):
+        ax.add_line(mlines.Line2D([x1, x2], [y1, y2], color=color, lw=lw,
+                                   solid_capstyle="round", zorder=zorder))
+
+    def flow_arrow(x, y, dx, dy, color=STEAM_COLOR):
+        ax.annotate("", xy=(x + dx, y + dy), xytext=(x, y),
+                    arrowprops=dict(arrowstyle="-|>", color=color, lw=1.8,
+                                     mutation_scale=15), zorder=3)
+
+    def control_valve(x, y, tag_lines, size=0.34):
+        s = size
+        top, bot = (x, y + s), (x, y - s)
+        left, right = (x - s, y), (x + s, y)
+        for tri_pts in ([left, top, bot], [right, top, bot]):
+            ax.add_patch(patches.Polygon(tri_pts, closed=True, facecolor=EQUIP_FILL,
+                                          edgecolor=EQUIP_COLOR, lw=LW_EQUIP, zorder=4))
+        ax.add_line(mlines.Line2D([x, x], [y + s, y + s + 0.38], color=EQUIP_COLOR,
+                                   lw=LW_EQUIP, zorder=4))
+        ax.add_patch(patches.Circle((x, y + s + 0.6), 0.22, facecolor=EQUIP_FILL,
+                                     edgecolor=EQUIP_COLOR, lw=LW_EQUIP, zorder=4))
+        ax.text(x, y - s - 0.28, tag_lines, ha="center", va="top", color=TEXT_COLOR,
+                fontsize=10, fontweight="bold", zorder=5, linespacing=1.35)
+
+    def venturi_desuperheater(cx, cy, w=4.2, r_in=0.62, r_throat=0.22, throat_w=0.7):
+        """Converging - throat - diverging venturi section, drawn as a
+        filled outline, with the feedwater spray nozzle entering at the
+        throat."""
+        x0 = cx - w / 2          # inlet full-bore
+        x1 = cx - throat_w / 2   # start of throat
+        x2 = cx + throat_w / 2   # end of throat
+        x3 = cx + w / 2          # outlet full-bore
+
+        top = [(x0, cy + r_in), (x1, cy + r_throat), (x2, cy + r_throat), (x3, cy + r_in)]
+        bot = [(x3, cy - r_in), (x2, cy - r_throat), (x1, cy - r_throat), (x0, cy - r_in)]
+        outline = top + bot
+        ax.add_patch(patches.Polygon(outline, closed=True, facecolor=EQUIP_FILL,
+                                      edgecolor=EQUIP_COLOR, lw=LW_EQUIP, zorder=4,
+                                      joinstyle="round"))
+
+        # centreline steam flow arrow through the throat
+        flow_arrow(cx - 0.28, cy, 0.56, 0, color=STEAM_COLOR)
+
+        # spray nozzle body sitting on top of the throat
+        nozzle_w = 0.26
+        nozzle = patches.Polygon(
+            [(cx - nozzle_w, cy + r_throat + 0.55),
+             (cx + nozzle_w, cy + r_throat + 0.55),
+             (cx + 0.06, cy + r_throat + 0.05),
+             (cx - 0.06, cy + r_throat + 0.05)],
+            closed=True, facecolor=EQUIP_FILL, edgecolor=FW_COLOR, lw=LW_EQUIP, zorder=5)
+        ax.add_patch(nozzle)
+
+        # atomised spray fan, fanning downward from the nozzle tip into the throat
+        import math
+        tip_y = cy + r_throat + 0.02
+        for ang, ln in [(-26, 0.20), (-9, 0.24), (9, 0.24), (26, 0.20)]:
+            rad = math.radians(ang)
+            dx, dy = ln * math.sin(rad), -ln * math.cos(rad)
+            ax.add_line(mlines.Line2D([cx, cx + dx], [tip_y, tip_y + dy],
+                                       color=FW_COLOR, lw=1.3, zorder=6))
+
+        ax.text(cx, cy - r_in - 0.42, "SPRAY DESUPERHEATER\n(Venturi Type)", ha="center",
+                va="top", color=TEXT_COLOR, fontsize=10.5, fontweight="bold",
+                zorder=5, linespacing=1.4)
+
+        return x0, x3, cy + r_throat + 0.55  # inlet x, outlet x, nozzle top y
+
+    def label(x, y, txt, color=TEXT_COLOR, fs=11, weight="bold", ha="left", style="normal"):
+        ax.text(x, y, txt, color=color, fontsize=fs, fontweight=weight, ha=ha,
+                va="center", zorder=6, style=style)
+
+    def tag_box(x, y, txt, color=SUBTEXT_COLOR, edge=TAG_EDGE):
+        ax.text(x, y, txt, color=color, fontsize=8.5, ha="center", va="center",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor=BG_COLOR, edgecolor=edge, lw=1),
+                zorder=6, linespacing=1.3)
+
+    # ------------------------------------------------------------------
+    # Title block
+    # ------------------------------------------------------------------
+    ax.text(8, 8.75, "Letdown Steam System", ha="center", va="center",
+            color=TEXT_COLOR, fontsize=19, fontweight="bold")
+    ax.text(8, 8.32, "High Pressure to Low Pressure Steam Letdown with Spray Desuperheating",
+            ha="center", va="center", color=SUBTEXT_COLOR, fontsize=11, style="italic")
+
+    Y = 4.6
+
+    # ------------------------------------------------------------------
+    # HP steam line (inlet)
+    # ------------------------------------------------------------------
+    pipe(0.6, Y, 4.1, Y)
+    flow_arrow(1.6, Y, 0.8, 0)
+    label(0.6, Y + 0.55, "High Pressure Steam Line", fs=11.5)
+    tag_box(1.9, Y - 0.55, "HP Steam\n~ 40 barg")
+
+    # ------------------------------------------------------------------
+    # Pressure control valve
+    # ------------------------------------------------------------------
+    pcv_x = 5.0
+    control_valve(pcv_x, Y, "Pressure Control Valve\n(PCV)")
+    pipe(4.1, Y, pcv_x - 0.34, Y)
+    pipe(pcv_x + 0.34, Y, 6.1, Y)
+    flow_arrow(5.65, Y, 0.35, 0)
+
+    # ------------------------------------------------------------------
+    # Venturi spray desuperheater
+    # ------------------------------------------------------------------
+    vessel_x = 8.7
+    v_in, v_out, nozzle_top = venturi_desuperheater(vessel_x, Y)
+    pipe(6.1, Y, v_in, Y)
+    pipe(v_out, Y, 10.3, Y)
+    flow_arrow(10.0, Y, 0.28, 0)
+
+    # Feedwater spray supply line down to the nozzle
+    fw_top = 7.35
+    pipe(vessel_x, fw_top, vessel_x, nozzle_top, color=FW_COLOR)
+    flow_arrow(vessel_x, 7.0, 0, -0.42, color=FW_COLOR)
+    pipe(6.6, fw_top, vessel_x, fw_top, color=FW_COLOR)
+    flow_arrow(7.2, fw_top, 0.4, 0, color=FW_COLOR)
+    label(6.6, fw_top + 0.42, "Feedwater Spray Line", color=FW_COLOR, fs=11.5)
+    tag_box(7.35, fw_top - 0.42, "BFW Supply", edge="#2e6a86")
+
+    # ------------------------------------------------------------------
+    # LP steam line (outlet)
+    # ------------------------------------------------------------------
+    pipe(10.3, Y, 15.4, Y)
+    flow_arrow(14.2, Y, 0.8, 0)
+    label(12.05, Y + 0.55, "Low Pressure Steam Line", fs=11.5)
+    tag_box(13.7, Y - 0.55, "LP Steam\n~ 12 barg")
+
+    # ------------------------------------------------------------------
+    # Legend
+    # ------------------------------------------------------------------
+    leg_x, leg_y = 0.6, 1.55
+    legend_items = [
+        (STEAM_COLOR, "Steam Line"),
+        (FW_COLOR, "Feedwater / Spray Line"),
+        (EQUIP_COLOR, "Equipment Outline"),
+    ]
+    for i, (c, txt) in enumerate(legend_items):
+        yy = leg_y - i * 0.42
+        ax.add_line(mlines.Line2D([leg_x, leg_x + 0.5], [yy, yy], color=c, lw=3.2))
+        ax.text(leg_x + 0.68, yy, txt, color=TEXT_COLOR, fontsize=9.5, va="center")
+
+    # Outer frame, rounded, soft
+    frame = patches.FancyBboxPatch((0.18, 0.18), 15.64, 8.84,
+                                    boxstyle="round,pad=0,rounding_size=0.18",
+                                    fill=False, edgecolor="#2c4a63", lw=1.4)
+    ax.add_patch(frame)
+
+    fig.tight_layout()
+    return fig
+
+
+if __name__ == "__main__":
+    fig = build_figure()
+    fig.savefig("letdown_steam_system.png", dpi=200, facecolor=BG_COLOR)
+    print("Saved letdown_steam_system.png")
