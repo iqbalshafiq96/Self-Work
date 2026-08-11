@@ -6,13 +6,12 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 # ----------------------------------------------------------------------
-# COLOUR PALETTE
+# COLOUR PALETTE (Using Matplotlib theme defaults for text/lines)
 # ----------------------------------------------------------------------
-STEAM_COLOR = "#eef3f7"  # near-white steam pipe
-FW_COLOR = "#4fb6e6"  # feedwater (soft sky blue)
-EQUIP_COLOR = "#f0b429"  # warm amber for valve / venturi outline
-EQUIP_FILL = "#16324a"  # subtle fill inside equipment shapes
-TEXT_COLOR = "#f2f6f9"
+STEAM_COLOR = "#708090"  # neutral pipe color (slate grey)
+FW_COLOR = "#1e88e5"  # feedwater (soft sky blue)
+EQUIP_COLOR = "#d97706"  # warm amber for valve / venturi outline
+EQUIP_FILL = "none"  # transparent fill to match any theme background
 
 LW_PIPE = 4.2
 LW_EQUIP = 2.0
@@ -36,6 +35,9 @@ def build_figure(
     # Set background to transparent so it blends with Streamlit theme
     fig.patch.set_alpha(0.0)
     ax.patch.set_alpha(0.0)
+
+    # Inherit standard theme text color dynamically
+    text_color = plt.rcParams.get("text.color", "currentColor")
 
     ax.set_xlim(0, 16)
     ax.set_ylim(1.5, 8.8)
@@ -108,7 +110,7 @@ def build_figure(
             tag_lines,
             ha="center",
             va="top",
-            color=TEXT_COLOR,
+            color=text_color,
             fontsize=10,
             zorder=5,
             linespacing=1.35,
@@ -185,14 +187,14 @@ def build_figure(
             "SPRAY DESUPERHEATER",
             ha="center",
             va="top",
-            color=TEXT_COLOR,
+            color=text_color,
             fontsize=10,
             zorder=5,
         )
 
         return x0, x3, cy + r_throat + 0.55
 
-    def label(x, y, txt, color=TEXT_COLOR, fs=10, ha="left"):
+    def label(x, y, txt, color=text_color, fs=10, ha="left"):
         ax.text(
             x,
             y,
@@ -266,8 +268,8 @@ def build_figure(
         6.8,
         boxstyle="round,pad=0,rounding_size=0.18",
         fill=False,
-        edgecolor="#2c4a63",
-        lw=1.4,
+        edgecolor=STEAM_COLOR,
+        lw=1.0,
     )
     ax.add_patch(frame)
 
