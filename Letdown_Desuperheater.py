@@ -1,17 +1,3 @@
-import matplotlib.lines as mlines
-import matplotlib.patches as patches
-import matplotlib.pyplot as plt
-import streamlit as st
-
-# Custom Styling Constants
-STEAM_COLOR = "#0083B0"
-FW_COLOR = "#2E7D32"
-EQUIP_COLOR = "#333333"
-EQUIP_FILL = "#F0F2F6"
-LW_PIPE = 3.5
-LW_EQUIP = 1.8
-
-
 def build_figure(
     p_in,
     t_in,
@@ -277,26 +263,3 @@ def build_figure(
     # Zero-margin layout to strip surrounding whitespace
     fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
     return fig
-
-
-# Streamlit Execution Example
-if __name__ == "__main__":
-    st.set_page_config(layout="wide")
-    st.title("PRDS Diagram")
-
-    # Sample input values
-    fig = build_figure(
-        p_in=40.0,
-        t_in=400.0,
-        m_in=100.0,
-        p_fw=50.0,
-        t_fw=130.0,
-        m_fw=8.5,
-        p_out=10.0,
-        t_out=220.0,
-        m_out=108.5,
-        p_unit="bar(g)",
-    )
-
-    st.pyplot(fig, use_container_width=True)
-    st.write("Components below render closer to the diagram.")
