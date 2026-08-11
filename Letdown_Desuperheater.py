@@ -336,7 +336,7 @@ Desuperheater_Outlet_Steam_Pressure = st.sidebar.number_input(
 
 Desuperheater_Outlet_Steam_Target_Temperature_Degrees_Celsius = (
     st.sidebar.number_input(
-        "Target Outlet Temp (°C)", value=160.0, disabled=is_calc_mode
+        "Target Outlet Temp (°C)", value=158.0, disabled=is_calc_mode
     )
 )
 
