@@ -28,7 +28,7 @@ def build_figure(
     t_out,
     m_out,
     p_unit,
-    figsize=(15, 6),
+    figsize=(15, 4.2),
 ):
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -39,8 +39,9 @@ def build_figure(
     # Inherit standard theme text color dynamically
     text_color = plt.rcParams.get("text.color", "currentColor")
 
-    ax.set_xlim(0, 16)
-    ax.set_ylim(1.5, 8.8)
+    # Tightened bounding box limits to trim excess vertical and horizontal margin
+    ax.set_xlim(0.4, 15.6)
+    ax.set_ylim(3.2, 8.7)
     ax.set_aspect("equal")
     ax.axis("off")
 
@@ -151,13 +152,12 @@ def build_figure(
 
         # --------------------------------------------------------------
         # Atomized Spray Cone lines (Rotated 90° to point Rightward)
-        # Origin maintained at (cx, cy)
         # --------------------------------------------------------------
         spray_origin_x = cx
         spray_origin_y = cy
         spray_len = 0.35  # Length of spray lines along steam flow
 
-        # Center spray ray (horizontal to the right)
+        # Center spray ray
         ax.add_line(
             mlines.Line2D(
                 [spray_origin_x, spray_origin_x + spray_len],
@@ -168,7 +168,7 @@ def build_figure(
                 zorder=5,
             )
         )
-        # Upper spray ray (angled upwards to the right)
+        # Upper spray ray
         ax.add_line(
             mlines.Line2D(
                 [spray_origin_x, spray_origin_x + spray_len],
@@ -179,7 +179,7 @@ def build_figure(
                 zorder=5,
             )
         )
-        # Lower spray ray (angled downwards to the right)
+        # Lower spray ray
         ax.add_line(
             mlines.Line2D(
                 [spray_origin_x, spray_origin_x + spray_len],
@@ -191,7 +191,7 @@ def build_figure(
             )
         )
 
-        # Label placed at y = cy - 0.62 to align with valve label
+        # Label aligned with valve tag
         ax.text(
             cx,
             cy - 0.62,
@@ -248,7 +248,7 @@ def build_figure(
     pipe(6.1, Y, v_in, Y)
 
     # ------------------------------------------------------------------
-    # Feedwater Spray Line (Connected to center origin)
+    # Feedwater Spray Line
     # ------------------------------------------------------------------
     fw_top = 7.35
     pipe(vessel_x, fw_top, vessel_x, Y, color=FW_COLOR, zorder=3)
@@ -272,7 +272,7 @@ def build_figure(
     )
     label(11.8, Y + 0.95, outlet_txt, fs=9.5)
 
-    fig.tight_layout()
+    fig.tight_layout(pad=0.1)
     return fig
 
 
@@ -486,7 +486,7 @@ fig = build_figure(
     m_out=mass_flow_steam_outlet,
     p_unit=unit_label,
 )
-st.pyplot(fig, use_container_width=True)
+st.pyplot(fig, use_container_width=True, bbox_inches="tight", pad_inches=0.05)
 
 st.markdown("---")
 
