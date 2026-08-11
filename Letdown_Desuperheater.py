@@ -149,13 +149,16 @@ def build_figure(
             )
         )
 
-        nozzle_w = 0.26
+        # Horizontal Nozzle facing right from throat entrance (x1)
+        nozzle_h = 0.26
+        nozzle_x_left = x1 - 0.45
+        nozzle_x_right = x1 + 0.05
         nozzle = patches.Polygon(
             [
-                (cx - nozzle_w, cy + r_throat + 0.55),
-                (cx + nozzle_w, cy + r_throat + 0.55),
-                (cx + 0.06, cy + r_throat + 0.05),
-                (cx - 0.06, cy + r_throat + 0.05),
+                (nozzle_x_left, cy + nozzle_h),
+                (nozzle_x_left, cy - nozzle_h),
+                (nozzle_x_right, cy - 0.06),
+                (nozzle_x_right, cy + 0.06),
             ],
             closed=True,
             facecolor=EQUIP_FILL,
@@ -165,13 +168,13 @@ def build_figure(
         )
         ax.add_patch(nozzle)
 
-        # Restored Atomized Spray Cone lines inside throat
-        spray_y_top = cy + r_throat + 0.05
-        spray_y_bot = cy - r_throat + 0.05
+        # Atomized Spray Cone spraying horizontally to the right
+        spray_x_start = nozzle_x_right
+        spray_x_end = x2 + 0.6
         ax.add_line(
             mlines.Line2D(
-                [cx, cx - 0.35],
-                [spray_y_top, spray_y_bot],
+                [spray_x_start, spray_x_end],
+                [cy, cy + 0.18],
                 color=FW_COLOR,
                 linestyle="--",
                 lw=1.2,
@@ -180,8 +183,8 @@ def build_figure(
         )
         ax.add_line(
             mlines.Line2D(
-                [cx, cx],
-                [spray_y_top, spray_y_bot],
+                [spray_x_start, spray_x_end],
+                [cy, cy],
                 color=FW_COLOR,
                 linestyle="--",
                 lw=1.2,
@@ -190,8 +193,8 @@ def build_figure(
         )
         ax.add_line(
             mlines.Line2D(
-                [cx, cx + 0.35],
-                [spray_y_top, spray_y_bot],
+                [spray_x_start, spray_x_end],
+                [cy, cy - 0.18],
                 color=FW_COLOR,
                 linestyle="--",
                 lw=1.2,
@@ -199,7 +202,7 @@ def build_figure(
             )
         )
 
-        # Label placed at y = cy - 0.34 - 0.28 = cy - 0.62 to align perfectly with valve label
+        # Label placed aligned with control valve label
         ax.text(
             cx,
             cy - 0.62,
@@ -211,7 +214,7 @@ def build_figure(
             zorder=5,
         )
 
-        return x0, x3, cy + r_throat + 0.55
+        return x0, x3, nozzle_x_left
 
     def label(x, y, txt, color=text_color, fs=10, ha="left"):
         ax.text(
@@ -252,15 +255,17 @@ def build_figure(
     # Venturi Spray Desuperheater
     # ------------------------------------------------------------------
     vessel_x = 8.7
-    v_in, v_out, nozzle_top = venturi_desuperheater(vessel_x, Y)
+    v_in, v_out, nozzle_inlet_x = venturi_desuperheater(vessel_x, Y)
     pipe(6.1, Y, v_in, Y)
 
-    # Feedwater Spray Line
+    # Feedwater Spray Line - routed to enter nozzle horizontally from left center
     fw_top = 7.35
-    pipe(vessel_x, fw_top, vessel_x, nozzle_top, color=FW_COLOR)
-    flow_arrow(vessel_x, 7.0, 0, -0.42, color=FW_COLOR)
-    pipe(6.6, fw_top, vessel_x, fw_top, color=FW_COLOR)
+    fw_entry_x = nozzle_inlet_x
+    pipe(6.6, fw_top, fw_entry_x, fw_top, color=FW_COLOR)
     flow_arrow(7.2, fw_top, 0.4, 0, color=FW_COLOR)
+    pipe(fw_entry_x, fw_top, fw_entry_x, Y, color=FW_COLOR)
+    flow_arrow(fw_entry_x, 6.2, 0, -0.42, color=FW_COLOR)
+
     fw_txt = (
         f"Feedwater Spray Line\nFlow: {m_fw:.2f} t/h\nPress: {p_fw:.2f}"
         f" {p_unit}\nTemp: {t_fw:.1f} °C"
