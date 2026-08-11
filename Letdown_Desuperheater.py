@@ -494,8 +494,10 @@ svg_data = build_svg_figure(
     p_unit=unit_label,
 )
 
-# Render native SVG with zero padding directly above the status message
-st.image(svg_data, use_container_width=True)
+# Center and scale down the graphic to 80% using Streamlit layout columns
+col_left, col_center, col_right = st.columns([0.1, 0.8, 0.1])
+with col_center:
+    st.image(svg_data, use_container_width=True)
 
 # Safety Alert Banners
 if superheat_margin < 0:
