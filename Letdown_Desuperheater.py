@@ -149,8 +149,6 @@ def build_figure(
             )
         )
 
-        flow_arrow(cx - 0.28, cy, 0.56, 0, color=STEAM_COLOR)
-
         nozzle_w = 0.26
         nozzle = patches.Polygon(
             [
@@ -170,7 +168,7 @@ def build_figure(
         ax.text(
             cx,
             cy - r_in - 0.42,
-            "SPRAY DESUPERHEATER",
+            "Desuperheater",
             ha="center",
             va="top",
             color=text_color,
@@ -210,7 +208,7 @@ def build_figure(
     # Pressure Control Valve
     # ------------------------------------------------------------------
     pcv_x = 5.0
-    control_valve(pcv_x, Y, "Pressure Control Valve\n(PCV)")
+    control_valve(pcv_x, Y, "Isenthalpic Expansion")
     pipe(4.1, Y, pcv_x - 0.34, Y)
     pipe(pcv_x + 0.34, Y, 6.1, Y)
     flow_arrow(5.65, Y, 0.35, 0)
