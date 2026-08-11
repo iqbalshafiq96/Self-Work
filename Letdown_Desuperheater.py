@@ -5,21 +5,16 @@ import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import streamlit as st
 
-# Configure matplotlib global fonts (as per Code B)
-plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'Helvetica', 'sans-serif']
-plt.rcParams['font.family'] = 'sans-serif'
-
 # ----------------------------------------------------------------------
 # COLOUR PALETTE
 # ----------------------------------------------------------------------
-BG_COLOR      = "#0f2438"   # deep slate blue
-STEAM_COLOR   = "#eef3f7"   # near-white steam pipe
-FW_COLOR      = "#4fb6e6"   # feedwater (soft sky blue)
-EQUIP_COLOR   = "#f0b429"   # warm amber for valve / venturi outline
-EQUIP_FILL    = "#16324a"   # subtle fill inside equipment shapes
-TEXT_COLOR    = "#f2f6f9"
+STEAM_COLOR = "#eef3f7"  # near-white steam pipe
+FW_COLOR = "#4fb6e6"  # feedwater (soft sky blue)
+EQUIP_COLOR = "#f0b429"  # warm amber for valve / venturi outline
+EQUIP_FILL = "#16324a"  # subtle fill inside equipment shapes
+TEXT_COLOR = "#f2f6f9"
 
-LW_PIPE  = 4.2
+LW_PIPE = 4.2
 LW_EQUIP = 2.0
 
 
@@ -37,8 +32,11 @@ def build_figure(
     figsize=(15, 6),
 ):
     fig, ax = plt.subplots(figsize=figsize)
-    fig.patch.set_facecolor(BG_COLOR)
-    ax.set_facecolor(BG_COLOR)
+
+    # Set background to transparent so it blends with Streamlit theme
+    fig.patch.set_alpha(0.0)
+    ax.patch.set_alpha(0.0)
+
     ax.set_xlim(0, 16)
     ax.set_ylim(1.5, 8.8)
     ax.set_aspect("equal")
@@ -112,7 +110,6 @@ def build_figure(
             va="top",
             color=TEXT_COLOR,
             fontsize=10,
-            fontweight="600",
             zorder=5,
             linespacing=1.35,
         )
@@ -190,20 +187,18 @@ def build_figure(
             va="top",
             color=TEXT_COLOR,
             fontsize=10,
-            fontweight="600",
             zorder=5,
         )
 
         return x0, x3, cy + r_throat + 0.55
 
-    def label(x, y, txt, color=TEXT_COLOR, fs=10, weight="600", ha="left"):
+    def label(x, y, txt, color=TEXT_COLOR, fs=10, ha="left"):
         ax.text(
             x,
             y,
             txt,
             color=color,
             fontsize=fs,
-            fontweight=weight,
             ha=ha,
             va="center",
             zorder=6,
@@ -477,7 +472,7 @@ else:
 
 pressure_drop_bar = (p_in_mpaa - p_out_mpaa) * 10.0
 
-# --- RENDER DYNAMIC PROCESS FLOW DIAGRAM (REPLACES TOP KPI CARDS) ---
+# --- RENDER DYNAMIC PROCESS FLOW DIAGRAM ---
 fig = build_figure(
     p_in=High_Pressure_Inlet_Steam_Pressure,
     t_in=temperature_steam_inlet,
