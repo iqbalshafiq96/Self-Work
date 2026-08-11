@@ -165,8 +165,8 @@ def build_figure(
         )
         ax.add_patch(nozzle)
 
-        # Restored Atomized Spray Cone lines inside throat
-        spray_y_top = cy + r_throat + 0.05
+        # Atomized Spray Cone lines - starting at cy (center line of desuperheater)
+        spray_y_top = cy
         spray_y_bot = cy - r_throat + 0.05
         ax.add_line(
             mlines.Line2D(
@@ -199,7 +199,7 @@ def build_figure(
             )
         )
 
-        # Label placed at y = cy - 0.34 - 0.28 = cy - 0.62 to align perfectly with valve label
+        # Label placed at y = cy - 0.62 to align with valve label
         ax.text(
             cx,
             cy - 0.62,
