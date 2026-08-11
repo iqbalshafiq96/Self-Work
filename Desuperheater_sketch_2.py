@@ -2,14 +2,6 @@
 app.py
 ======
 Streamlit front-end and diagram generator for the Letdown Steam System process graphic.
-
-Run locally:
-    pip install -r requirements.txt
-    streamlit run app.py
-
-Deploy on Streamlit Community Cloud:
-    1. Push this file (app.py) and requirements.txt to your GitHub repo.
-    2. On share.streamlit.io, point a new app at app.py in that repo.
 """
 
 import math
@@ -18,8 +10,12 @@ import matplotlib.patches as patches
 import matplotlib.lines as mlines
 import streamlit as st
 
+# Configure matplotlib global fonts for a clean, modern aesthetic
+plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'Helvetica', 'sans-serif']
+plt.rcParams['font.family'] = 'sans-serif'
+
 # ----------------------------------------------------------------------
-# COLOUR PALETTE - softer / more formal than a raw DCS mimic
+# COLOUR PALETTE
 # ----------------------------------------------------------------------
 BG_COLOR      = "#0f2438"   # deep slate blue
 STEAM_COLOR   = "#eef3f7"   # near-white steam pipe
@@ -27,19 +23,17 @@ FW_COLOR      = "#4fb6e6"   # feedwater (soft sky blue)
 EQUIP_COLOR   = "#f0b429"   # warm amber for valve / venturi outline
 EQUIP_FILL    = "#16324a"   # subtle fill inside equipment shapes
 TEXT_COLOR    = "#f2f6f9"
-SUBTEXT_COLOR = "#9fb6c9"
-TAG_EDGE      = "#3d5a73"
 
 LW_PIPE  = 4.2
 LW_EQUIP = 2.0
 
 
-def build_figure(figsize=(15, 8.5)):
+def build_figure(figsize=(15, 6)):
     fig, ax = plt.subplots(figsize=figsize)
     fig.patch.set_facecolor(BG_COLOR)
     ax.set_facecolor(BG_COLOR)
     ax.set_xlim(0, 16)
-    ax.set_ylim(0, 9.2)
+    ax.set_ylim(1.5, 8.5)
     ax.set_aspect("equal")
     ax.axis("off")
 
@@ -67,12 +61,9 @@ def build_figure(figsize=(15, 8.5)):
         ax.add_patch(patches.Circle((x, y + s + 0.6), 0.22, facecolor=EQUIP_FILL,
                                      edgecolor=EQUIP_COLOR, lw=LW_EQUIP, zorder=4))
         ax.text(x, y - s - 0.28, tag_lines, ha="center", va="top", color=TEXT_COLOR,
-                fontsize=10, fontweight="bold", zorder=5, linespacing=1.35)
+                fontsize=10.5, fontweight="600", zorder=5, linespacing=1.35)
 
     def venturi_desuperheater(cx, cy, w=4.2, r_in=0.62, r_throat=0.22, throat_w=0.7):
-        """Converging - throat - diverging venturi section, drawn as a
-        filled outline, with the feedwater spray nozzle entering at the
-        throat."""
         x0 = cx - w / 2          # inlet full-bore
         x1 = cx - throat_w / 2   # start of throat
         x2 = cx + throat_w / 2   # end of throat
@@ -98,7 +89,7 @@ def build_figure(figsize=(15, 8.5)):
             closed=True, facecolor=EQUIP_FILL, edgecolor=FW_COLOR, lw=LW_EQUIP, zorder=5)
         ax.add_patch(nozzle)
 
-        # atomised spray fan, fanning downward from the nozzle tip into the throat
+        # atomised spray fan
         tip_y = cy + r_throat + 0.02
         for ang, ln in [(-26, 0.20), (-9, 0.24), (9, 0.24), (26, 0.20)]:
             rad = math.radians(ang)
@@ -106,28 +97,15 @@ def build_figure(figsize=(15, 8.5)):
             ax.add_line(mlines.Line2D([cx, cx + dx], [tip_y, tip_y + dy],
                                        color=FW_COLOR, lw=1.3, zorder=6))
 
-        ax.text(cx, cy - r_in - 0.42, "SPRAY DESUPERHEATER\n(Venturi Type)", ha="center",
-                va="top", color=TEXT_COLOR, fontsize=10.5, fontweight="bold",
-                zorder=5, linespacing=1.4)
+        ax.text(cx, cy - r_in - 0.42, "SPRAY DESUPERHEATER", ha="center",
+                va="top", color=TEXT_COLOR, fontsize=10.5, fontweight="600",
+                zorder=5)
 
-        return x0, x3, cy + r_throat + 0.55  # inlet x, outlet x, nozzle top y
+        return x0, x3, cy + r_throat + 0.55
 
-    def label(x, y, txt, color=TEXT_COLOR, fs=11, weight="bold", ha="left", style="normal"):
+    def label(x, y, txt, color=TEXT_COLOR, fs=11, weight="600", ha="left"):
         ax.text(x, y, txt, color=color, fontsize=fs, fontweight=weight, ha=ha,
-                va="center", zorder=6, style=style)
-
-    def tag_box(x, y, txt, color=SUBTEXT_COLOR, edge=TAG_EDGE):
-        ax.text(x, y, txt, color=color, fontsize=8.5, ha="center", va="center",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor=BG_COLOR, edgecolor=edge, lw=1),
-                zorder=6, linespacing=1.3)
-
-    # ------------------------------------------------------------------
-    # Title block
-    # ------------------------------------------------------------------
-    ax.text(8, 8.75, "Letdown Steam System", ha="center", va="center",
-            color=TEXT_COLOR, fontsize=19, fontweight="bold")
-    ax.text(8, 8.32, "High Pressure to Low Pressure Steam Letdown with Spray Desuperheating",
-            ha="center", va="center", color=SUBTEXT_COLOR, fontsize=11, style="italic")
+                va="center", zorder=6)
 
     Y = 4.6
 
@@ -137,7 +115,6 @@ def build_figure(figsize=(15, 8.5)):
     pipe(0.6, Y, 4.1, Y)
     flow_arrow(1.6, Y, 0.8, 0)
     label(0.6, Y + 0.55, "High Pressure Steam Line", fs=11.5)
-    tag_box(1.9, Y - 0.55, "HP Steam\n~ 40 barg")
 
     # ------------------------------------------------------------------
     # Pressure control valve
@@ -164,7 +141,6 @@ def build_figure(figsize=(15, 8.5)):
     pipe(6.6, fw_top, vessel_x, fw_top, color=FW_COLOR)
     flow_arrow(7.2, fw_top, 0.4, 0, color=FW_COLOR)
     label(6.6, fw_top + 0.42, "Feedwater Spray Line", color=FW_COLOR, fs=11.5)
-    tag_box(7.35, fw_top - 0.42, "BFW Supply", edge="#2e6a86")
 
     # ------------------------------------------------------------------
     # LP steam line (outlet)
@@ -172,24 +148,9 @@ def build_figure(figsize=(15, 8.5)):
     pipe(10.3, Y, 15.4, Y)
     flow_arrow(14.2, Y, 0.8, 0)
     label(12.05, Y + 0.55, "Low Pressure Steam Line", fs=11.5)
-    tag_box(13.7, Y - 0.55, "LP Steam\n~ 12 barg")
 
-    # ------------------------------------------------------------------
-    # Legend
-    # ------------------------------------------------------------------
-    leg_x, leg_y = 0.6, 1.55
-    legend_items = [
-        (STEAM_COLOR, "Steam Line"),
-        (FW_COLOR, "Feedwater / Spray Line"),
-        (EQUIP_COLOR, "Equipment Outline"),
-    ]
-    for i, (c, txt) in enumerate(legend_items):
-        yy = leg_y - i * 0.42
-        ax.add_line(mlines.Line2D([leg_x, leg_x + 0.5], [yy, yy], color=c, lw=3.2))
-        ax.text(leg_x + 0.68, yy, txt, color=TEXT_COLOR, fontsize=9.5, va="center")
-
-    # Outer frame, rounded, soft
-    frame = patches.FancyBboxPatch((0.18, 0.18), 15.64, 8.84,
+    # Outer frame
+    frame = patches.FancyBboxPatch((0.18, 1.8), 15.64, 6.4,
                                     boxstyle="round,pad=0,rounding_size=0.18",
                                     fill=False, edgecolor="#2c4a63", lw=1.4)
     ax.add_patch(frame)
@@ -207,7 +168,6 @@ st.set_page_config(
     layout="wide",
 )
 
-# Match page background to figure background
 st.markdown(
     f"""
     <style>
@@ -226,15 +186,9 @@ with st.expander("About this system"):
         """
         This graphic shows a typical **HP-to-LP steam letdown station**:
 
-        - **High Pressure Steam Line** — supplies steam from the upstream
-          high pressure header.
-        - **Pressure Control Valve (PCV)** — reduces steam pressure from
-          HP to the LP setpoint.
-        - **Spray Desuperheater (venturi type)** — feedwater is injected
-          at the throat of a venturi, where high steam velocity promotes
-          rapid atomisation and mixing, cooling the steam toward
-          saturation.
-        - **Low Pressure Steam Line** — carries the reduced-pressure,
-          desuperheated steam onward to the LP distribution header.
+        - **High Pressure Steam Line** — supplies steam from the upstream high pressure header.
+        - **Pressure Control Valve (PCV)** — reduces steam pressure from HP to the LP setpoint.
+        - **Spray Desuperheater** — feedwater is injected at the throat of a venturi to cool the steam toward saturation.
+        - **Low Pressure Steam Line** — carries the reduced-pressure, desuperheated steam onward to the LP distribution header.
         """
     )
