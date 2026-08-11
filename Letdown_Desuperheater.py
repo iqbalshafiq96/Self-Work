@@ -149,22 +149,6 @@ def build_figure(
             )
         )
 
-        nozzle_w = 0.26
-        nozzle = patches.Polygon(
-            [
-                (cx - nozzle_w, cy + r_throat + 0.55),
-                (cx + nozzle_w, cy + r_throat + 0.55),
-                (cx + 0.06, cy + r_throat + 0.05),
-                (cx - 0.06, cy + r_throat + 0.05),
-            ],
-            closed=True,
-            facecolor=EQUIP_FILL,
-            edgecolor=FW_COLOR,
-            lw=LW_EQUIP,
-            zorder=5,
-        )
-        ax.add_patch(nozzle)
-
         # --------------------------------------------------------------
         # Atomized Spray Cone lines (Rotated 90° to point Rightward)
         # Origin maintained at (cx, cy)
@@ -219,7 +203,7 @@ def build_figure(
             zorder=5,
         )
 
-        return x0, x3, cy + r_throat + 0.55
+        return x0, x3
 
     def label(x, y, txt, color=text_color, fs=10, ha="left"):
         ax.text(
@@ -260,13 +244,15 @@ def build_figure(
     # Venturi Spray Desuperheater
     # ------------------------------------------------------------------
     vessel_x = 8.7
-    v_in, v_out, nozzle_top = venturi_desuperheater(vessel_x, Y)
+    v_in, v_out = venturi_desuperheater(vessel_x, Y)
     pipe(6.1, Y, v_in, Y)
 
-    # Feedwater Spray Line
+    # ------------------------------------------------------------------
+    # Feedwater Spray Line (Connected to center origin)
+    # ------------------------------------------------------------------
     fw_top = 7.35
-    pipe(vessel_x, fw_top, vessel_x, nozzle_top, color=FW_COLOR)
-    flow_arrow(vessel_x, 7.0, 0, -0.42, color=FW_COLOR)
+    pipe(vessel_x, fw_top, vessel_x, Y, color=FW_COLOR, zorder=3)
+    flow_arrow(vessel_x, 6.2, 0, -0.42, color=FW_COLOR)
     pipe(6.6, fw_top, vessel_x, fw_top, color=FW_COLOR)
     flow_arrow(7.2, fw_top, 0.4, 0, color=FW_COLOR)
     fw_txt = (
