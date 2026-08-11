@@ -14,8 +14,9 @@ FW_COLOR = "#0EA5E9"  # Vivid sky blue for feedwater spray
 EQUIP_COLOR = "#D97706"  # Amber for control valve & desuperheater outline
 EQUIP_FILL = "none"  # Transparent background integration
 
-LW_PIPE = 4.2
-LW_EQUIP = 2.0
+# Scaled line widths (reduced by ~20%)
+LW_PIPE = 3.36
+LW_EQUIP = 1.6
 
 
 def build_svg_figure(
@@ -48,14 +49,14 @@ def build_svg_figure(
     # Technical text color
     text_color = "#334155"
 
-    # Tight bounding limits: Bottom boundary cuts off right below Desuperheater label (~3.6)
+    # Tight bounding limits
     ax.set_xlim(0.4, 15.6)
     ax.set_ylim(3.6, 9.0)
     ax.set_aspect("equal")
     ax.axis("off")
 
     # ------------------------------------------------------------------
-    # Drawing Helper Functions
+    # Drawing Helper Functions (Scaled down fonts & markers)
     # ------------------------------------------------------------------
     def pipe(x1, y1, x2, y2, color=STEAM_COLOR, lw=LW_PIPE, zorder=2):
         ax.add_line(
@@ -75,7 +76,10 @@ def build_svg_figure(
             xy=(x + dx, y + dy),
             xytext=(x, y),
             arrowprops=dict(
-                arrowstyle="-|>", color=color, lw=1.8, mutation_scale=15
+                arrowstyle="-|>",
+                color=color,
+                lw=1.44,  # Scaled down from 1.8
+                mutation_scale=12,  # Scaled down from 15
             ),
             zorder=3,
         )
@@ -116,6 +120,7 @@ def build_svg_figure(
                 zorder=4,
             )
         )
+        # Text scaled down from 10pt to 8pt
         ax.text(
             x,
             y - s - 0.28,
@@ -123,7 +128,7 @@ def build_svg_figure(
             ha="center",
             va="top",
             color=text_color,
-            fontsize=10,
+            fontsize=8.0,
             fontweight="medium",
             zorder=5,
             linespacing=1.35,
@@ -173,7 +178,7 @@ def build_svg_figure(
                 [spray_origin_y, spray_origin_y],
                 color=FW_COLOR,
                 linestyle="--",
-                lw=1.2,
+                lw=0.96,
                 zorder=5,
             )
         )
@@ -183,7 +188,7 @@ def build_svg_figure(
                 [spray_origin_y, spray_origin_y + 0.18],
                 color=FW_COLOR,
                 linestyle="--",
-                lw=1.2,
+                lw=0.96,
                 zorder=5,
             )
         )
@@ -193,11 +198,12 @@ def build_svg_figure(
                 [spray_origin_y, spray_origin_y - 0.18],
                 color=FW_COLOR,
                 linestyle="--",
-                lw=1.2,
+                lw=0.96,
                 zorder=5,
             )
         )
 
+        # Text scaled down from 10pt to 8pt
         ax.text(
             cx,
             cy - 0.62,
@@ -205,14 +211,15 @@ def build_svg_figure(
             ha="center",
             va="top",
             color=text_color,
-            fontsize=10,
+            fontsize=8.0,
             fontweight="medium",
             zorder=5,
         )
 
         return x0, x3
 
-    def label(x, y, txt, color=text_color, fs=9.5, ha="left"):
+    # Text label helper: Scaled down default font size from 9.5pt to 7.6pt
+    def label(x, y, txt, color=text_color, fs=7.6, ha="left"):
         ax.text(
             x,
             y,
@@ -494,8 +501,8 @@ svg_data = build_svg_figure(
     p_unit=unit_label,
 )
 
-# Center and scale down the graphic to 80% using Streamlit layout columns
-col_left, col_center, col_right = st.columns([0.1, 0.8, 0.1])
+# Reduced column ratio to shrink total image width to 80% (0.64 vs previous 0.8)
+col_left, col_center, col_right = st.columns([0.18, 0.64, 0.18])
 with col_center:
     st.image(svg_data, use_container_width=True)
 
