@@ -5,7 +5,6 @@ import matplotlib.lines as mlines
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import streamlit as st
-import streamlit.components.v1 as components
 
 # ----------------------------------------------------------------------
 # COLOUR PALETTE & STYLE CONFIGURATION
@@ -30,7 +29,7 @@ def build_svg_figure(
     t_out,
     m_out,
     p_unit,
-    figsize=(14, 4.0),
+    figsize=(14, 4.5),
 ):
     # Set high-DPI font parameters for technical legibility
     plt.rcParams.update(
@@ -49,9 +48,9 @@ def build_svg_figure(
     # Technical text color
     text_color = "#334155"
 
-    # Tight bounding box setup
+    # Expanded limits to prevent label clipping at top and bottom
     ax.set_xlim(0.4, 15.6)
-    ax.set_ylim(3.2, 8.7)
+    ax.set_ylim(2.8, 9.2)
     ax.set_aspect("equal")
     ax.axis("off")
 
@@ -235,7 +234,7 @@ def build_svg_figure(
         f"High Pressure Steam Line\nFlow: {m_in:.2f} t/h\nPress: {p_in:.2f}"
         f" {p_unit}\nTemp: {t_in:.1f} °C"
     )
-    label(0.6, Y + 0.95, inlet_txt)
+    label(0.6, Y + 1.15, inlet_txt)
 
     # Pressure Control Valve
     pcv_x = 5.0
@@ -259,7 +258,7 @@ def build_svg_figure(
         f"Feedwater Spray Line\nFlow: {m_fw:.2f} t/h\nPress: {p_fw:.2f}"
         f" {p_unit}\nTemp: {t_fw:.1f} °C"
     )
-    label(6.6, fw_top + 0.75, fw_txt, color=FW_COLOR)
+    label(6.6, fw_top + 0.85, fw_txt, color=FW_COLOR)
 
     # LP Steam Line (Outlet)
     pipe(v_out, Y, 15.4, Y)
@@ -268,7 +267,7 @@ def build_svg_figure(
         f"Low Pressure Steam Line\nFlow: {m_out:.2f} t/h\nPress: {p_out:.2f}"
         f" {p_unit}\nTemp: {t_out:.1f} °C"
     )
-    label(11.8, Y + 0.95, outlet_txt)
+    label(11.8, Y + 1.15, outlet_txt)
 
     fig.tight_layout(pad=0.05)
 
@@ -477,7 +476,7 @@ else:
 
 pressure_drop_bar = (p_in_mpaa - p_out_mpaa) * 10.0
 
-# --- RENDER Crisp Vector SVG PROCESS FLOW DIAGRAM ---
+# --- RENDER SVG PROCESS FLOW DIAGRAM NATIVELY ---
 svg_data = build_svg_figure(
     p_in=High_Pressure_Inlet_Steam_Pressure,
     t_in=temperature_steam_inlet,
@@ -491,15 +490,8 @@ svg_data = build_svg_figure(
     p_unit=unit_label,
 )
 
-# Inject SVG directly into Streamlit DOM
-components.html(
-    f"""
-    <div style="display: flex; justify-content: center; align-items: center; width: 100%;">
-        {svg_data}
-    </div>
-    """,
-    height=280,
-)
+# Native rendering via st.image eliminates fixed-height iframe overlap
+st.image(svg_data, use_container_width=True)
 
 st.markdown("---")
 
