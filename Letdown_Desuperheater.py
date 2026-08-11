@@ -123,7 +123,7 @@ def build_svg_figure(
             ha="center",
             va="top",
             color=text_color,
-            fontsize=10,
+            fontsize=16,  # Scaled to match st.write text
             fontweight="medium",
             zorder=5,
             linespacing=1.35,
@@ -205,14 +205,14 @@ def build_svg_figure(
             ha="center",
             va="top",
             color=text_color,
-            fontsize=10,
+            fontsize=16,  # Scaled to match st.write text
             fontweight="medium",
             zorder=5,
         )
 
         return x0, x3
 
-    def label(x, y, txt, color=text_color, fs=9.5, ha="left"):
+    def label(x, y, txt, color=text_color, fs=16, ha="left"):  # Updated fs default to 16
         ax.text(
             x,
             y,
