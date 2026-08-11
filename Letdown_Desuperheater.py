@@ -165,33 +165,41 @@ def build_figure(
         )
         ax.add_patch(nozzle)
 
-        # Atomized Spray Cone lines - starting at cy (center line of desuperheater)
-        spray_y_top = cy
-        spray_y_bot = cy - r_throat + 0.05
+        # --------------------------------------------------------------
+        # Atomized Spray Cone lines (Rotated 90° to point Rightward)
+        # Origin maintained at (cx, cy)
+        # --------------------------------------------------------------
+        spray_origin_x = cx
+        spray_origin_y = cy
+        spray_len = 0.35  # Length of spray lines along steam flow
+
+        # Center spray ray (horizontal to the right)
         ax.add_line(
             mlines.Line2D(
-                [cx, cx - 0.35],
-                [spray_y_top, spray_y_bot],
+                [spray_origin_x, spray_origin_x + spray_len],
+                [spray_origin_y, spray_origin_y],
                 color=FW_COLOR,
                 linestyle="--",
                 lw=1.2,
                 zorder=5,
             )
         )
+        # Upper spray ray (angled upwards to the right)
         ax.add_line(
             mlines.Line2D(
-                [cx, cx],
-                [spray_y_top, spray_y_bot],
+                [spray_origin_x, spray_origin_x + spray_len],
+                [spray_origin_y, spray_origin_y + 0.18],
                 color=FW_COLOR,
                 linestyle="--",
                 lw=1.2,
                 zorder=5,
             )
         )
+        # Lower spray ray (angled downwards to the right)
         ax.add_line(
             mlines.Line2D(
-                [cx, cx + 0.35],
-                [spray_y_top, spray_y_bot],
+                [spray_origin_x, spray_origin_x + spray_len],
+                [spray_origin_y, spray_origin_y - 0.18],
                 color=FW_COLOR,
                 linestyle="--",
                 lw=1.2,
