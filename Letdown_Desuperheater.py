@@ -259,18 +259,6 @@ def build_figure(
     )
     label(11.8, Y + 0.95, outlet_txt, fs=9.5)
 
-    # Outer frame
-    frame = patches.FancyBboxPatch(
-        (0.18, 1.8),
-        15.64,
-        6.8,
-        boxstyle="round,pad=0,rounding_size=0.18",
-        fill=False,
-        edgecolor=STEAM_COLOR,
-        lw=1.0,
-    )
-    ax.add_patch(frame)
-
     fig.tight_layout()
     return fig
 
