@@ -7,12 +7,167 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 # ----------------------------------------------------------------------
-# COLOUR PALETTE & STYLE CONFIGURATION
+# STREAMLIT PAGE CONFIGURATION
 # ----------------------------------------------------------------------
-STEAM_COLOR = "#64748B"  # Slate grey for steam piping
-FW_COLOR = "#0EA5E9"  # Vivid sky blue for feedwater spray
-EQUIP_COLOR = "#D97706"  # Amber for control valve & desuperheater outline
-EQUIP_FILL = "none"  # Transparent background integration
+st.set_page_config(
+    page_title="PRDS / Desuperheater Calculator",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+st.title("Pressure Reducing & Desuperheating Station (PRDS) Balance")
+
+# ----------------------------------------------------------------------
+# SIDEBAR INPUTS
+# ----------------------------------------------------------------------
+st.sidebar.header("Input Parameters")
+
+unit_choice = st.sidebar.radio("Pressure Unit", ["bara", "barg", "MPa", "kPa"])
+
+# Pressure Conversion to Absolute Bar
+if unit_choice == "barg":
+    p_in_raw = st.sidebar.number_input(
+        "HP Steam Pressure (barg)", value=40.0, step=1.0
+    )
+    p_fw_raw = st.sidebar.number_input(
+        "Feedwater Pressure (barg)", value=45.0, step=1.0
+    )
+    p_out_raw = st.sidebar.number_input(
+        "LP Steam Pressure (barg)", value=10.0, step=0.5
+    )
+    p_in = p_in_raw + 1.01325
+    p_fw = p_fw_raw + 1.01325
+    p_out = p_out_raw + 1.01325
+    unit_label = "barg"
+elif unit_choice == "MPa":
+    p_in_raw = st.sidebar.number_input(
+        "HP Steam Pressure (MPa)", value=4.1, step=0.1
+    )
+    p_fw_raw = st.sidebar.number_input(
+        "Feedwater Pressure (MPa)", value=4.6, step=0.1
+    )
+    p_out_raw = st.sidebar.number_input(
+        "LP Steam Pressure (MPa)", value=1.1, step=0.05
+    )
+    p_in = p_in_raw * 10.0
+    p_fw = p_fw_raw * 10.0
+    p_out = p_out_raw * 10.0
+    unit_label = "MPa"
+elif unit_choice == "kPa":
+    p_in_raw = st.sidebar.number_input(
+        "HP Steam Pressure (kPa)", value=4100.0, step=100.0
+    )
+    p_fw_raw = st.sidebar.number_input(
+        "Feedwater Pressure (kPa)", value=4600.0, step=100.0
+    )
+    p_out_raw = st.sidebar.number_input(
+        "LP Steam Pressure (kPa)", value=1100.0, step=50.0
+    )
+    p_in = p_in_raw / 100.0
+    p_fw = p_fw_raw / 100.0
+    p_out = p_out_raw / 100.0
+    unit_label = "kPa"
+else:  # bara
+    p_in_raw = st.sidebar.number_input(
+        "HP Steam Pressure (bara)", value=41.0, step=1.0
+    )
+    p_fw_raw = st.sidebar.number_input(
+        "Feedwater Pressure (bara)", value=46.0, step=1.0
+    )
+    p_out_raw = st.sidebar.number_input(
+        "LP Steam Pressure (bara)", value=11.0, step=0.5
+    )
+    p_in = p_in_raw
+    p_fw = p_fw_raw
+    p_out = p_out_raw
+    unit_label = "bara"
+
+# Temperature Inputs (°C)
+temperature_steam_inlet = st.sidebar.number_input(
+    "HP Steam Temperature (°C)", value=400.0, step=5.0
+)
+temperature_feedwater_inlet = st.sidebar.number_input(
+    "Feedwater Temperature (°C)", value=105.0, step=5.0
+)
+temperature_steam_outlet = st.sidebar.number_input(
+    "LP Steam Target Temperature (°C)", value=210.0, step=5.0
+)
+
+# Flow Basis Calculation Choice
+calc_mode = st.sidebar.radio(
+    "Calculation Target",
+    ["Given HP Steam Flow", "Given Target LP Steam Flow"],
+)
+
+if calc_mode == "Given HP Steam Flow":
+    mass_flow_steam_inlet = st.sidebar.number_input(
+        "HP Steam Flow (t/h)", value=50.0, step=1.0
+    )
+    mass_flow_target_lp = None
+else:
+    mass_flow_target_lp = st.sidebar.number_input(
+        "Target LP Steam Flow (t/h)", value=60.0, step=1.0
+    )
+    mass_flow_steam_inlet = None
+
+# Variable mapping for internal consistency
+High_Pressure_Inlet_Steam_Pressure = p_in_raw
+Spray_Feedwater_Inlet_Pressure = p_fw_raw
+Desuperheater_Outlet_Steam_Pressure = p_out_raw
+
+# ----------------------------------------------------------------------
+# THERMODYNAMIC CALCULATIONS (IAPWS-IF97)
+# ----------------------------------------------------------------------
+p_in_MPa = p_in / 10.0
+p_fw_MPa = p_fw / 10.0
+p_out_MPa = p_out / 10.0
+
+# Convert °C to Kelvin for IAPWS97
+t_in_K = temperature_steam_inlet + 273.15
+t_fw_K = temperature_feedwater_inlet + 273.15
+t_out_K = temperature_steam_outlet + 273.15
+
+# Calculate Specific Enthalpies (kJ/kg)
+hp_steam = IAPWS97(P=p_in_MPa, T=t_in_K)
+h_in = hp_steam.h
+
+fw_water = IAPWS97(P=p_fw_MPa, T=t_fw_K)
+h_fw = fw_water.h
+
+lp_steam = IAPWS97(P=p_out_MPa, T=t_out_K)
+h_out = lp_steam.h
+
+# Saturation Temperature check at outlet pressure
+lp_sat = IAPWS97(P=p_out_MPa, x=1)
+t_sat_out = lp_sat.T - 273.15
+
+# Energy & Mass Balance Calculations
+# Mass balance: m_in + m_fw = m_out
+# Energy balance: m_in * h_in + m_fw * h_fw = m_out * h_out
+if mass_flow_steam_inlet is not None:
+    # Calculate required spray and final output based on HP inlet flow
+    mass_flow_feedwater_inlet = mass_flow_steam_inlet * (
+        (h_in - h_out) / (h_out - h_fw)
+    )
+    mass_flow_steam_outlet = (
+        mass_flow_steam_inlet + mass_flow_feedwater_inlet
+    )
+else:
+    # Calculate required HP inlet and spray based on target LP outlet flow
+    mass_flow_steam_inlet = mass_flow_target_lp * (
+        (h_out - h_fw) / (h_in - h_fw)
+    )
+    mass_flow_feedwater_inlet = mass_flow_target_lp - mass_flow_steam_inlet
+    mass_flow_steam_outlet = mass_flow_target_lp
+
+
+# ----------------------------------------------------------------------
+# PFD DIAGRAM RENDERER
+# ----------------------------------------------------------------------
+STEAM_COLOR = "#64748B"  # Slate grey
+FW_COLOR = "#0EA5E9"  # Sky blue
+EQUIP_COLOR = "#D97706"  # Amber
+EQUIP_FILL = "none"
 
 LW_PIPE = 4.2
 LW_EQUIP = 2.0
@@ -31,7 +186,6 @@ def build_svg_figure(
     p_unit,
     figsize=(14, 3.4),
 ):
-    # Set high-DPI font parameters for technical legibility (Scaled up for Streamlit alignment)
     plt.rcParams.update(
         {
             "font.sans-serif": ["Segoe UI", "Aptos", "Arial", "DejaVu Sans"],
@@ -41,23 +195,16 @@ def build_svg_figure(
     )
 
     fig, ax = plt.subplots(figsize=figsize)
-
-    # Set background to fully transparent
     fig.patch.set_alpha(0.0)
     ax.patch.set_alpha(0.0)
 
-    # Technical text color
     text_color = "#334155"
 
-    # Tight bounding limits
     ax.set_xlim(0.4, 15.6)
     ax.set_ylim(3.4, 9.2)
     ax.set_aspect("equal")
     ax.axis("off")
 
-    # ------------------------------------------------------------------
-    # Drawing Helper Functions
-    # ------------------------------------------------------------------
     def pipe(x1, y1, x2, y2, color=STEAM_COLOR, lw=LW_PIPE, zorder=2):
         ax.add_line(
             mlines.Line2D(
@@ -96,7 +243,6 @@ def build_svg_figure(
                     zorder=4,
                 )
             )
-        # Actuator Stem
         ax.add_line(
             mlines.Line2D(
                 [x, x],
@@ -106,7 +252,6 @@ def build_svg_figure(
                 zorder=4,
             )
         )
-        # Actuator Diaphragm/Dome
         ax.add_patch(
             patches.Circle(
                 (x, y + s + 0.6),
@@ -163,7 +308,6 @@ def build_svg_figure(
             )
         )
 
-        # Atomized Spray Cone lines
         spray_origin_x = cx
         spray_origin_y = cy
         spray_len = 0.35
@@ -228,7 +372,6 @@ def build_svg_figure(
 
     Y = 4.6
 
-    # HP Steam Line (Inlet)
     pipe(0.6, Y, 4.1, Y)
     flow_arrow(1.6, Y, 0.8, 0)
     inlet_txt = (
@@ -237,19 +380,16 @@ def build_svg_figure(
     )
     label(0.6, Y + 1.25, inlet_txt)
 
-    # Pressure Control Valve
     pcv_x = 5.0
     control_valve(pcv_x, Y, "Isenthalpic Expansion")
     pipe(4.1, Y, pcv_x - 0.34, Y)
     pipe(pcv_x + 0.34, Y, 6.1, Y)
     flow_arrow(5.65, Y, 0.35, 0)
 
-    # Venturi Spray Desuperheater
     vessel_x = 8.7
     v_in, v_out = venturi_desuperheater(vessel_x, Y)
     pipe(6.1, Y, v_in, Y)
 
-    # Feedwater Spray Line
     fw_top = 7.35
     pipe(vessel_x, fw_top, vessel_x, Y, color=FW_COLOR, zorder=3)
     flow_arrow(vessel_x, 6.2, 0, -0.42, color=FW_COLOR)
@@ -261,7 +401,6 @@ def build_svg_figure(
     )
     label(6.6, fw_top + 0.95, fw_txt, color=FW_COLOR)
 
-    # LP Steam Line (Outlet)
     pipe(v_out, Y, 15.4, Y)
     flow_arrow(14.2, Y, 0.8, 0)
     outlet_txt = (
@@ -270,7 +409,6 @@ def build_svg_figure(
     )
     label(11.8, Y + 1.25, outlet_txt)
 
-    # Render Matplotlib figure to SVG memory buffer
     svg_buffer = io.StringIO()
     fig.savefig(
         svg_buffer,
@@ -285,9 +423,10 @@ def build_svg_figure(
 
 
 # ----------------------------------------------------------------------
-# STREAMLIT DISPLAY BLOCK (Resized layout ratio)
+# STREAMLIT MAIN INTERFACE DISPLAY
 # ----------------------------------------------------------------------
-# Render SVG Process Flow Diagram centered and reduced in width
+st.subheader("Process Flow Diagram")
+
 svg_data = build_svg_figure(
     p_in=High_Pressure_Inlet_Steam_Pressure,
     t_in=temperature_steam_inlet,
@@ -301,7 +440,50 @@ svg_data = build_svg_figure(
     p_unit=unit_label,
 )
 
-# Narrowed column ratio scales down the diagram width while keeping the aspect ratio
+# Centered layout using tightly defined columns to control scale
 col_left, col_center, col_right = st.columns([0.28, 0.44, 0.28])
 with col_center:
     st.image(svg_data, use_container_width=True)
+
+st.divider()
+
+# Summary Metrics Display
+st.subheader("Mass & Energy Summary")
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("HP Steam Flow", f"{mass_flow_steam_inlet:.2f} t/h")
+c2.metric("Spray Water Flow", f"{mass_flow_feedwater_inlet:.2f} t/h")
+c3.metric("LP Steam Flow", f"{mass_flow_steam_outlet:.2f} t/h")
+c4.metric(
+    "Superheat Degree",
+    f"{(temperature_steam_outlet - t_sat_out):.1f} °C",
+    delta=f"Sat Temp: {t_sat_out:.1f} °C",
+    delta_color="off",
+)
+
+# Detailed Property Summary Table
+st.markdown("##### Detailed Stream Enthalpy Breakdown")
+st.table(
+    {
+        "Stream": ["HP Steam Inlet", "Feedwater Spray", "LP Steam Outlet"],
+        f"Pressure ({unit_label})": [
+            f"{p_in_raw:.2f}",
+            f"{p_fw_raw:.2f}",
+            f"{p_out_raw:.2f}",
+        ],
+        "Temperature (°C)": [
+            f"{temperature_steam_inlet:.1f}",
+            f"{temperature_feedwater_inlet:.1f}",
+            f"{temperature_steam_outlet:.1f}",
+        ],
+        "Specific Enthalpy (kJ/kg)": [
+            f"{h_in:.2f}",
+            f"{h_fw:.2f}",
+            f"{h_out:.2f}",
+        ],
+        "Mass Flow Rate (t/h)": [
+            f"{mass_flow_steam_inlet:.2f}",
+            f"{mass_flow_feedwater_inlet:.2f}",
+            f"{mass_flow_steam_outlet:.2f}",
+        ],
+    }
+)
