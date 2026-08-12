@@ -3,17 +3,12 @@ from iapws import IAPWS97
 import streamlit as st
 
 # ----------------------------------------------------------------------
-# COLOR PALETTE CONFIGURATION
+# COLOUR PALETTE CONFIGURATION
 # ----------------------------------------------------------------------
-HP_COLOR = "#DC2626"  # Majestic Red for HP Steam
-HP_GLOW = "#EF4444"  # Bright Red Glow for HP Steam
-
-FW_COLOR = "#0284C7"  # Standard Blue for Feedwater Spray Line
-FW_GLOW = "#38BDF8"  # Feedwater Glow
-
-LP_COLOR = "#0284C7"  # Reverted Low-Pressure Steam Line Color
-LP_GLOW = "#38BDF8"  # Reverted Low-Pressure Steam Glow
-
+STEAM_COLOR = "#64748B"  # Slate grey for steam piping
+STEAM_GLOW = "#94A3B8"  # Soft glow for steam
+FW_COLOR = "#0EA5E9"  # Vivid sky blue for feedwater spray
+FW_GLOW = "#38BDF8"  # Cyan glow for feedwater
 EQUIP_COLOR = "#D97706"  # Amber for control valve & desuperheater outline
 EQUIP_GLOW = "#F59E0B"  # Bright amber glow for active equipment
 
@@ -31,8 +26,6 @@ def build_animated_process_svg(
     p_out,
     t_out,
     m_out,
-    t_sat,
-    t_margin,
     p_unit,
 ):
     # Dynamic particle speed calculation based on mass flow rates
@@ -44,24 +37,15 @@ def build_animated_process_svg(
     svg = f"""
     <svg
         width="100%"
-        height="330"
-        viewBox="0 0 1500 330"
+        height="310"
+        viewBox="0 0 1500 310"
         xmlns="http://www.w3.org/2000/svg"
         preserveAspectRatio="xMidYMid meet"
     >
 
     <defs>
-        <!-- HP STEAM GLOW -->
-        <filter id="hpSteamGlow" x="-100%" y="-100%" width="300%" height="300%">
-            <feGaussianBlur stdDeviation="4" result="blur"/>
-            <feMerge>
-                <feMergeNode in="blur"/>
-                <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-        </filter>
-
-        <!-- LP STEAM GLOW -->
-        <filter id="lpSteamGlow" x="-100%" y="-100%" width="300%" height="300%">
+        <!-- STEAM GLOW -->
+        <filter id="steamGlow" x="-100%" y="-100%" width="300%" height="300%">
             <feGaussianBlur stdDeviation="4" result="blur"/>
             <feMerge>
                 <feMergeNode in="blur"/>
@@ -96,18 +80,11 @@ def build_animated_process_svg(
             </feMerge>
         </filter>
 
-        <!-- HP STEAM PARTICLE GRADIENT -->
-        <radialGradient id="hpSteamParticle">
+        <!-- STEAM PARTICLE GRADIENT -->
+        <radialGradient id="steamParticle">
             <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
-            <stop offset="40%" stop-color="{HP_GLOW}" stop-opacity="0.95"/>
-            <stop offset="100%" stop-color="{HP_COLOR}" stop-opacity="0"/>
-        </radialGradient>
-
-        <!-- LP STEAM PARTICLE GRADIENT -->
-        <radialGradient id="lpSteamParticle">
-            <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
-            <stop offset="40%" stop-color="{LP_GLOW}" stop-opacity="0.95"/>
-            <stop offset="100%" stop-color="{LP_COLOR}" stop-opacity="0"/>
+            <stop offset="40%" stop-color="{STEAM_GLOW}" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="{STEAM_COLOR}" stop-opacity="0"/>
         </radialGradient>
 
         <!-- WATER PARTICLE GRADIENT -->
@@ -123,46 +100,46 @@ def build_animated_process_svg(
         </marker>
     </defs>
 
-    <!-- LAYER 1: BACK - PIPING SECTIONS -->
-    <!-- HP Steam Pipe (Red) -->
-    <path d="M60 210 H800" stroke="{HP_COLOR}" stroke-width="9" opacity="0.16" filter="url(#lineGlow)" />
-    <path d="M60 210 H800" stroke="{HP_COLOR}" stroke-width="5" stroke-linecap="round" />
+    <!-- LAYER 1: BACK - CONTINUOUS HP & MAIN STEAM PIPING -->
+    <!-- Glow background path -->
+    <path
+        d="M60 210 H1450"
+        stroke="{STEAM_COLOR}"
+        stroke-width="9"
+        stroke-linecap="round"
+        opacity="0.16"
+        filter="url(#lineGlow)"
+    />
 
-    <!-- LP Steam Pipe (Reverted Blue) -->
-    <path d="M800 210 H1450" stroke="{LP_COLOR}" stroke-width="9" opacity="0.16" filter="url(#lineGlow)" />
-    <path d="M800 210 H1450" stroke="{LP_COLOR}" stroke-width="5" stroke-linecap="round" />
+    <!-- Continuous Main Steam Line -->
+    <path d="M60 210 H1450" stroke="{STEAM_COLOR}" stroke-width="5" stroke-linecap="round" />
 
-    <!-- PARTICLES -->
-    <!-- HP Inlet Steam Particles (Red) -->
-    <g filter="url(#hpSteamGlow)">
-        <circle r="7" fill="url(#hpSteamParticle)">
+    <!-- STEAM PARTICLES (FLOWING THROUGH BACKGROUND LINE) -->
+    <g filter="url(#steamGlow)">
+        <circle r="7" fill="url(#steamParticle)">
             <animateMotion dur="{dur_inlet:.2f}s" repeatCount="indefinite" path="M60 210 H490"/>
         </circle>
-        <circle r="5" fill="url(#hpSteamParticle)">
+        <circle r="5" fill="url(#steamParticle)">
             <animateMotion dur="{dur_inlet:.2f}s" begin="-1.2s" repeatCount="indefinite" path="M60 210 H490"/>
         </circle>
-        <circle r="4" fill="url(#hpSteamParticle)">
+        <circle r="4" fill="url(#steamParticle)">
             <animateMotion dur="{dur_inlet:.2f}s" begin="-2.5s" repeatCount="indefinite" path="M60 210 H490"/>
         </circle>
 
-        <!-- Valve-to-Desuperheater Section -->
-        <circle r="7" fill="url(#hpSteamParticle)">
+        <circle r="7" fill="url(#steamParticle)">
             <animateMotion dur="{dur_valve:.2f}s" repeatCount="indefinite" path="M490 210 H800"/>
         </circle>
-        <circle r="5" fill="url(#hpSteamParticle)">
+        <circle r="5" fill="url(#steamParticle)">
             <animateMotion dur="{dur_valve:.2f}s" begin="-1s" repeatCount="indefinite" path="M490 210 H800"/>
         </circle>
-    </g>
 
-    <!-- LP Outlet Steam Particles (Reverted Blue) -->
-    <g filter="url(#lpSteamGlow)">
-        <circle r="7" fill="url(#lpSteamParticle)">
+        <circle r="7" fill="url(#steamParticle)">
             <animateMotion dur="{dur_outlet:.2f}s" repeatCount="indefinite" path="M800 210 H1450"/>
         </circle>
-        <circle r="5" fill="url(#lpSteamParticle)">
+        <circle r="5" fill="url(#steamParticle)">
             <animateMotion dur="{dur_outlet:.2f}s" begin="-1.5s" repeatCount="indefinite" path="M800 210 H1450"/>
         </circle>
-        <circle r="4" fill="url(#lpSteamParticle)">
+        <circle r="4" fill="url(#steamParticle)">
             <animateMotion dur="{dur_outlet:.2f}s" begin="-3s" repeatCount="indefinite" path="M800 210 H1450"/>
         </circle>
     </g>
@@ -174,7 +151,7 @@ def build_animated_process_svg(
         <polygon points="35,-30 0,0 35,30" fill="#FFFFFF"/>
         <circle cx="0" cy="-70" r="17" fill="#FFFFFF"/>
         
-        <!-- Foreground Valve Outlines & Actuator (Centered) -->
+        <!-- Foreground Valve Outlines & Actuator (Stem aligned exactly to center at x=0, y=0) -->
         <g filter="url(#equipmentGlow)">
             <polygon points="-35,-30 0,0 -35,30" fill="#FFFFFF" fill-opacity="0.9" stroke="{EQUIP_COLOR}" stroke-width="3"/>
             <polygon points="35,-30 0,0 35,30" fill="#FFFFFF" fill-opacity="0.9" stroke="{EQUIP_COLOR}" stroke-width="3"/>
@@ -235,12 +212,12 @@ def build_animated_process_svg(
     </g>
 
     <!-- PROCESS LABELS -->
-    <g font-family="Segoe UI, sans-serif" font-size="15">
-        <!-- Inlet Steam Text (Majestic Red) -->
-        <text x="60" y="100" font-weight="bold" fill="{HP_COLOR}">High Pressure Steam Line</text>
-        <text x="60" y="125" fill="{HP_COLOR}">Flow: {m_in:.2f} t/h</text>
-        <text x="60" y="150" fill="{HP_COLOR}">Press: {p_in:.2f} {p_unit}</text>
-        <text x="60" y="175" fill="{HP_COLOR}">Temp: {t_in:.1f} °C</text>
+    <g font-family="Segoe UI, sans-serif" font-size="15" fill="#334155">
+        <!-- Inlet Steam Text -->
+        <text x="60" y="100" font-weight="bold">High Pressure Steam Line</text>
+        <text x="60" y="125">Flow: {m_in:.2f} t/h</text>
+        <text x="60" y="150">Press: {p_in:.2f} {p_unit}</text>
+        <text x="60" y="175">Temp: {t_in:.1f} °C</text>
 
         <!-- Feedwater Text -->
         <text x="830" y="35" font-weight="bold" fill="{FW_COLOR}">Feedwater Spray Line</text>
@@ -248,13 +225,11 @@ def build_animated_process_svg(
         <text x="830" y="85" fill="{FW_COLOR}">Press: {p_fw:.2f} {p_unit}</text>
         <text x="830" y="110" fill="{FW_COLOR}">Temp: {t_fw:.1f} °C</text>
 
-        <!-- Outlet Steam Text (Shifted up to align Temp at y=175) -->
-        <text x="1150" y="100" font-weight="bold" fill="{LP_COLOR}">Low Pressure Steam Line</text>
-        <text x="1150" y="125" fill="{LP_COLOR}">Flow: {m_out:.2f} t/h</text>
-        <text x="1150" y="150" fill="{LP_COLOR}">Press: {p_out:.2f} {p_unit}</text>
-        <text x="1150" y="175" fill="{LP_COLOR}">Temp: {t_out:.1f} °C</text>
-        <text x="1150" y="200" fill="{LP_COLOR}">Sat Temp: {t_sat:.1f} °C</text>
-        <text x="1150" y="225" fill="{LP_COLOR}">Superheat Margin: {t_margin:.1f} °C</text>
+        <!-- Outlet Steam Text -->
+        <text x="1150" y="100" font-weight="bold">Low Pressure Steam Line</text>
+        <text x="1150" y="125">Flow: {m_out:.2f} t/h</text>
+        <text x="1150" y="150">Press: {p_out:.2f} {p_unit}</text>
+        <text x="1150" y="175">Temp: {t_out:.1f} °C</text>
     </g>
 
     </svg>
@@ -467,8 +442,6 @@ svg_data = build_animated_process_svg(
     p_out=Desuperheater_Outlet_Steam_Pressure,
     t_out=temperature_steam_outlet,
     m_out=mass_flow_steam_outlet,
-    t_sat=saturation_temp,
-    t_margin=superheat_margin,
     p_unit=unit_label,
 )
 
@@ -476,7 +449,7 @@ col_left, col_center, col_right = st.columns([0.05, 0.90, 0.05])
 with col_center:
     st.components.v1.html(
         f'<div style="display:flex;justify-content:center;width:100%;">{svg_data}</div>',
-        height=335,
+        height=315,
     )
 
 # Safety Alert Banners
