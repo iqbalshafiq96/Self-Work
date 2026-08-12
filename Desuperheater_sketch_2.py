@@ -8,8 +8,8 @@ import streamlit as st
 HP_COLOR = "#800020"  # Professional Maroon for HP Steam
 HP_GLOW = "#A52A2A"  # Soft Warm Maroon Glow for HP Steam
 
-FW_COLOR = "#0284C7"  # Standard Blue for Feedwater Spray Line
-FW_GLOW = "#38BDF8"  # Feedwater Glow
+FW_COLOR = "#0EA5E9"  # Vivid sky blue for feedwater spray
+FW_GLOW = "#38BDF8"  # Cyan glow for feedwater
 
 LP_COLOR = "#0284C7"  # Low-Pressure Steam Line Color
 LP_GLOW = "#38BDF8"  # Low-Pressure Steam Glow
