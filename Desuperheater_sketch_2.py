@@ -8,11 +8,11 @@ import streamlit as st
 HP_COLOR = "#DC2626"  # Majestic Red for HP Steam
 HP_GLOW = "#EF4444"  # Bright Red Glow for HP Steam
 
-FW_COLOR = "#2563EB"  # Royal Blue for Feedwater Spray
-FW_GLOW = "#3B82F6"  # Bright Blue Glow for Feedwater
+FW_COLOR = "#0284C7"  # Standard Blue for Feedwater Spray Line
+FW_GLOW = "#38BDF8"  # Feedwater Glow
 
-LP_COLOR = "#16A34A"  # Professional Green for LP Steam
-LP_GLOW = "#22C55E"  # Bright Green Glow for LP Steam
+LP_COLOR = "#0284C7"  # Reverted Low-Pressure Steam Line Color
+LP_GLOW = "#38BDF8"  # Reverted Low-Pressure Steam Glow
 
 EQUIP_COLOR = "#D97706"  # Amber for control valve & desuperheater outline
 EQUIP_GLOW = "#F59E0B"  # Bright amber glow for active equipment
@@ -128,7 +128,7 @@ def build_animated_process_svg(
     <path d="M60 210 H800" stroke="{HP_COLOR}" stroke-width="9" opacity="0.16" filter="url(#lineGlow)" />
     <path d="M60 210 H800" stroke="{HP_COLOR}" stroke-width="5" stroke-linecap="round" />
 
-    <!-- LP Steam Pipe (Green) -->
+    <!-- LP Steam Pipe (Reverted Blue) -->
     <path d="M800 210 H1450" stroke="{LP_COLOR}" stroke-width="9" opacity="0.16" filter="url(#lineGlow)" />
     <path d="M800 210 H1450" stroke="{LP_COLOR}" stroke-width="5" stroke-linecap="round" />
 
@@ -154,7 +154,7 @@ def build_animated_process_svg(
         </circle>
     </g>
 
-    <!-- LP Outlet Steam Particles (Green) -->
+    <!-- LP Outlet Steam Particles (Reverted Blue) -->
     <g filter="url(#lpSteamGlow)">
         <circle r="7" fill="url(#lpSteamParticle)">
             <animateMotion dur="{dur_outlet:.2f}s" repeatCount="indefinite" path="M800 210 H1450"/>
@@ -216,7 +216,7 @@ def build_animated_process_svg(
     </g>
     <text x="800" y="265" text-anchor="middle" fill="#334155" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600">Desuperheater</text>
 
-    <!-- FEEDWATER PIPE (Royal Blue) -->
+    <!-- FEEDWATER PIPE -->
     <path d="M800 65 V205" stroke="{FW_COLOR}" stroke-width="5" stroke-linecap="round"/>
     <path d="M800 65 V205" stroke="{FW_COLOR}" stroke-width="10" stroke-linecap="round" opacity="0.15" filter="url(#lineGlow)"/>
     <path d="M800 100 V150" stroke="{FW_COLOR}" stroke-width="2" marker-end="url(#waterArrow)"/>
@@ -242,19 +242,19 @@ def build_animated_process_svg(
         <text x="60" y="150" fill="{HP_COLOR}">Press: {p_in:.2f} {p_unit}</text>
         <text x="60" y="175" fill="{HP_COLOR}">Temp: {t_in:.1f} °C</text>
 
-        <!-- Feedwater Text (Royal Blue) -->
+        <!-- Feedwater Text -->
         <text x="830" y="35" font-weight="bold" fill="{FW_COLOR}">Feedwater Spray Line</text>
         <text x="830" y="60" fill="{FW_COLOR}">Flow: {m_fw:.2f} t/h</text>
         <text x="830" y="85" fill="{FW_COLOR}">Press: {p_fw:.2f} {p_unit}</text>
         <text x="830" y="110" fill="{FW_COLOR}">Temp: {t_fw:.1f} °C</text>
 
-        <!-- Outlet Steam Text (Professional Green) -->
-        <text x="1150" y="75" font-weight="bold" fill="{LP_COLOR}">Low Pressure Steam Line</text>
-        <text x="1150" y="100" fill="{LP_COLOR}">Flow: {m_out:.2f} t/h</text>
-        <text x="1150" y="125" fill="{LP_COLOR}">Press: {p_out:.2f} {p_unit}</text>
-        <text x="1150" y="150" fill="{LP_COLOR}">Temp: {t_out:.1f} °C</text>
-        <text x="1150" y="175" fill="{LP_COLOR}">Sat Temp: {t_sat:.1f} °C</text>
-        <text x="1150" y="200" fill="{LP_COLOR}">Superheat Margin: {t_margin:.1f} °C</text>
+        <!-- Outlet Steam Text (Shifted up to align Temp at y=175) -->
+        <text x="1150" y="100" font-weight="bold" fill="{LP_COLOR}">Low Pressure Steam Line</text>
+        <text x="1150" y="125" fill="{LP_COLOR}">Flow: {m_out:.2f} t/h</text>
+        <text x="1150" y="150" fill="{LP_COLOR}">Press: {p_out:.2f} {p_unit}</text>
+        <text x="1150" y="175" fill="{LP_COLOR}">Temp: {t_out:.1f} °C</text>
+        <text x="1150" y="200" fill="{LP_COLOR}">Sat Temp: {t_sat:.1f} °C</text>
+        <text x="1150" y="225" fill="{LP_COLOR}">Superheat Margin: {t_margin:.1f} °C</text>
     </g>
 
     </svg>
