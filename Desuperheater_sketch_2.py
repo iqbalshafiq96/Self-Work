@@ -186,7 +186,6 @@ def build_animated_process_svg(
             </circle>
         </g>
     </g>
-    <text x="490" y="260" text-anchor="middle" fill="#334155" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600">Isenthalpic Expansion</text>
 
     <!-- LAYER 3: FOREGROUND - DESUPERHEATER BODY -->
     <g transform="translate(800,210)">
@@ -214,6 +213,9 @@ def build_animated_process_svg(
             </g>
         </g>
     </g>
+
+    <!-- EQUIPMENT LABELS (Horizontally aligned at y=265) -->
+    <text x="490" y="265" text-anchor="middle" fill="#334155" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600">Isenthalpic Expansion</text>
     <text x="800" y="265" text-anchor="middle" fill="#334155" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600">Desuperheater</text>
 
     <!-- FEEDWATER PIPE -->
