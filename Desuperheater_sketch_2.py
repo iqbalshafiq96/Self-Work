@@ -325,7 +325,8 @@ tau_steam = st.sidebar.slider(
     "Steam Flow Time Constant τ_steam (s)",
     1.0,
     30.0,
-    5.0,
+    2.19,
+    step=0.01,
     help="Speed of steam flow response to step changes.",
 )
 
@@ -333,7 +334,8 @@ tau_spray = st.sidebar.slider(
     "Feedwater Flow Time Constant τ_spray (s)",
     1.0,
     30.0,
-    12.0,
+    3.46,
+    step=0.01,
     help=(
         "Speed of spray water valve response. Set τ_spray > τ_steam to see"
         " temperature overshoot!"
@@ -342,13 +344,14 @@ tau_spray = st.sidebar.slider(
 
 tau_thermal = st.sidebar.slider(
     "Thermal Mixing/Sensor Lag τ_thermal (s)",
-    0.5,
+    0.1,
     10.0,
-    2.0,
+    0.73,
+    step=0.01,
     help="Thermal inertia/mixing lag inside the pipe line.",
 )
 
-dt = st.sidebar.slider("Step Delay Δt (s)", 0.1, 1.0, 0.2)
+dt = st.sidebar.slider("Step Delay Δt (s)", 0.05, 1.0, 0.2, step=0.01)
 
 st.sidebar.header("1. Operating Configuration")
 Pressure_Unit_Type = st.sidebar.selectbox(
