@@ -3,7 +3,7 @@ from iapws import IAPWS97
 import streamlit as st
 
 # ----------------------------------------------------------------------
-# COLOR PALETTE CONFIGURATION
+# COLOR PALETTE CONFIGURATION & COLOR INTERPOLATION HELPER
 # ----------------------------------------------------------------------
 HP_COLOR = "#800020"  # Professional Maroon for HP Steam
 HP_GLOW = "#A52A2A"  # Soft Warm Maroon Glow for HP Steam
@@ -11,11 +11,56 @@ HP_GLOW = "#A52A2A"  # Soft Warm Maroon Glow for HP Steam
 FW_COLOR = "#0EA5E9"  # Vivid sky blue for feedwater spray
 FW_GLOW = "#38BDF8"  # Cyan glow for feedwater
 
-LP_COLOR = "#64748B"  # Low-Pressure Steam Line Color
-LP_GLOW = "#94A3B8"  # Low-Pressure Steam Glow
-
 EQUIP_COLOR = "#D97706"  # Amber for control valve & desuperheater outline
 EQUIP_GLOW = "#F59E0B"  # Bright amber glow for active equipment
+
+# Base LP line colors (Silver spectrum default at normal margin 2.0°C - 8.0°C)
+LP_SILVER_COLOR = "#94A3B8"
+LP_SILVER_GLOW = "#CBD5E1"
+
+
+def hex_to_rgb(hex_str):
+    hex_str = hex_str.lstrip("#")
+    return tuple(int(hex_str[i : i + 2], 16) for i in (0, 2, 4))
+
+
+def rgb_to_hex(rgb):
+    return f"#{int(rgb[0]):02x}{int(rgb[1]):02x}{int(rgb[2]):02x}"
+
+
+def interpolate_color(color_a, color_b, factor):
+    """Interpolate linearly between two hex colors by factor [0.0, 1.0]"""
+    factor = max(0.0, min(1.0, factor))
+    rgb_a = hex_to_rgb(color_a)
+    rgb_b = hex_to_rgb(color_b)
+    res_rgb = tuple(
+        rgb_a[i] + (rgb_b[i] - rgb_a[i]) * factor for i in range(3)
+    )
+    return rgb_to_hex(res_rgb)
+
+
+def calculate_lp_colors(superheat_margin):
+    """Dynamically calculates the LP Steam Pipe & Particle Color spectrum:
+
+    - Margin > 8.0°C to 20.0°C: Transitions from Silver (#94A3B8) to HP Maroon (#800020).
+    - Margin < 2.0°C to 0.0°C: Transitions from Silver (#94A3B8) to Feedwater Blue (#0EA5E9).
+    - Margin between 2.0°C and 8.0°C: Remains neutral Silver (#94A3B8).
+    """
+    if superheat_margin > 8.0:
+        # Scale factor from 0.0 at margin=8°C to 1.0 at margin=20°C
+        factor = (superheat_margin - 8.0) / (20.0 - 8.0)
+        lp_color = interpolate_color(LP_SILVER_COLOR, HP_COLOR, factor)
+        lp_glow = interpolate_color(LP_SILVER_GLOW, HP_GLOW, factor)
+    elif superheat_margin < 2.0:
+        # Scale factor from 0.0 at margin=2°C to 1.0 at margin=0°C
+        factor = (2.0 - superheat_margin) / (2.0 - 0.0)
+        lp_color = interpolate_color(LP_SILVER_COLOR, FW_COLOR, factor)
+        lp_glow = interpolate_color(LP_SILVER_GLOW, FW_GLOW, factor)
+    else:
+        lp_color = LP_SILVER_COLOR
+        lp_glow = LP_SILVER_GLOW
+
+    return lp_color, lp_glow
 
 
 # ----------------------------------------------------------------------
@@ -41,15 +86,16 @@ def build_animated_process_svg(
     dur_fw = max(0.8, min(4.0, 10.0 / max(m_fw, 0.1)))
     dur_outlet = max(1.0, min(6.0, 150.0 / max(m_out, 1.0)))
 
-    # Scaled SVG style added: max-width: 80%, centered via margin
+    # Compute dynamic LP colors based on superheat margin spectrum
+    lp_color, lp_glow = calculate_lp_colors(t_margin)
+
     svg = f"""
     <svg
-        width="80%"
-        height="100%"
+        width="100%"
+        height="330"
         viewBox="0 0 1500 330"
         xmlns="http://www.w3.org/2000/svg"
         preserveAspectRatio="xMidYMid meet"
-        style="display: block; margin: 0 auto; max-width: 80%;"
     >
 
     <defs>
@@ -105,11 +151,11 @@ def build_animated_process_svg(
             <stop offset="100%" stop-color="{HP_COLOR}" stop-opacity="0"/>
         </radialGradient>
 
-        <!-- LP STEAM PARTICLE GRADIENT -->
+        <!-- LP STEAM PARTICLE GRADIENT (DYNAMICALLY SHIFTING) -->
         <radialGradient id="lpSteamParticle">
             <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
-            <stop offset="40%" stop-color="{LP_GLOW}" stop-opacity="0.95"/>
-            <stop offset="100%" stop-color="{LP_COLOR}" stop-opacity="0"/>
+            <stop offset="40%" stop-color="{lp_glow}" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="{lp_color}" stop-opacity="0"/>
         </radialGradient>
 
         <!-- WATER PARTICLE GRADIENT -->
@@ -130,9 +176,9 @@ def build_animated_process_svg(
     <path d="M60 210 H800" stroke="{HP_COLOR}" stroke-width="9" opacity="0.16" filter="url(#lineGlow)" />
     <path d="M60 210 H800" stroke="{HP_COLOR}" stroke-width="5" stroke-linecap="round" />
 
-    <!-- LP Steam Pipe (Blue) -->
-    <path d="M800 210 H1450" stroke="{LP_COLOR}" stroke-width="9" opacity="0.16" filter="url(#lineGlow)" />
-    <path d="M800 210 H1450" stroke="{LP_COLOR}" stroke-width="5" stroke-linecap="round" />
+    <!-- LP Steam Pipe (Dynamic Spectrum Color) -->
+    <path d="M800 210 H1450" stroke="{lp_color}" stroke-width="9" opacity="0.25" filter="url(#lineGlow)" />
+    <path d="M800 210 H1450" stroke="{lp_color}" stroke-width="5" stroke-linecap="round" />
 
     <!-- PARTICLES -->
     <!-- HP Inlet Steam Particles (Maroon) -->
@@ -156,7 +202,7 @@ def build_animated_process_svg(
         </circle>
     </g>
 
-    <!-- LP Outlet Steam Particles (Blue) -->
+    <!-- LP Outlet Steam Particles (Dynamic Color Spectrum) -->
     <g filter="url(#lpSteamGlow)">
         <circle r="7" fill="url(#lpSteamParticle)">
             <animateMotion dur="{dur_outlet:.2f}s" repeatCount="indefinite" path="M800 210 H1450"/>
@@ -252,13 +298,13 @@ def build_animated_process_svg(
         <text x="830" y="85" fill="{FW_COLOR}">Press: {p_fw:.2f} {p_unit}</text>
         <text x="830" y="110" fill="{FW_COLOR}">Temp: {t_fw:.1f} °C</text>
 
-        <!-- Outlet Steam Text (Superheat Margin aligned at y=175 to match HP Temp) -->
-        <text x="1150" y="50" font-weight="bold" fill="{LP_COLOR}">Low Pressure Steam Line</text>
-        <text x="1150" y="75" fill="{LP_COLOR}">Flow: {m_out:.2f} t/h</text>
-        <text x="1150" y="100" fill="{LP_COLOR}">Press: {p_out:.2f} {p_unit}</text>
-        <text x="1150" y="125" fill="{LP_COLOR}">Temp: {t_out:.1f} °C</text>
-        <text x="1150" y="150" fill="{LP_COLOR}">Sat Temp: {t_sat:.1f} °C</text>
-        <text x="1150" y="175" fill="{LP_COLOR}">Superheat Margin: {t_margin:.1f} °C</text>
+        <!-- Outlet Steam Text (Dynamically Colored Superheat Margin & Text) -->
+        <text x="1150" y="50" font-weight="bold" fill="{lp_color}">Low Pressure Steam Line</text>
+        <text x="1150" y="75" fill="{lp_color}">Flow: {m_out:.2f} t/h</text>
+        <text x="1150" y="100" fill="{lp_color}">Press: {p_out:.2f} {p_unit}</text>
+        <text x="1150" y="125" fill="{lp_color}">Temp: {t_out:.1f} °C</text>
+        <text x="1150" y="150" fill="{lp_color}">Sat Temp: {t_sat:.1f} °C</text>
+        <text x="1150" y="175" fill="{lp_color}">Superheat Margin: {t_margin:.1f} °C</text>
     </g>
 
     </svg>
@@ -479,8 +525,8 @@ svg_data = build_animated_process_svg(
 col_left, col_center, col_right = st.columns([0.05, 0.90, 0.05])
 with col_center:
     st.components.v1.html(
-        f'<div style="display:flex;justify-content:center;align-items:center;width:100%;">{svg_data}</div>',
-        height=280,
+        f'<div style="display:flex;justify-content:center;width:100%;">{svg_data}</div>',
+        height=335,
     )
 
 # Safety Alert Banners
