@@ -199,16 +199,16 @@ def build_animated_process_svg(
             <line x1="0" y1="-75" x2="0" y2="-5" stroke="{FW_COLOR}" stroke-width="3"/>
             <circle cx="0" cy="-5" r="6" fill="{FW_COLOR}" filter="url(#waterGlow)"/>
 
-            <!-- SPRAY PARTICLES EXTENDED FURTHER TO THE RIGHT -->
+            <!-- EXTENDED SPRAY PARTICLES TO THE RIGHT -->
             <g filter="url(#waterGlow)">
                 <circle r="5" fill="url(#waterParticle)">
-                    <animateMotion dur="1.0s" repeatCount="indefinite" path="M0 -5 L55 5"/>
+                    <animateMotion dur="1.0s" repeatCount="indefinite" path="M0 -5 L85 8"/>
                 </circle>
                 <circle r="4" fill="url(#waterParticle)">
-                    <animateMotion dur="1.2s" begin="-0.4s" repeatCount="indefinite" path="M0 -5 L65 -8"/>
+                    <animateMotion dur="1.2s" begin="-0.4s" repeatCount="indefinite" path="M0 -5 L90 -6"/>
                 </circle>
                 <circle r="3" fill="url(#waterParticle)">
-                    <animateMotion dur="0.9s" begin="-0.2s" repeatCount="indefinite" path="M0 -5 L60 12"/>
+                    <animateMotion dur="0.9s" begin="-0.2s" repeatCount="indefinite" path="M0 -5 L80 14"/>
                 </circle>
             </g>
         </g>
@@ -218,21 +218,21 @@ def build_animated_process_svg(
     <text x="490" y="265" text-anchor="middle" fill="#334155" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600">Isenthalpic Expansion</text>
     <text x="800" y="265" text-anchor="middle" fill="#334155" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600">Desuperheater</text>
 
-    <!-- FEEDWATER PIPE -->
+    <!-- FEEDWATER PIPE (Reverted aligned center at X=800) -->
     <path d="M800 65 V205" stroke="{FW_COLOR}" stroke-width="5" stroke-linecap="round"/>
     <path d="M800 65 V205" stroke="{FW_COLOR}" stroke-width="10" stroke-linecap="round" opacity="0.15" filter="url(#lineGlow)"/>
     <path d="M800 100 V150" stroke="{FW_COLOR}" stroke-width="2" marker-end="url(#waterArrow)"/>
 
-    <!-- FEEDWATER PARTICLES (Shifted to X=810 to flow slightly further right) -->
+    <!-- FEEDWATER PARTICLES (Aligned down the X=800 pipe) -->
     <g filter="url(#waterGlow)">
         <circle r="7" fill="url(#waterParticle)">
-            <animateMotion dur="{dur_fw:.2f}s" repeatCount="indefinite" path="M810 65 V205"/>
+            <animateMotion dur="{dur_fw:.2f}s" repeatCount="indefinite" path="M800 65 V205"/>
         </circle>
         <circle r="5" fill="url(#waterParticle)">
-            <animateMotion dur="{dur_fw:.2f}s" begin="-0.65s" repeatCount="indefinite" path="M810 65 V205"/>
+            <animateMotion dur="{dur_fw:.2f}s" begin="-0.65s" repeatCount="indefinite" path="M800 65 V205"/>
         </circle>
         <circle r="4" fill="url(#waterParticle)">
-            <animateMotion dur="{dur_fw:.2f}s" begin="-1.3s" repeatCount="indefinite" path="M810 65 V205"/>
+            <animateMotion dur="{dur_fw:.2f}s" begin="-1.3s" repeatCount="indefinite" path="M800 65 V205"/>
         </circle>
     </g>
 
