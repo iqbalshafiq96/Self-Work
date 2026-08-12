@@ -58,17 +58,18 @@ def build_svg_figure(
     # ------------------------------------------------------------------
     # Drawing Helper Functions (Scaled down fonts & markers)
     # ------------------------------------------------------------------
-    def pipe(x1, y1, x2, y2, color=STEAM_COLOR, lw=LW_PIPE, zorder=2):
-        ax.add_line(
-            mlines.Line2D(
-                [x1, x2],
-                [y1, y2],
-                color=color,
-                lw=lw,
-                solid_capstyle="round",
-                zorder=zorder,
-            )
+    def pipe(x1, y1, x2, y2, color=STEAM_COLOR, lw=LW_PIPE, zorder=2, gid=None):
+        line = mlines.Line2D(
+            [x1, x2],
+            [y1, y2],
+            color=color,
+            lw=lw,
+            solid_capstyle="round",
+            zorder=zorder,
         )
+        if gid:
+            line.set_gid(gid)
+        ax.add_line(line)
 
     def flow_arrow(x, y, dx, dy, color=STEAM_COLOR):
         ax.annotate(
@@ -78,8 +79,8 @@ def build_svg_figure(
             arrowprops=dict(
                 arrowstyle="-|>",
                 color=color,
-                lw=1.44,  # Scaled down from 1.8
-                mutation_scale=12,  # Scaled down from 15
+                lw=1.44,
+                mutation_scale=12,
             ),
             zorder=3,
         )
@@ -120,7 +121,6 @@ def build_svg_figure(
                 zorder=4,
             )
         )
-        # Text scaled down from 10pt to 8pt
         ax.text(
             x,
             y - s - 0.28,
@@ -167,7 +167,6 @@ def build_svg_figure(
             )
         )
 
-        # Atomized Spray Cone lines
         spray_origin_x = cx
         spray_origin_y = cy
         spray_len = 0.35
@@ -203,7 +202,6 @@ def build_svg_figure(
             )
         )
 
-        # Text scaled down from 10pt to 8pt
         ax.text(
             cx,
             cy - 0.62,
@@ -218,7 +216,6 @@ def build_svg_figure(
 
         return x0, x3
 
-    # Text label helper: Scaled down default font size from 9.5pt to 7.6pt
     def label(x, y, txt, color=text_color, fs=7.6, ha="left"):
         ax.text(
             x,
@@ -234,8 +231,8 @@ def build_svg_figure(
 
     Y = 4.6
 
-    # HP Steam Line (Inlet)
-    pipe(0.6, Y, 4.1, Y)
+    # HP Steam Line (Inlet) - Associated with steam animation class
+    pipe(0.6, Y, 4.1, Y, gid="steam_line_1")
     flow_arrow(1.6, Y, 0.8, 0)
     inlet_txt = (
         f"High Pressure Steam Line\nFlow: {m_in:.2f} t/h\nPress: {p_in:.2f}"
@@ -246,20 +243,20 @@ def build_svg_figure(
     # Pressure Control Valve
     pcv_x = 5.0
     control_valve(pcv_x, Y, "Isenthalpic Expansion")
-    pipe(4.1, Y, pcv_x - 0.34, Y)
-    pipe(pcv_x + 0.34, Y, 6.1, Y)
+    pipe(4.1, Y, pcv_x - 0.34, Y, gid="steam_line_2")
+    pipe(pcv_x + 0.34, Y, 6.1, Y, gid="steam_line_3")
     flow_arrow(5.65, Y, 0.35, 0)
 
     # Venturi Spray Desuperheater
     vessel_x = 8.7
     v_in, v_out = venturi_desuperheater(vessel_x, Y)
-    pipe(6.1, Y, v_in, Y)
+    pipe(6.1, Y, v_in, Y, gid="steam_line_4")
 
-    # Feedwater Spray Line
+    # Feedwater Spray Line - Associated with feedwater animation class
     fw_top = 7.35
-    pipe(vessel_x, fw_top, vessel_x, Y, color=FW_COLOR, zorder=3)
+    pipe(vessel_x, fw_top, vessel_x, Y, color=FW_COLOR, zorder=3, gid="fw_line_1")
     flow_arrow(vessel_x, 6.2, 0, -0.42, color=FW_COLOR)
-    pipe(6.6, fw_top, vessel_x, fw_top, color=FW_COLOR)
+    pipe(6.6, fw_top, vessel_x, fw_top, color=FW_COLOR, gid="fw_line_2")
     flow_arrow(7.2, fw_top, 0.4, 0, color=FW_COLOR)
     fw_txt = (
         f"Feedwater Spray Line\nFlow: {m_fw:.2f} t/h\nPress: {p_fw:.2f}"
@@ -268,7 +265,7 @@ def build_svg_figure(
     label(6.6, fw_top + 0.85, fw_txt, color=FW_COLOR)
 
     # LP Steam Line (Outlet)
-    pipe(v_out, Y, 15.4, Y)
+    pipe(v_out, Y, 15.4, Y, gid="steam_line_5")
     flow_arrow(14.2, Y, 0.8, 0)
     outlet_txt = (
         f"Low Pressure Steam Line\nFlow: {m_out:.2f} t/h\nPress: {p_out:.2f}"
@@ -287,7 +284,57 @@ def build_svg_figure(
     )
     plt.close(fig)
 
-    return svg_buffer.getvalue()
+    svg_str = svg_buffer.getvalue()
+
+    # ------------------------------------------------------------------
+    # INJECT GLOWING ANIMATION CSS VIA SVG INJECTION
+    # ------------------------------------------------------------------
+    css_animation = """
+    <style>
+        /* Steam line glowing particles animation */
+        #steam_line_1, #steam_line_2, #steam_line_3, #steam_line_4, #steam_line_5 {
+            stroke-dasharray: 4 12;
+            animation: steamFlow 1.2s linear infinite, steamGlow 2s ease-in-out infinite alternate;
+            filter: drop-shadow(0px 0px 4px #94A3B8);
+        }
+
+        /* Feedwater line glowing particles animation */
+        #fw_line_1, #fw_line_2 {
+            stroke-dasharray: 4 10;
+            animation: fwFlow 0.8s linear infinite, fwGlow 1.5s ease-in-out infinite alternate;
+            filter: drop-shadow(0px 0px 5px #38BDF8);
+        }
+
+        /* Forward motion for steam line */
+        @keyframes steamFlow {
+            0% { stroke-dashoffset: 32; }
+            100% { stroke-dashoffset: 0; }
+        }
+
+        /* Forward motion for feedwater spray */
+        @keyframes fwFlow {
+            0% { stroke-dashoffset: 28; }
+            100% { stroke-dashoffset: 0; }
+        }
+
+        /* Pulsating shine effect for Steam */
+        @keyframes steamGlow {
+            0% { filter: drop-shadow(0px 0px 2px #64748B); }
+            100% { filter: drop-shadow(0px 0px 8px #CBD5E1); }
+        }
+
+        /* Pulsating shine effect for Water */
+        @keyframes fwGlow {
+            0% { filter: drop-shadow(0px 0px 3px #0EA5E9); }
+            100% { filter: drop-shadow(0px 0px 10px #7DD3FC); }
+        }
+    </style>
+    """
+
+    # Inject the style tag right inside the SVG element tag
+    svg_str = svg_str.replace("<svg ", f"{css_animation}\n<svg ")
+
+    return svg_str
 
 
 # ----------------------------------------------------------------------
