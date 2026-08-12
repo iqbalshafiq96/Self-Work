@@ -41,13 +41,15 @@ def build_animated_process_svg(
     dur_fw = max(0.8, min(4.0, 10.0 / max(m_fw, 0.1)))
     dur_outlet = max(1.0, min(6.0, 150.0 / max(m_out, 1.0)))
 
+    # Scaled SVG style added: max-width: 80%, centered via margin
     svg = f"""
     <svg
-        width="100%"
-        height="330"
+        width="80%"
+        height="100%"
         viewBox="0 0 1500 330"
         xmlns="http://www.w3.org/2000/svg"
         preserveAspectRatio="xMidYMid meet"
+        style="display: block; margin: 0 auto; max-width: 80%;"
     >
 
     <defs>
@@ -477,8 +479,8 @@ svg_data = build_animated_process_svg(
 col_left, col_center, col_right = st.columns([0.05, 0.90, 0.05])
 with col_center:
     st.components.v1.html(
-        f'<div style="display:flex;justify-content:center;width:100%;">{svg_data}</div>',
-        height=335,
+        f'<div style="display:flex;justify-content:center;align-items:center;width:100%;">{svg_data}</div>',
+        height=280,
     )
 
 # Safety Alert Banners
