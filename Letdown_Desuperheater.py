@@ -1622,4 +1622,3 @@ with col_right:
         f"**Outlet Steam Mass Flow:** "
         f"{mass_flow_steam_outlet:.2f} t/h"
     )
-```
