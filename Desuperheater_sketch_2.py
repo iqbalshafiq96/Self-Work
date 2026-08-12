@@ -1,5 +1,4 @@
 import time
-import xml.etree.ElementTree as ET
 from iapws import IAPWS97
 import numpy as np
 import pandas as pd
@@ -165,7 +164,7 @@ def build_animated_process_svg(
             <stop offset="100%" stop-color="{HP_COLOR}" stop-opacity="0"/>
         </radialGradient>
 
-        <!-- LP STEAM PARTICLE GRADIENT (DYNAMICALLY SHIFTING) -->
+        <!-- LP STEAM PARTICLE GRADIENT -->
         <radialGradient id="lpSteamParticle">
             <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
             <stop offset="40%" stop-color="{lp_glow}" stop-opacity="0.95"/>
@@ -185,17 +184,14 @@ def build_animated_process_svg(
         </marker>
     </defs>
 
-    <!-- LAYER 1: BACK - PIPING SECTIONS -->
-    <!-- HP Steam Pipe (Professional Maroon) -->
+    <!-- PIPING SECTIONS -->
     <path d="M60 210 H800" stroke="{HP_COLOR}" stroke-width="9" opacity="0.16" filter="url(#lineGlow)" />
     <path d="M60 210 H800" stroke="{HP_COLOR}" stroke-width="5" stroke-linecap="round" />
 
-    <!-- LP Steam Pipe (Dynamic Spectrum Color) -->
     <path d="M800 210 H1450" stroke="{lp_color}" stroke-width="9" opacity="0.25" filter="url(#lineGlow)" />
     <path d="M800 210 H1450" stroke="{lp_color}" stroke-width="5" stroke-linecap="round" />
 
     <!-- PARTICLES -->
-    <!-- HP Inlet Steam Particles (Maroon) -->
     <g filter="url(#hpSteamGlow)">
         <circle r="7" fill="url(#hpSteamParticle)">
             <animateMotion dur="{dur_inlet:.2f}s" repeatCount="indefinite" path="M60 210 H490"/>
@@ -207,7 +203,6 @@ def build_animated_process_svg(
             <animateMotion dur="{dur_inlet:.2f}s" begin="-2.5s" repeatCount="indefinite" path="M60 210 H490"/>
         </circle>
 
-        <!-- Valve-to-Desuperheater Section -->
         <circle r="7" fill="url(#hpSteamParticle)">
             <animateMotion dur="{dur_valve:.2f}s" repeatCount="indefinite" path="M490 210 H800"/>
         </circle>
@@ -216,7 +211,6 @@ def build_animated_process_svg(
         </circle>
     </g>
 
-    <!-- LP Outlet Steam Particles (Dynamic Color Spectrum) -->
     <g filter="url(#lpSteamGlow)">
         <circle r="7" fill="url(#lpSteamParticle)">
             <animateMotion dur="{dur_outlet:.2f}s" repeatCount="indefinite" path="M800 210 H1450"/>
@@ -229,14 +223,12 @@ def build_animated_process_svg(
         </circle>
     </g>
 
-    <!-- LAYER 2: FOREGROUND - PRESSURE CONTROL VALVE -->
+    <!-- PRESSURE CONTROL VALVE -->
     <g transform="translate(490,210)">
-        <!-- Solid White Background Fill to Occlude Pipe Line -->
         <polygon points="-35,-30 0,0 -35,30" fill="#FFFFFF"/>
         <polygon points="35,-30 0,0 35,30" fill="#FFFFFF"/>
         <circle cx="0" cy="-70" r="17" fill="#FFFFFF"/>
         
-        <!-- Foreground Valve Outlines & Actuator (Centered) -->
         <g filter="url(#equipmentGlow)">
             <polygon points="-35,-30 0,0 -35,30" fill="#FFFFFF" fill-opacity="0.9" stroke="{EQUIP_COLOR}" stroke-width="3"/>
             <polygon points="35,-30 0,0 35,30" fill="#FFFFFF" fill-opacity="0.9" stroke="{EQUIP_COLOR}" stroke-width="3"/>
@@ -249,9 +241,8 @@ def build_animated_process_svg(
         </g>
     </g>
 
-    <!-- LAYER 3: FOREGROUND - DESUPERHEATER BODY -->
+    <!-- DESUPERHEATER BODY -->
     <g transform="translate(800,210)">
-        <!-- Solid White Background Fill -->
         <path d="M-105 -42 L-35 -16 L35 -16 L105 -42 L105 42 L35 16 L-35 16 L-105 42 Z" fill="#FFFFFF"/>
         
         <g filter="url(#equipmentGlow)">
@@ -261,7 +252,6 @@ def build_animated_process_svg(
             <line x1="0" y1="-75" x2="0" y2="-5" stroke="{FW_COLOR}" stroke-width="3"/>
             <circle cx="0" cy="-5" r="6" fill="{FW_COLOR}" filter="url(#waterGlow)"/>
 
-            <!-- EXTENDED SPRAY PARTICLES TO THE RIGHT -->
             <g filter="url(#waterGlow)">
                 <circle r="5" fill="url(#waterParticle)">
                     <animateMotion dur="1.0s" repeatCount="indefinite" path="M0 -5 L85 8"/>
@@ -300,19 +290,16 @@ def build_animated_process_svg(
 
     <!-- PROCESS LABELS -->
     <g font-family="Segoe UI, sans-serif" font-size="15">
-        <!-- Inlet Steam Text -->
         <text x="60" y="100" font-weight="bold" fill="{HP_COLOR}">High Pressure Steam Line</text>
         <text x="60" y="125" fill="{HP_COLOR}">Flow: {m_in:.2f} t/h</text>
         <text x="60" y="150" fill="{HP_COLOR}">Press: {p_in:.2f} {p_unit}</text>
         <text x="60" y="175" fill="{HP_COLOR}">Temp: {t_in:.1f} °C</text>
 
-        <!-- Feedwater Text -->
         <text x="830" y="35" font-weight="bold" fill="{FW_COLOR}">Feedwater Spray Line</text>
         <text x="830" y="60" fill="{FW_COLOR}">Flow: {m_fw:.2f} t/h</text>
         <text x="830" y="85" fill="{FW_COLOR}">Press: {p_fw:.2f} {p_unit}</text>
         <text x="830" y="110" fill="{FW_COLOR}">Temp: {t_fw:.1f} °C</text>
 
-        <!-- Outlet Steam Text -->
         <text x="1150" y="50" font-weight="bold" fill="{lp_color}">Low Pressure Steam Line</text>
         <text x="1150" y="75" fill="{lp_color}">Flow: {m_out:.2f} t/h</text>
         <text x="1150" y="100" fill="{lp_color}">Press: {p_out:.2f} {p_unit}</text>
@@ -551,12 +538,12 @@ if is_running:
     else:
         instantaneous_temp = curr_temp
 
-    # 3. Apply thermal lag to temperature reading (pipe wall/sensor thermal mass)
+    # 3. Apply thermal lag to temperature reading
     new_temp = curr_temp + (dt / tau_thermal) * (
         instantaneous_temp - curr_temp
     )
 
-    # Append to rolling history buffers (keep last 300 points)
+    # Append to rolling history buffers
     st.session_state.time_history.append(st.session_state.sim_time)
     st.session_state.temp_history.append(new_temp)
     st.session_state.inlet_flow_history.append(new_inlet_flow)
@@ -588,7 +575,7 @@ c3.metric(
     f"Target: {target_outlet_flow:.2f} t/h",
 )
 
-# Render Animated Letdown Station P&ID SVG
+# Render Animated Letdown Station P&ID SVG via st.html
 current_outlet_temp = st.session_state.temp_history[-1]
 current_margin = current_outlet_temp - saturation_temp
 
@@ -635,14 +622,13 @@ fig = make_subplots(
     ),
 )
 
-# Row 1: Outlet Temperature
 fig.add_trace(
     go.Scatter(
         x=st.session_state.time_history,
         y=st.session_state.temp_history,
         mode="lines",
         name="Outlet Temp (°C)",
-        line=dict(color="#008080", width=2.5),  # Teal
+        line=dict(color="#008080", width=2.5),
     ),
     row=1,
     col=1,
@@ -654,33 +640,31 @@ fig.add_trace(
         y=[saturation_temp] * len(st.session_state.time_history),
         mode="lines",
         name="Saturation Limit (°C)",
-        line=dict(color="#E63946", dash="dash"),  # Crimson
+        line=dict(color="#E63946", dash="dash"),
     ),
     row=1,
     col=1,
 )
 
-# Row 2: Outlet Steam Flow
 fig.add_trace(
     go.Scatter(
         x=st.session_state.time_history,
         y=st.session_state.outlet_flow_history,
         mode="lines",
         name="Outlet Steam Flow (t/h)",
-        line=dict(color="#4169E1", width=2.5),  # Royal Blue
+        line=dict(color="#4169E1", width=2.5),
     ),
     row=2,
     col=1,
 )
 
-# Row 3: Spray Water Flow
 fig.add_trace(
     go.Scatter(
         x=st.session_state.time_history,
         y=st.session_state.spray_flow_history,
         mode="lines",
         name="Spray Water Flow (t/h)",
-        line=dict(color="#E67E22", width=2.5),  # Deep Orange
+        line=dict(color="#E67E22", width=2.5),
     ),
     row=3,
     col=1,
