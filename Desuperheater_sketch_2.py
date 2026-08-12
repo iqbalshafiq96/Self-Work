@@ -248,13 +248,13 @@ def build_animated_process_svg(
         <text x="830" y="85" fill="{FW_COLOR}">Press: {p_fw:.2f} {p_unit}</text>
         <text x="830" y="110" fill="{FW_COLOR}">Temp: {t_fw:.1f} °C</text>
 
-        <!-- Outlet Steam Text (Aligned so Temp y=175 matches HP Temp) -->
-        <text x="1150" y="100" font-weight="bold" fill="{LP_COLOR}">Low Pressure Steam Line</text>
-        <text x="1150" y="125" fill="{LP_COLOR}">Flow: {m_out:.2f} t/h</text>
-        <text x="1150" y="150" fill="{LP_COLOR}">Press: {p_out:.2f} {p_unit}</text>
-        <text x="1150" y="175" fill="{LP_COLOR}">Temp: {t_out:.1f} °C</text>
-        <text x="1150" y="200" fill="{LP_COLOR}">Sat Temp: {t_sat:.1f} °C</text>
-        <text x="1150" y="225" fill="{LP_COLOR}">Superheat Margin: {t_margin:.1f} °C</text>
+        <!-- Outlet Steam Text (Superheat Margin aligned at y=175 to match HP Temp) -->
+        <text x="1150" y="50" font-weight="bold" fill="{LP_COLOR}">Low Pressure Steam Line</text>
+        <text x="1150" y="75" fill="{LP_COLOR}">Flow: {m_out:.2f} t/h</text>
+        <text x="1150" y="100" fill="{LP_COLOR}">Press: {p_out:.2f} {p_unit}</text>
+        <text x="1150" y="125" fill="{LP_COLOR}">Temp: {t_out:.1f} °C</text>
+        <text x="1150" y="150" fill="{LP_COLOR}">Sat Temp: {t_sat:.1f} °C</text>
+        <text x="1150" y="175" fill="{LP_COLOR}">Superheat Margin: {t_margin:.1f} °C</text>
     </g>
 
     </svg>
