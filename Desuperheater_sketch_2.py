@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="Real-Time Desuperheater Lead-Lag Dynamics",
@@ -557,25 +558,7 @@ if is_running:
         st.session_state.spray_flow_history.pop(0)
         st.session_state.outlet_flow_history.pop(0)
 
-# --- REAL-TIME DISPLAY & METRICS ---
-c1, c2, c3 = st.columns(3)
-c1.metric(
-    "Current / Target Temp",
-    f"{st.session_state.temp_history[-1]:.1f} °C",
-    f"Target: {target_temp_outlet:.1f} °C",
-)
-c2.metric(
-    "Current / Target Spray Flow",
-    f"{st.session_state.spray_flow_history[-1]:.2f} t/h",
-    f"Target: {target_fw_flow:.2f} t/h",
-)
-c3.metric(
-    "Current Outlet Flow",
-    f"{st.session_state.outlet_flow_history[-1]:.2f} t/h",
-    f"Target: {target_outlet_flow:.2f} t/h",
-)
-
-# Render Animated Letdown Station P&ID SVG via st.html
+# Render Animated Letdown Station P&ID SVG via st.components.v1.html for reliable iframe execution
 current_outlet_temp = st.session_state.temp_history[-1]
 current_margin = current_outlet_temp - saturation_temp
 
@@ -593,7 +576,9 @@ svg_code = build_animated_process_svg(
     t_margin=current_margin,
     p_unit=Pressure_Unit_Type.split("(")[-1].replace(")", ""),
 )
-st.html(svg_code)
+
+# Using components.html forces clean rendering of embedded SVG animations
+components.html(svg_code, height=340)
 
 # Lead-Lag Ratio Indicator Banner
 lead_lag_ratio = tau_spray / tau_steam
