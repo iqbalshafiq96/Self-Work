@@ -14,7 +14,7 @@ EQUIP_GLOW = "#F59E0B"  # Bright amber glow for active equipment
 
 
 # ----------------------------------------------------------------------
-# ANIMATED PROCESS SVG ENGINE (INTEGRATED CODE A)
+# ANIMATED PROCESS SVG ENGINE
 # ----------------------------------------------------------------------
 def build_animated_process_svg(
     p_in,
@@ -29,7 +29,6 @@ def build_animated_process_svg(
     p_unit,
 ):
     # Dynamic particle speed calculation based on mass flow rates
-    # Higher flow rate -> lower duration value (faster particle movement)
     dur_inlet = max(1.0, min(6.0, 150.0 / max(m_in, 1.0)))
     dur_valve = max(0.8, min(4.0, 100.0 / max(m_in, 1.0)))
     dur_fw = max(0.8, min(4.0, 10.0 / max(m_fw, 0.1)))
@@ -105,9 +104,10 @@ def build_animated_process_svg(
         </marker>
     </defs>
 
-    <!-- STEAM PIPE GLOW BACKGROUND -->
+    <!-- LAYER 1: BACK - CONTINUOUS HP & MAIN STEAM PIPING -->
+    <!-- Glow background path -->
     <path
-        d="M60 220 H370 M410 220 H550 M610 220 H700 M900 220 H1450"
+        d="M60 220 H1450"
         stroke="{STEAM_COLOR}"
         stroke-width="9"
         stroke-linecap="round"
@@ -115,83 +115,89 @@ def build_animated_process_svg(
         filter="url(#lineGlow)"
     />
 
-    <!-- MAIN STEAM PIPE -->
-    <path d="M60 220 H370" stroke="{STEAM_COLOR}" stroke-width="5" stroke-linecap="round" />
-    <path d="M410 220 H550" stroke="{STEAM_COLOR}" stroke-width="5" stroke-linecap="round" />
-    <path d="M610 220 H700" stroke="{STEAM_COLOR}" stroke-width="5" stroke-linecap="round" />
-    <path d="M900 220 H1450" stroke="{STEAM_COLOR}" stroke-width="5" stroke-linecap="round" />
+    <!-- Continuous Main Steam Line -->
+    <path d="M60 220 H1450" stroke="{STEAM_COLOR}" stroke-width="5" stroke-linecap="round" />
 
     <!-- STEAM FLOW ARROWS -->
     <path d="M210 220 H275" stroke="{STEAM_COLOR}" stroke-width="2" marker-end="url(#steamArrow)" opacity="0.8" />
-    <path d="M470 220 H520" stroke="{STEAM_COLOR}" stroke-width="2" marker-end="url(#steamArrow)" opacity="0.8" />
+    <path d="M410 220 H460" stroke="{STEAM_COLOR}" stroke-width="2" marker-end="url(#steamArrow)" opacity="0.8" />
     <path d="M1120 220 H1190" stroke="{STEAM_COLOR}" stroke-width="2" marker-end="url(#steamArrow)" opacity="0.8" />
 
-    <!-- STEAM PARTICLES -->
+    <!-- STEAM PARTICLES (FLOWING THROUGH BACKGROUND LINE) -->
     <g filter="url(#steamGlow)">
         <circle r="7" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_inlet:.2f}s" repeatCount="indefinite" path="M60 220 H370"/>
+            <animateMotion dur="{dur_inlet:.2f}s" repeatCount="indefinite" path="M60 220 H490"/>
         </circle>
         <circle r="5" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_inlet:.2f}s" begin="-1.2s" repeatCount="indefinite" path="M60 220 H370"/>
+            <animateMotion dur="{dur_inlet:.2f}s" begin="-1.2s" repeatCount="indefinite" path="M60 220 H490"/>
         </circle>
         <circle r="4" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_inlet:.2f}s" begin="-2.5s" repeatCount="indefinite" path="M60 220 H370"/>
+            <animateMotion dur="{dur_inlet:.2f}s" begin="-2.5s" repeatCount="indefinite" path="M60 220 H490"/>
         </circle>
 
         <circle r="7" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_valve:.2f}s" repeatCount="indefinite" path="M410 220 H550"/>
+            <animateMotion dur="{dur_valve:.2f}s" repeatCount="indefinite" path="M490 220 H800"/>
         </circle>
         <circle r="5" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_valve:.2f}s" begin="-1s" repeatCount="indefinite" path="M410 220 H550"/>
-        </circle>
-
-        <circle r="6" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_valve*1.2:.2f}s" repeatCount="indefinite" path="M610 220 H700"/>
+            <animateMotion dur="{dur_valve:.2f}s" begin="-1s" repeatCount="indefinite" path="M490 220 H800"/>
         </circle>
 
         <circle r="7" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_outlet:.2f}s" repeatCount="indefinite" path="M900 220 H1450"/>
+            <animateMotion dur="{dur_outlet:.2f}s" repeatCount="indefinite" path="M800 220 H1450"/>
         </circle>
         <circle r="5" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_outlet:.2f}s" begin="-1.5s" repeatCount="indefinite" path="M900 220 H1450"/>
+            <animateMotion dur="{dur_outlet:.2f}s" begin="-1.5s" repeatCount="indefinite" path="M800 220 H1450"/>
         </circle>
         <circle r="4" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_outlet:.2f}s" begin="-3s" repeatCount="indefinite" path="M900 220 H1450"/>
+            <animateMotion dur="{dur_outlet:.2f}s" begin="-3s" repeatCount="indefinite" path="M800 220 H1450"/>
         </circle>
     </g>
 
-    <!-- PRESSURE CONTROL VALVE -->
-    <g transform="translate(490,220)" filter="url(#equipmentGlow)">
-        <polygon points="-35,-30 0,0 -35,30" fill="none" stroke="{EQUIP_COLOR}" stroke-width="3"/>
-        <polygon points="35,-30 0,0 35,30" fill="none" stroke="{EQUIP_COLOR}" stroke-width="3"/>
-        <line x1="0" y1="-30" x2="0" y2="-65" stroke="{EQUIP_COLOR}" stroke-width="3"/>
-        <circle cx="0" cy="-82" r="17" fill="none" stroke="{EQUIP_COLOR}" stroke-width="3"/>
-        <circle cx="0" cy="-82" r="20" fill="none" stroke="{EQUIP_GLOW}" stroke-width="2" opacity="0">
-            <animate attributeName="r" values="18;28;18" dur="2.5s" repeatCount="indefinite"/>
-            <animate attributeName="opacity" values="0.7;0;0.7" dur="2.5s" repeatCount="indefinite"/>
-        </circle>
+    <!-- LAYER 2: FOREGROUND - PRESSURE CONTROL VALVE (SOLID WHITE FILL TO BLOCK BACKGROUND LINE) -->
+    <g transform="translate(490,220)">
+        <!-- Solid White Background Fill to Occlude Pipe Line -->
+        <polygon points="-35,-30 0,0 -35,30" fill="#FFFFFF"/>
+        <polygon points="35,-30 0,0 35,30" fill="#FFFFFF"/>
+        <circle cx="0" cy="-82" r="17" fill="#FFFFFF"/>
+        
+        <!-- Foreground Valve Outlines & Actuator -->
+        <g filter="url(#equipmentGlow)">
+            <polygon points="-35,-30 0,0 -35,30" fill="#FFFFFF" fill-opacity="0.9" stroke="{EQUIP_COLOR}" stroke-width="3"/>
+            <polygon points="35,-30 0,0 35,30" fill="#FFFFFF" fill-opacity="0.9" stroke="{EQUIP_COLOR}" stroke-width="3"/>
+            <line x1="0" y1="-30" x2="0" y2="-65" stroke="{EQUIP_COLOR}" stroke-width="3"/>
+            <circle cx="0" cy="-82" r="17" fill="#FFFFFF" stroke="{EQUIP_COLOR}" stroke-width="3"/>
+            <circle cx="0" cy="-82" r="20" fill="none" stroke="{EQUIP_GLOW}" stroke-width="2" opacity="0">
+                <animate attributeName="r" values="18;28;18" dur="2.5s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0.7;0;0.7" dur="2.5s" repeatCount="indefinite"/>
+            </circle>
+        </g>
     </g>
     <text x="490" y="275" text-anchor="middle" fill="#334155" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600">Isenthalpic Expansion</text>
 
-    <!-- DESUPERHEATER BODY -->
-    <g transform="translate(800,220)" filter="url(#equipmentGlow)">
-        <path d="M-105 -42 L-35 -16 L35 -16 L105 -42 L105 42 L35 16 L-35 16 L-105 42 Z" fill="none" stroke="{EQUIP_COLOR}" stroke-width="3" stroke-linejoin="round"/>
-        <line x1="-35" y1="-16" x2="35" y2="-16" stroke="{EQUIP_COLOR}" stroke-width="2"/>
-        <line x1="-35" y1="16" x2="35" y2="16" stroke="{EQUIP_COLOR}" stroke-width="2"/>
-        <line x1="0" y1="-75" x2="0" y2="-5" stroke="{FW_COLOR}" stroke-width="3"/>
-        <circle cx="0" cy="-5" r="6" fill="{FW_COLOR}" filter="url(#waterGlow)"/>
+    <!-- LAYER 3: FOREGROUND - DESUPERHEATER BODY -->
+    <g transform="translate(800,220)">
+        <!-- Solid White Background Fill -->
+        <path d="M-105 -42 L-35 -16 L35 -16 L105 -42 L105 42 L35 16 L-35 16 L-105 42 Z" fill="#FFFFFF"/>
+        
+        <g filter="url(#equipmentGlow)">
+            <path d="M-105 -42 L-35 -16 L35 -16 L105 -42 L105 42 L35 16 L-35 16 L-105 42 Z" fill="#FFFFFF" fill-opacity="0.95" stroke="{EQUIP_COLOR}" stroke-width="3" stroke-linejoin="round"/>
+            <line x1="-35" y1="-16" x2="35" y2="-16" stroke="{EQUIP_COLOR}" stroke-width="2"/>
+            <line x1="-35" y1="16" x2="35" y2="16" stroke="{EQUIP_COLOR}" stroke-width="2"/>
+            <line x1="0" y1="-75" x2="0" y2="-5" stroke="{FW_COLOR}" stroke-width="3"/>
+            <circle cx="0" cy="-5" r="6" fill="{FW_COLOR}" filter="url(#waterGlow)"/>
 
-        <!-- SPRAY PARTICLES -->
-        <g filter="url(#waterGlow)">
-            <circle r="5" fill="url(#waterParticle)">
-                <animateMotion dur="1.0s" repeatCount="indefinite" path="M0 -5 L35 5"/>
-            </circle>
-            <circle r="4" fill="url(#waterParticle)">
-                <animateMotion dur="1.2s" begin="-0.4s" repeatCount="indefinite" path="M0 -5 L45 -8"/>
-            </circle>
-            <circle r="3" fill="url(#waterParticle)">
-                <animateMotion dur="0.9s" begin="-0.2s" repeatCount="indefinite" path="M0 -5 L40 12"/>
-            </circle>
+            <!-- SPRAY PARTICLES -->
+            <g filter="url(#waterGlow)">
+                <circle r="5" fill="url(#waterParticle)">
+                    <animateMotion dur="1.0s" repeatCount="indefinite" path="M0 -5 L35 5"/>
+                </circle>
+                <circle r="4" fill="url(#waterParticle)">
+                    <animateMotion dur="1.2s" begin="-0.4s" repeatCount="indefinite" path="M0 -5 L45 -8"/>
+                </circle>
+                <circle r="3" fill="url(#waterParticle)">
+                    <animateMotion dur="0.9s" begin="-0.2s" repeatCount="indefinite" path="M0 -5 L40 12"/>
+                </circle>
+            </g>
         </g>
     </g>
     <text x="800" y="280" text-anchor="middle" fill="#334155" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600">Desuperheater</text>
@@ -434,7 +440,7 @@ else:
 
 pressure_drop_bar = (p_in_mpaa - p_out_mpaa) * 10.0
 
-# --- RENDER CODE A ANIMATED PROCESS FLOW DIAGRAM ---
+# --- RENDER ANIMATED PROCESS FLOW DIAGRAM ---
 svg_data = build_animated_process_svg(
     p_in=High_Pressure_Inlet_Steam_Pressure,
     t_in=temperature_steam_inlet,
