@@ -1,5 +1,6 @@
 import io
 import math
+import xml.etree.ElementTree as ET
 from iapws import IAPWS97
 import matplotlib.lines as mlines
 import matplotlib.patches as patches
@@ -14,9 +15,117 @@ FW_COLOR = "#0EA5E9"  # Vivid sky blue for feedwater spray
 EQUIP_COLOR = "#D97706"  # Amber for control valve & desuperheater outline
 EQUIP_FILL = "none"  # Transparent background integration
 
-# Scaled line widths (reduced by ~20%)
+# Scaled line widths
 LW_PIPE = 3.36
 LW_EQUIP = 1.6
+
+
+def post_process_svg_animation(svg_str, m_in, m_fw):
+    """Post-processes raw SVG xml string to add dynamic flow animations,
+
+    actuator movements, and nebulization effects.
+    """
+    # Register namespaces to preserve formatting
+    ET.register_namespace("", "http://www.w3.org/2000/svg")
+    ET.register_namespace("xlink", "http://www.w3.org/1999/xlink")
+
+    root = ET.fromstring(svg_str)
+    ns = {"svg": "http://www.w3.org/2000/svg"}
+
+    # Dynamic animation timing proportional to mass flow rates
+    # Scale speeds: higher flow rate -> smaller duration (faster)
+    steam_dur = max(0.5, min(4.0, 100.0 / max(m_in, 1.0)))
+    fw_dur = max(0.3, min(3.0, 20.0 / max(m_fw, 0.1)))
+
+    # Inject dynamic CSS stylesheet for flow dashes
+    css_style = ET.Element("style", attrib={"type": "text/css"})
+    css_style.text = f"""
+        @keyframes flowDash {{
+            0% {{ stroke-dashoffset: 24; }}
+            100% {{ stroke-dashoffset: 0; }}
+        }}
+        .steam-flow-path {{
+            stroke-dasharray: 8, 4;
+            animation: flowDash {steam_dur:.2f}s linear infinite;
+        }}
+        .fw-flow-path {{
+            stroke-dasharray: 6, 3;
+            animation: flowDash {fw_dur:.2f}s linear infinite;
+        }}
+        .actuator-ring {{
+            animation: ringPulse 2s ease-in-out infinite alternate;
+        }}
+        @keyframes ringPulse {{
+            0% {{ stroke: #D97706; stroke-width: 1.6; }}
+            50% {{ stroke: #EF4444; stroke-width: 2.4; }}
+            100% {{ stroke: #10B981; stroke-width: 1.6; }}
+        }}
+    """
+    root.insert(0, css_style)
+
+    # Process elements based on stroke colors
+    for elem in root.findall(".//svg:*", ns):
+        tag = elem.tag.split("}")[-1]
+        style = elem.get("style", "")
+
+        # 1. Main Steam Paths
+        if (
+            "stroke: #64748b" in style.lower()
+            or elem.get("stroke") == STEAM_COLOR
+        ):
+            current_cls = elem.get("class", "")
+            elem.set("class", f"{current_cls} steam-flow-path".strip())
+
+        # 2. Feedwater Paths
+        elif "stroke: #0ea5e9" in style.lower() or elem.get("stroke") == FW_COLOR:
+            # Check if this is a spray line (dashed in original)
+            if (
+                "stroke-dasharray" in style
+                or elem.get("stroke-dasharray") is not None
+            ):
+                # Desuperheater Spray Nebulization Mist
+                anim_opacity = ET.Element(
+                    "animate",
+                    attrib={
+                        "attributeName": "opacity",
+                        "values": "0.35;0.95;0.35",
+                        "dur": f"{fw_dur * 0.5:.2f}s",
+                        "repeatCount": "indefinite",
+                    },
+                )
+                elem.append(anim_opacity)
+            else:
+                current_cls = elem.get("class", "")
+                elem.set("class", f"{current_cls} fw-flow-path".strip())
+
+        # 3. Control Valve Actuator Stem Movement & Beacon Ring
+        elif (
+            tag == "circle"
+            and elem.get("r") == "0.22"
+            or "r:0.22" in style.lower()
+        ):
+            current_cls = elem.get("class", "")
+            elem.set("class", f"{current_cls} actuator-ring".strip())
+
+        elif tag == "path" or tag == "line":
+            # Target actuator vertical stem line for dynamic vertical motion
+            # (Matches vertical lines at valve position x ~ 5.0)
+            x1 = elem.get("x1")
+            x2 = elem.get("x2")
+            if x1 and x2 and abs(float(x1) - float(x2)) < 1e-4:
+                anim_transform = ET.Element(
+                    "animateTransform",
+                    attrib={
+                        "attributeName": "transform",
+                        "type": "translate",
+                        "values": "0,0; 0,-2; 0,0",
+                        "dur": "2.5s",
+                        "repeatCount": "indefinite",
+                    },
+                )
+                elem.append(anim_transform)
+
+    return ET.tostring(root, encoding="utf-8").decode("utf-8")
 
 
 def build_svg_figure(
@@ -32,7 +141,6 @@ def build_svg_figure(
     p_unit,
     figsize=(14, 3.4),
 ):
-    # Set high-DPI font parameters for technical legibility
     plt.rcParams.update(
         {
             "font.sans-serif": ["Segoe UI", "Aptos", "Arial", "DejaVu Sans"],
@@ -41,23 +149,16 @@ def build_svg_figure(
     )
 
     fig, ax = plt.subplots(figsize=figsize)
-
-    # Set background to fully transparent
     fig.patch.set_alpha(0.0)
     ax.patch.set_alpha(0.0)
 
-    # Technical text color
     text_color = "#334155"
 
-    # Tight bounding limits
     ax.set_xlim(0.4, 15.6)
     ax.set_ylim(3.6, 9.0)
     ax.set_aspect("equal")
     ax.axis("off")
 
-    # ------------------------------------------------------------------
-    # Drawing Helper Functions (Scaled down fonts & markers)
-    # ------------------------------------------------------------------
     def pipe(x1, y1, x2, y2, color=STEAM_COLOR, lw=LW_PIPE, zorder=2):
         ax.add_line(
             mlines.Line2D(
@@ -78,8 +179,8 @@ def build_svg_figure(
             arrowprops=dict(
                 arrowstyle="-|>",
                 color=color,
-                lw=1.44,  # Scaled down from 1.8
-                mutation_scale=12,  # Scaled down from 15
+                lw=1.44,
+                mutation_scale=12,
             ),
             zorder=3,
         )
@@ -120,7 +221,6 @@ def build_svg_figure(
                 zorder=4,
             )
         )
-        # Text scaled down from 10pt to 8pt
         ax.text(
             x,
             y - s - 0.28,
@@ -167,7 +267,6 @@ def build_svg_figure(
             )
         )
 
-        # Atomized Spray Cone lines
         spray_origin_x = cx
         spray_origin_y = cy
         spray_len = 0.35
@@ -203,7 +302,6 @@ def build_svg_figure(
             )
         )
 
-        # Text scaled down from 10pt to 8pt
         ax.text(
             cx,
             cy - 0.62,
@@ -218,7 +316,6 @@ def build_svg_figure(
 
         return x0, x3
 
-    # Text label helper: Scaled down default font size from 9.5pt to 7.6pt
     def label(x, y, txt, color=text_color, fs=7.6, ha="left"):
         ax.text(
             x,
@@ -276,7 +373,7 @@ def build_svg_figure(
     )
     label(11.8, Y + 1.15, outlet_txt)
 
-    # Render Matplotlib figure to an SVG memory buffer with zero padding
+    # Render Matplotlib figure to an SVG memory buffer
     svg_buffer = io.StringIO()
     fig.savefig(
         svg_buffer,
@@ -287,7 +384,9 @@ def build_svg_figure(
     )
     plt.close(fig)
 
-    return svg_buffer.getvalue()
+    # Apply dynamic SVG animation attributes
+    animated_svg = post_process_svg_animation(svg_buffer.getvalue(), m_in, m_fw)
+    return animated_svg
 
 
 # ----------------------------------------------------------------------
@@ -406,7 +505,6 @@ else:
     p_fw_mpaa = Spray_Feedwater_Inlet_Pressure
     unit_label = "MPaA"
 
-# Pressure Display Conversions
 p_in_bara, p_in_barg = p_in_mpaa * 10.0, (
     p_in_mpaa * 10.0
 ) - ATMOSPHERIC_PRESSURE_BAR
@@ -422,7 +520,6 @@ temperature_feedwater_inlet = (
     Spray_Feedwater_Inlet_Temperature_Degrees_Celsius
 )
 
-# Enthalpies via IAPWS-IF97
 enthalpy_steam_inlet = IAPWS97(
     P=p_in_mpaa, T=temperature_steam_inlet + 273.15
 ).h
@@ -473,7 +570,6 @@ else:
         )
         mass_flow_feedwater_inlet = mass_flow_steam_outlet - mass_flow_steam_inlet
 
-# Saturation Properties
 saturated_liquid = IAPWS97(P=p_out_mpaa, x=0)
 saturation_temp = saturated_liquid.T - 273.15
 superheat_margin = temperature_steam_outlet - saturation_temp
@@ -487,7 +583,7 @@ else:
 
 pressure_drop_bar = (p_in_mpaa - p_out_mpaa) * 10.0
 
-# --- RENDER SVG PROCESS FLOW DIAGRAM NATIVELY ---
+# --- RENDER ANIMATED SVG PROCESS FLOW DIAGRAM ---
 svg_data = build_svg_figure(
     p_in=High_Pressure_Inlet_Steam_Pressure,
     t_in=temperature_steam_inlet,
@@ -501,10 +597,13 @@ svg_data = build_svg_figure(
     p_unit=unit_label,
 )
 
-# Reduced column ratio to shrink total image width to 80% (0.64 vs previous 0.8)
 col_left, col_center, col_right = st.columns([0.18, 0.64, 0.18])
 with col_center:
-    st.image(svg_data, use_container_width=True)
+    # Use st.components.v1.html or raw SVG rendering to support dynamic embedded CSS animations
+    st.components.v1.html(
+        f'<div style="display:flex;justify-content:center;">{svg_data}</div>',
+        height=280,
+    )
 
 # Safety Alert Banners
 if superheat_margin < 0:
