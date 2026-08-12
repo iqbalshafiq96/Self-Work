@@ -14,9 +14,9 @@ FW_GLOW = "#38BDF8"  # Cyan glow for feedwater
 EQUIP_COLOR = "#D97706"  # Amber for control valve & desuperheater outline
 EQUIP_GLOW = "#F59E0B"  # Bright amber glow for active equipment
 
-# Base LP line colors (Silver spectrum default at normal margin 2.0°C - 8.0°C)
-LP_SILVER_COLOR = "#94A3B8"
-LP_SILVER_GLOW = "#CBD5E1"
+# Base LP line colors (Original Silver values as base at normal margin 2.0°C - 8.0°C)
+LP_COLOR = "#64748B"  # Low-Pressure Steam Line Color
+LP_GLOW = "#94A3B8"  # Low-Pressure Steam Glow
 
 
 def hex_to_rgb(hex_str):
@@ -42,23 +42,23 @@ def interpolate_color(color_a, color_b, factor):
 def calculate_lp_colors(superheat_margin):
     """Dynamically calculates the LP Steam Pipe & Particle Color spectrum:
 
-    - Margin > 8.0°C to 20.0°C: Transitions from Silver (#94A3B8) to HP Maroon (#800020).
-    - Margin < 2.0°C to 0.0°C: Transitions from Silver (#94A3B8) to Feedwater Blue (#0EA5E9).
-    - Margin between 2.0°C and 8.0°C: Remains neutral Silver (#94A3B8).
+    - Margin > 8.0°C to 20.0°C: Transitions from Silver (#64748B) to HP Maroon (#800020).
+    - Margin < 2.0°C to 0.0°C: Transitions from Silver (#64748B) to Feedwater Blue (#0EA5E9).
+    - Margin between 2.0°C and 8.0°C: Remains neutral Silver (#64748B).
     """
     if superheat_margin > 8.0:
         # Scale factor from 0.0 at margin=8°C to 1.0 at margin=20°C
         factor = (superheat_margin - 8.0) / (20.0 - 8.0)
-        lp_color = interpolate_color(LP_SILVER_COLOR, HP_COLOR, factor)
-        lp_glow = interpolate_color(LP_SILVER_GLOW, HP_GLOW, factor)
+        lp_color = interpolate_color(LP_COLOR, HP_COLOR, factor)
+        lp_glow = interpolate_color(LP_GLOW, HP_GLOW, factor)
     elif superheat_margin < 2.0:
         # Scale factor from 0.0 at margin=2°C to 1.0 at margin=0°C
         factor = (2.0 - superheat_margin) / (2.0 - 0.0)
-        lp_color = interpolate_color(LP_SILVER_COLOR, FW_COLOR, factor)
-        lp_glow = interpolate_color(LP_SILVER_GLOW, FW_GLOW, factor)
+        lp_color = interpolate_color(LP_COLOR, FW_COLOR, factor)
+        lp_glow = interpolate_color(LP_GLOW, FW_GLOW, factor)
     else:
-        lp_color = LP_SILVER_COLOR
-        lp_glow = LP_SILVER_GLOW
+        lp_color = LP_COLOR
+        lp_glow = LP_GLOW
 
     return lp_color, lp_glow
 
