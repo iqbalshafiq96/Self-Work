@@ -11,8 +11,8 @@ HP_GLOW = "#A52A2A"  # Soft Warm Maroon Glow for HP Steam
 FW_COLOR = "#0EA5E9"  # Vivid sky blue for feedwater spray
 FW_GLOW = "#38BDF8"  # Cyan glow for feedwater
 
-LP_COLOR = "#0284C7"  # Low-Pressure Steam Line Color
-LP_GLOW = "#38BDF8"  # Low-Pressure Steam Glow
+LP_COLOR = "#64748B"  # Low-Pressure Steam Line Color
+LP_GLOW = "#94A3B8"  # Low-Pressure Steam Glow
 
 EQUIP_COLOR = "#D97706"  # Amber for control valve & desuperheater outline
 EQUIP_GLOW = "#F59E0B"  # Bright amber glow for active equipment
