@@ -1,25 +1,42 @@
-import io
-import math
-from iapws import IAPWS97
-import matplotlib.lines as mlines
-import matplotlib.patches as patches
-import matplotlib.pyplot as plt
+```python
 import streamlit as st
-
-# ----------------------------------------------------------------------
-# COLOUR PALETTE & STYLE CONFIGURATION
-# ----------------------------------------------------------------------
-STEAM_COLOR = "#64748B"  # Slate grey for steam piping
-FW_COLOR = "#0EA5E9"  # Vivid sky blue for feedwater spray
-EQUIP_COLOR = "#D97706"  # Amber for control valve & desuperheater outline
-EQUIP_FILL = "none"  # Transparent background integration
-
-# Scaled line widths (reduced by ~20%)
-LW_PIPE = 3.36
-LW_EQUIP = 1.6
+import streamlit.components.v1 as components
+from iapws import IAPWS97
 
 
-def build_svg_figure(
+# ==============================================================
+# PAGE CONFIGURATION
+# ==============================================================
+
+st.set_page_config(
+    page_title="Desuperheater Calculator",
+    page_icon="💨",
+    layout="wide",
+)
+
+
+# ==============================================================
+# COLOUR PALETTE
+# ==============================================================
+
+STEAM_COLOR = "#64748B"
+STEAM_GLOW = "#E2E8F0"
+
+FW_COLOR = "#0EA5E9"
+FW_GLOW = "#38BDF8"
+
+EQUIP_COLOR = "#D97706"
+EQUIP_GLOW = "#F59E0B"
+
+TEXT_COLOR = "#334155"
+BACKGROUND = "transparent"
+
+
+# ==============================================================
+# ANIMATED PROCESS SVG
+# ==============================================================
+
+def build_animated_process_svg(
     p_in,
     t_in,
     m_in,
@@ -30,281 +47,971 @@ def build_svg_figure(
     t_out,
     m_out,
     p_unit,
-    figsize=(14, 3.4),
 ):
-    # Set high-DPI font parameters for technical legibility
-    plt.rcParams.update(
-        {
-            "font.sans-serif": ["Segoe UI", "Aptos", "Arial", "DejaVu Sans"],
-            "font.family": "sans-serif",
-        }
-    )
 
-    fig, ax = plt.subplots(figsize=figsize)
+    # ----------------------------------------------------------
+    # Main SVG
+    # ----------------------------------------------------------
 
-    # Set background to fully transparent
-    fig.patch.set_alpha(0.0)
-    ax.patch.set_alpha(0.0)
+    svg = f"""
+    <svg
+        width="100%"
+        height="390"
+        viewBox="0 0 1500 390"
+        xmlns="http://www.w3.org/2000/svg"
+        preserveAspectRatio="xMidYMid meet"
+    >
 
-    # Technical text color
-    text_color = "#334155"
+    <defs>
 
-    # Tight bounding limits
-    ax.set_xlim(0.4, 15.6)
-    ax.set_ylim(3.6, 9.0)
-    ax.set_aspect("equal")
-    ax.axis("off")
+        <!-- ==================================================
+             STEAM GLOW
+             ================================================== -->
 
-    # ------------------------------------------------------------------
-    # Drawing Helper Functions (Scaled down fonts & markers)
-    # ------------------------------------------------------------------
-    def pipe(x1, y1, x2, y2, color=STEAM_COLOR, lw=LW_PIPE, zorder=2):
-        ax.add_line(
-            mlines.Line2D(
-                [x1, x2],
-                [y1, y2],
-                color=color,
-                lw=lw,
-                solid_capstyle="round",
-                zorder=zorder,
-            )
-        )
+        <filter id="steamGlow"
+                x="-100%"
+                y="-100%"
+                width="300%"
+                height="300%">
 
-    def flow_arrow(x, y, dx, dy, color=STEAM_COLOR):
-        ax.annotate(
-            "",
-            xy=(x + dx, y + dy),
-            xytext=(x, y),
-            arrowprops=dict(
-                arrowstyle="-|>",
-                color=color,
-                lw=1.44,  # Scaled down from 1.8
-                mutation_scale=12,  # Scaled down from 15
-            ),
-            zorder=3,
-        )
+            <feGaussianBlur
+                stdDeviation="4"
+                result="blur"/>
 
-    def control_valve(x, y, tag_lines, size=0.34):
-        s = size
-        top, bot = (x, y + s), (x, y - s)
-        left, right = (x - s, y), (x + s, y)
-        for tri_pts in ([left, top, bot], [right, top, bot]):
-            ax.add_patch(
-                patches.Polygon(
-                    tri_pts,
-                    closed=True,
-                    facecolor=EQUIP_FILL,
-                    edgecolor=EQUIP_COLOR,
-                    lw=LW_EQUIP,
-                    zorder=4,
-                )
-            )
-        # Actuator Stem
-        ax.add_line(
-            mlines.Line2D(
-                [x, x],
-                [y + s, y + s + 0.38],
-                color=EQUIP_COLOR,
-                lw=LW_EQUIP,
-                zorder=4,
-            )
-        )
-        # Actuator Diaphragm/Dome
-        ax.add_patch(
-            patches.Circle(
-                (x, y + s + 0.6),
-                0.22,
-                facecolor=EQUIP_FILL,
-                edgecolor=EQUIP_COLOR,
-                lw=LW_EQUIP,
-                zorder=4,
-            )
-        )
-        # Text scaled down from 10pt to 8pt
-        ax.text(
-            x,
-            y - s - 0.28,
-            tag_lines,
-            ha="center",
-            va="top",
-            color=text_color,
-            fontsize=8.0,
-            fontweight="medium",
-            zorder=5,
-            linespacing=1.35,
-        )
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
 
-    def venturi_desuperheater(
-        cx, cy, w=4.2, r_in=0.62, r_throat=0.22, throat_w=0.7
-    ):
-        x0 = cx - w / 2
-        x1 = cx - throat_w / 2
-        x2 = cx + throat_w / 2
-        x3 = cx + w / 2
-
-        top = [
-            (x0, cy + r_in),
-            (x1, cy + r_throat),
-            (x2, cy + r_throat),
-            (x3, cy + r_in),
-        ]
-        bot = [
-            (x3, cy - r_in),
-            (x2, cy - r_throat),
-            (x1, cy - r_throat),
-            (x0, cy - r_in),
-        ]
-        outline = top + bot
-        ax.add_patch(
-            patches.Polygon(
-                outline,
-                closed=True,
-                facecolor=EQUIP_FILL,
-                edgecolor=EQUIP_COLOR,
-                lw=LW_EQUIP,
-                zorder=4,
-                joinstyle="round",
-            )
-        )
-
-        # Atomized Spray Cone lines
-        spray_origin_x = cx
-        spray_origin_y = cy
-        spray_len = 0.35
-
-        ax.add_line(
-            mlines.Line2D(
-                [spray_origin_x, spray_origin_x + spray_len],
-                [spray_origin_y, spray_origin_y],
-                color=FW_COLOR,
-                linestyle="--",
-                lw=0.96,
-                zorder=5,
-            )
-        )
-        ax.add_line(
-            mlines.Line2D(
-                [spray_origin_x, spray_origin_x + spray_len],
-                [spray_origin_y, spray_origin_y + 0.18],
-                color=FW_COLOR,
-                linestyle="--",
-                lw=0.96,
-                zorder=5,
-            )
-        )
-        ax.add_line(
-            mlines.Line2D(
-                [spray_origin_x, spray_origin_x + spray_len],
-                [spray_origin_y, spray_origin_y - 0.18],
-                color=FW_COLOR,
-                linestyle="--",
-                lw=0.96,
-                zorder=5,
-            )
-        )
-
-        # Text scaled down from 10pt to 8pt
-        ax.text(
-            cx,
-            cy - 0.62,
-            "Desuperheater",
-            ha="center",
-            va="top",
-            color=text_color,
-            fontsize=8.0,
-            fontweight="medium",
-            zorder=5,
-        )
-
-        return x0, x3
-
-    # Text label helper: Scaled down default font size from 9.5pt to 7.6pt
-    def label(x, y, txt, color=text_color, fs=7.6, ha="left"):
-        ax.text(
-            x,
-            y,
-            txt,
-            color=color,
-            fontsize=fs,
-            ha=ha,
-            va="center",
-            zorder=6,
-            linespacing=1.35,
-        )
-
-    Y = 4.6
-
-    # HP Steam Line (Inlet)
-    pipe(0.6, Y, 4.1, Y)
-    flow_arrow(1.6, Y, 0.8, 0)
-    inlet_txt = (
-        f"High Pressure Steam Line\nFlow: {m_in:.2f} t/h\nPress: {p_in:.2f}"
-        f" {p_unit}\nTemp: {t_in:.1f} °C"
-    )
-    label(0.6, Y + 1.15, inlet_txt)
-
-    # Pressure Control Valve
-    pcv_x = 5.0
-    control_valve(pcv_x, Y, "Isenthalpic Expansion")
-    pipe(4.1, Y, pcv_x - 0.34, Y)
-    pipe(pcv_x + 0.34, Y, 6.1, Y)
-    flow_arrow(5.65, Y, 0.35, 0)
-
-    # Venturi Spray Desuperheater
-    vessel_x = 8.7
-    v_in, v_out = venturi_desuperheater(vessel_x, Y)
-    pipe(6.1, Y, v_in, Y)
-
-    # Feedwater Spray Line
-    fw_top = 7.35
-    pipe(vessel_x, fw_top, vessel_x, Y, color=FW_COLOR, zorder=3)
-    flow_arrow(vessel_x, 6.2, 0, -0.42, color=FW_COLOR)
-    pipe(6.6, fw_top, vessel_x, fw_top, color=FW_COLOR)
-    flow_arrow(7.2, fw_top, 0.4, 0, color=FW_COLOR)
-    fw_txt = (
-        f"Feedwater Spray Line\nFlow: {m_fw:.2f} t/h\nPress: {p_fw:.2f}"
-        f" {p_unit}\nTemp: {t_fw:.1f} °C"
-    )
-    label(6.6, fw_top + 0.85, fw_txt, color=FW_COLOR)
-
-    # LP Steam Line (Outlet)
-    pipe(v_out, Y, 15.4, Y)
-    flow_arrow(14.2, Y, 0.8, 0)
-    outlet_txt = (
-        f"Low Pressure Steam Line\nFlow: {m_out:.2f} t/h\nPress: {p_out:.2f}"
-        f" {p_unit}\nTemp: {t_out:.1f} °C"
-    )
-    label(11.8, Y + 1.15, outlet_txt)
-
-    # Render Matplotlib figure to an SVG memory buffer with zero padding
-    svg_buffer = io.StringIO()
-    fig.savefig(
-        svg_buffer,
-        format="svg",
-        bbox_inches="tight",
-        pad_inches=0.0,
-        transparent=True,
-    )
-    plt.close(fig)
-
-    return svg_buffer.getvalue()
+        </filter>
 
 
-# ----------------------------------------------------------------------
-# STREAMLIT APPLICATION
-# ----------------------------------------------------------------------
-st.set_page_config(
-    page_title="Desuperheater Calculator", page_icon="💨", layout="wide"
-)
+        <!-- ==================================================
+             FEEDWATER GLOW
+             ================================================== -->
+
+        <filter id="waterGlow"
+                x="-100%"
+                y="-100%"
+                width="300%"
+                height="300%">
+
+            <feGaussianBlur
+                stdDeviation="4"
+                result="blur"/>
+
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+
+        </filter>
+
+
+        <!-- ==================================================
+             EQUIPMENT GLOW
+             ================================================== -->
+
+        <filter id="equipmentGlow"
+                x="-100%"
+                y="-100%"
+                width="300%"
+                height="300%">
+
+            <feGaussianBlur
+                stdDeviation="5"
+                result="blur"/>
+
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+
+        </filter>
+
+
+        <!-- ==================================================
+             STEAM PARTICLE GRADIENT
+             ================================================== -->
+
+        <radialGradient id="steamParticle">
+
+            <stop
+                offset="0%"
+                stop-color="#FFFFFF"
+                stop-opacity="1"/>
+
+            <stop
+                offset="40%"
+                stop-color="{STEAM_GLOW}"
+                stop-opacity="0.95"/>
+
+            <stop
+                offset="100%"
+                stop-color="{STEAM_COLOR}"
+                stop-opacity="0"/>
+
+        </radialGradient>
+
+
+        <!-- ==================================================
+             WATER PARTICLE GRADIENT
+             ================================================== -->
+
+        <radialGradient id="waterParticle">
+
+            <stop
+                offset="0%"
+                stop-color="#FFFFFF"
+                stop-opacity="1"/>
+
+            <stop
+                offset="40%"
+                stop-color="{FW_GLOW}"
+                stop-opacity="1"/>
+
+            <stop
+                offset="100%"
+                stop-color="{FW_COLOR}"
+                stop-opacity="0"/>
+
+        </radialGradient>
+
+
+        <!-- ==================================================
+             ARROW MARKERS
+             ================================================== -->
+
+        <marker
+            id="steamArrow"
+            markerWidth="12"
+            markerHeight="12"
+            refX="10"
+            refY="5"
+            orient="auto">
+
+            <path
+                d="M0,0 L10,5 L0,10 Z"
+                fill="{STEAM_COLOR}"/>
+
+        </marker>
+
+
+        <marker
+            id="waterArrow"
+            markerWidth="12"
+            markerHeight="12"
+            refX="10"
+            refY="5"
+            orient="auto">
+
+            <path
+                d="M0,0 L10,5 L0,10 Z"
+                fill="{FW_COLOR}"/>
+
+        </marker>
+
+
+        <!-- ==================================================
+             PROCESS LINE GLOW
+             ================================================== -->
+
+        <filter id="lineGlow"
+                x="-20%"
+                y="-100%"
+                width="140%"
+                height="300%">
+
+            <feGaussianBlur
+                stdDeviation="3"
+                result="blur"/>
+
+            <feMerge>
+                <feMergeNode
+                    in="blur"/>
+
+                <feMergeNode
+                    in="SourceGraphic"/>
+            </feMerge>
+
+        </filter>
+
+    </defs>
+
+
+    <!-- ======================================================
+         STEAM PIPE GLOW BACKGROUND
+         ====================================================== -->
+
+    <path
+        d="M60 220
+           H370
+           M410 220
+           H550
+           M610 220
+           H700
+           M900 220
+           H1450"
+
+        stroke="{STEAM_COLOR}"
+        stroke-width="9"
+        stroke-linecap="round"
+        opacity="0.16"
+        filter="url(#lineGlow)"
+    />
+
+
+    <!-- ======================================================
+         MAIN STEAM PIPE
+         ====================================================== -->
+
+    <path
+        d="M60 220 H370"
+        stroke="{STEAM_COLOR}"
+        stroke-width="5"
+        stroke-linecap="round"
+    />
+
+    <path
+        d="M410 220 H550"
+        stroke="{STEAM_COLOR}"
+        stroke-width="5"
+        stroke-linecap="round"
+    />
+
+    <path
+        d="M610 220 H700"
+        stroke="{STEAM_COLOR}"
+        stroke-width="5"
+        stroke-linecap="round"
+    />
+
+    <path
+        d="M900 220 H1450"
+        stroke="{STEAM_COLOR}"
+        stroke-width="5"
+        stroke-linecap="round"
+    />
+
+
+    <!-- ======================================================
+         STEAM FLOW ARROWS
+         ====================================================== -->
+
+    <path
+        d="M210 220 H275"
+        stroke="{STEAM_COLOR}"
+        stroke-width="2"
+        marker-end="url(#steamArrow)"
+        opacity="0.8"
+    />
+
+    <path
+        d="M470 220 H520"
+        stroke="{STEAM_COLOR}"
+        stroke-width="2"
+        marker-end="url(#steamArrow)"
+        opacity="0.8"
+    />
+
+    <path
+        d="M1120 220 H1190"
+        stroke="{STEAM_COLOR}"
+        stroke-width="2"
+        marker-end="url(#steamArrow)"
+        opacity="0.8"
+    />
+
+
+    <!-- ======================================================
+         STEAM ANIMATION PATH
+         ====================================================== -->
+
+    <path
+        id="steamPath"
+        d="M60 220
+           H370
+           M410 220
+           H550
+           M610 220
+           H700
+           M900 220
+           H1450"
+        fill="none"
+        stroke="none"
+    />
+
+
+    <!-- ======================================================
+         STEAM PARTICLES
+         ====================================================== -->
+
+    <g filter="url(#steamGlow)">
+
+        <circle
+            r="7"
+            fill="url(#steamParticle)">
+
+            <animateMotion
+                dur="3.8s"
+                repeatCount="indefinite"
+                path="M60 220 H370"/>
+
+        </circle>
+
+
+        <circle
+            r="5"
+            fill="url(#steamParticle)">
+
+            <animateMotion
+                dur="3.8s"
+                begin="-1.2s"
+                repeatCount="indefinite"
+                path="M60 220 H370"/>
+
+        </circle>
+
+
+        <circle
+            r="4"
+            fill="url(#steamParticle)">
+
+            <animateMotion
+                dur="3.8s"
+                begin="-2.5s"
+                repeatCount="indefinite"
+                path="M60 220 H370"/>
+
+        </circle>
+
+
+        <circle
+            r="7"
+            fill="url(#steamParticle)">
+
+            <animateMotion
+                dur="2.5s"
+                repeatCount="indefinite"
+                path="M410 220 H550"/>
+
+        </circle>
+
+
+        <circle
+            r="5"
+            fill="url(#steamParticle)">
+
+            <animateMotion
+                dur="2.5s"
+                begin="-1s"
+                repeatCount="indefinite"
+                path="M410 220 H550"/>
+
+        </circle>
+
+
+        <circle
+            r="6"
+            fill="url(#steamParticle)">
+
+            <animateMotion
+                dur="3.0s"
+                repeatCount="indefinite"
+                path="M610 220 H700"/>
+
+        </circle>
+
+
+        <circle
+            r="5"
+            fill="url(#steamParticle)">
+
+            <animateMotion
+                dur="4.5s"
+                repeatCount="indefinite"
+                path="M900 220 H1450"/>
+
+        </circle>
+
+
+        <circle
+            r="4"
+            fill="url(#steamParticle)">
+
+            <animateMotion
+                dur="4.5s"
+                begin="-1.5s"
+                repeatCount="indefinite"
+                path="M900 220 H1450"/>
+
+        </circle>
+
+
+        <circle
+            r="6"
+            fill="url(#steamParticle)">
+
+            <animateMotion
+                dur="4.5s"
+                begin="-3s"
+                repeatCount="indefinite"
+                path="M900 220 H1450"/>
+
+        </circle>
+
+    </g>
+
+
+    <!-- ======================================================
+         PRESSURE CONTROL VALVE
+         ====================================================== -->
+
+    <g
+        transform="translate(490,220)"
+        filter="url(#equipmentGlow)">
+
+        <!-- Valve body -->
+
+        <polygon
+            points="-35,-30 0,0 -35,30"
+            fill="none"
+            stroke="{EQUIP_COLOR}"
+            stroke-width="3"/>
+
+        <polygon
+            points="35,-30 0,0 35,30"
+            fill="none"
+            stroke="{EQUIP_COLOR}"
+            stroke-width="3"/>
+
+
+        <!-- Valve stem -->
+
+        <line
+            x1="0"
+            y1="-30"
+            x2="0"
+            y2="-65"
+            stroke="{EQUIP_COLOR}"
+            stroke-width="3"/>
+
+
+        <!-- Actuator -->
+
+        <circle
+            cx="0"
+            cy="-82"
+            r="17"
+            fill="none"
+            stroke="{EQUIP_COLOR}"
+            stroke-width="3"/>
+
+
+        <!-- Animated actuator pulse -->
+
+        <circle
+            cx="0"
+            cy="-82"
+            r="20"
+            fill="none"
+            stroke="{EQUIP_GLOW}"
+            stroke-width="2"
+            opacity="0">
+
+            <animate
+                attributeName="r"
+                values="18;28;18"
+                dur="2.5s"
+                repeatCount="indefinite"/>
+
+            <animate
+                attributeName="opacity"
+                values="0.7;0;0.7"
+                dur="2.5s"
+                repeatCount="indefinite"/>
+
+        </circle>
+
+    </g>
+
+
+    <!-- ======================================================
+         DESUPERHEATER BODY
+         ====================================================== -->
+
+    <g
+        transform="translate(800,220)"
+        filter="url(#equipmentGlow)">
+
+        <!-- Main body -->
+
+        <path
+            d="
+            M-105 -42
+            L-35 -16
+            L35 -16
+            L105 -42
+
+            L105 42
+            L35 16
+            L-35 16
+            L-105 42
+            Z"
+
+            fill="none"
+            stroke="{EQUIP_COLOR}"
+            stroke-width="3"
+            stroke-linejoin="round"
+        />
+
+
+        <!-- Throat -->
+
+        <line
+            x1="-35"
+            y1="-16"
+            x2="35"
+            y2="-16"
+            stroke="{EQUIP_COLOR}"
+            stroke-width="2"
+        />
+
+        <line
+            x1="-35"
+            y1="16"
+            x2="35"
+            y2="16"
+            stroke="{EQUIP_COLOR}"
+            stroke-width="2"
+        />
+
+
+        <!-- Internal spray line -->
+
+        <line
+            x1="0"
+            y1="-75"
+            x2="0"
+            y2="-5"
+            stroke="{FW_COLOR}"
+            stroke-width="3"
+        />
+
+
+        <!-- Spray nozzle -->
+
+        <circle
+            cx="0"
+            cy="-5"
+            r="6"
+            fill="{FW_COLOR}"
+            filter="url(#waterGlow)"
+        />
+
+
+        <!-- ==================================================
+             SPRAY PARTICLES
+             ================================================== -->
+
+        <g filter="url(#waterGlow)">
+
+            <circle
+                r="5"
+                fill="url(#waterParticle)">
+
+                <animateMotion
+                    dur="1.0s"
+                    repeatCount="indefinite"
+                    path="M0 -5 L35 5"/>
+
+            </circle>
+
+
+            <circle
+                r="4"
+                fill="url(#waterParticle)">
+
+                <animateMotion
+                    dur="1.2s"
+                    begin="-0.4s"
+                    repeatCount="indefinite"
+                    path="M0 -5 L45 -8"/>
+
+            </circle>
+
+
+            <circle
+                r="3"
+                fill="url(#waterParticle)">
+
+                <animateMotion
+                    dur="0.9s"
+                    begin="-0.2s"
+                    repeatCount="indefinite"
+                    path="M0 -5 L40 12"/>
+
+            </circle>
+
+        </g>
+
+    </g>
+
+
+    <!-- ======================================================
+         FEEDWATER PIPE
+         ====================================================== -->
+
+    <path
+        d="M800 75 V215"
+        stroke="{FW_COLOR}"
+        stroke-width="5"
+        stroke-linecap="round"
+    />
+
+
+    <!-- Feedwater pipe glow -->
+
+    <path
+        d="M800 75 V215"
+        stroke="{FW_COLOR}"
+        stroke-width="10"
+        stroke-linecap="round"
+        opacity="0.15"
+        filter="url(#lineGlow)"
+    />
+
+
+    <!-- Feedwater arrow -->
+
+    <path
+        d="M800 110 V160"
+        stroke="{FW_COLOR}"
+        stroke-width="2"
+        marker-end="url(#waterArrow)"
+    />
+
+
+    <!-- ======================================================
+         FEEDWATER PARTICLES
+         ====================================================== -->
+
+    <g filter="url(#waterGlow)">
+
+        <circle
+            r="7"
+            fill="url(#waterParticle)">
+
+            <animateMotion
+                dur="2.0s"
+                repeatCount="indefinite"
+                path="M800 75 V215"/>
+
+        </circle>
+
+
+        <circle
+            r="5"
+            fill="url(#waterParticle)">
+
+            <animateMotion
+                dur="2.0s"
+                begin="-0.65s"
+                repeatCount="indefinite"
+                path="M800 75 V215"/>
+
+        </circle>
+
+
+        <circle
+            r="4"
+            fill="url(#waterParticle)">
+
+            <animateMotion
+                dur="2.0s"
+                begin="-1.3s"
+                repeatCount="indefinite"
+                path="M800 75 V215"/>
+
+        </circle>
+
+    </g>
+
+
+    <!-- ======================================================
+         LABELS
+         ====================================================== -->
+
+    <!-- Inlet -->
+
+    <text
+        x="60"
+        y="105"
+        fill="{TEXT_COLOR}"
+        font-size="18"
+        font-weight="600">
+
+        High Pressure Steam
+
+    </text>
+
+    <text
+        x="60"
+        y="132"
+        fill="{TEXT_COLOR}"
+        font-size="14">
+
+        Flow: {m_in:.2f} t/h
+
+    </text>
+
+    <text
+        x="60"
+        y="153"
+        fill="{TEXT_COLOR}"
+        font-size="14">
+
+        Pressure: {p_in:.2f} {p_unit}
+
+    </text>
+
+    <text
+        x="60"
+        y="174"
+        fill="{TEXT_COLOR}"
+        font-size="14">
+
+        Temperature: {t_in:.1f} °C
+
+    </text>
+
+
+    <!-- PCV label -->
+
+    <text
+        x="490"
+        y="330"
+        text-anchor="middle"
+        fill="{TEXT_COLOR}"
+        font-size="15"
+        font-weight="600">
+
+        Pressure Control Valve
+
+    </text>
+
+    <text
+        x="490"
+        y="350"
+        text-anchor="middle"
+        fill="{EQUIP_COLOR}"
+        font-size="13">
+
+        Isenthalpic Expansion
+
+    </text>
+
+
+    <!-- Feedwater -->
+
+    <text
+        x="825"
+        y="60"
+        fill="{FW_COLOR}"
+        font-size="17"
+        font-weight="600">
+
+        Feedwater Spray
+
+    </text>
+
+    <text
+        x="825"
+        y="82"
+        fill="{FW_COLOR}"
+        font-size="13">
+
+        {m_fw:.2f} t/h
+
+    </text>
+
+
+    <!-- Desuperheater -->
+
+    <text
+        x="800"
+        y="300"
+        text-anchor="middle"
+        fill="{TEXT_COLOR}"
+        font-size="16"
+        font-weight="600">
+
+        DESUPERHEATER
+
+    </text>
+
+    <text
+        x="800"
+        y="322"
+        text-anchor="middle"
+        fill="{FW_COLOR}"
+        font-size="13">
+
+        Spray Cooling
+
+    </text>
+
+
+    <!-- Outlet -->
+
+    <text
+        x="1100"
+        y="105"
+        fill="{TEXT_COLOR}"
+        font-size="18"
+        font-weight="600">
+
+        Low Pressure Steam
+
+    </text>
+
+    <text
+        x="1100"
+        y="132"
+        fill="{TEXT_COLOR}"
+        font-size="14">
+
+        Flow: {m_out:.2f} t/h
+
+    </text>
+
+    <text
+        x="1100"
+        y="153"
+        fill="{TEXT_COLOR}"
+        font-size="14">
+
+        Pressure: {p_out:.2f} {p_unit}
+
+    </text>
+
+    <text
+        x="1100"
+        y="174"
+        fill="{TEXT_COLOR}"
+        font-size="14">
+
+        Temperature: {t_out:.1f} °C
+
+    </text>
+
+
+    <!-- ======================================================
+         DIGITAL FLOW INDICATORS
+         ====================================================== -->
+
+    <text
+        x="220"
+        y="255"
+        fill="{STEAM_GLOW}"
+        font-size="11"
+        opacity="0.8">
+
+        ● FLOW
+
+        <animate
+            attributeName="opacity"
+            values="0.3;1;0.3"
+            dur="1.5s"
+            repeatCount="indefinite"/>
+
+    </text>
+
+
+    <text
+        x="815"
+        y="120"
+        fill="{FW_GLOW}"
+        font-size="10"
+        opacity="0.8">
+
+        ● INJECTION
+
+        <animate
+            attributeName="opacity"
+            values="0.3;1;0.3"
+            dur="1.2s"
+            repeatCount="indefinite"/>
+
+    </text>
+
+
+    <!-- ======================================================
+         SMALL DIGITAL DOTS
+         ====================================================== -->
+
+    <circle
+        cx="380"
+        cy="220"
+        r="3"
+        fill="{EQUIP_COLOR}">
+
+        <animate
+            attributeName="r"
+            values="2;5;2"
+            dur="1.5s"
+            repeatCount="indefinite"/>
+
+        <animate
+            attributeName="opacity"
+            values="0.4;1;0.4"
+            dur="1.5s"
+            repeatCount="indefinite"/>
+
+    </circle>
+
+
+    <circle
+        cx="910"
+        cy="220"
+        r="3"
+        fill="{EQUIP_COLOR}">
+
+        <animate
+            attributeName="r"
+            values="2;5;2"
+            dur="1.5s"
+            begin="0.5s"
+            repeatCount="indefinite"/>
+
+    </circle>
+
+
+    </svg>
+    """
+
+    return svg
+
+
+# ==============================================================
+# APPLICATION TITLE
+# ==============================================================
 
 st.title("💨 Desuperheater Letdown Mass & Energy Balance")
+
 st.caption(
-    "Developed by Iqbal SHERPA 20260708. Contact me for further information"
-    " @iqbalshafiq96@gmail.com"
+    "Developed by Iqbal SHERPA 20260708. "
+    "Contact me for further information @iqbalshafiq96@gmail.com"
 )
 
-# --- SIDEBAR INPUTS ---
+
+# ==============================================================
+# SIDEBAR
+# ==============================================================
+
 st.sidebar.header("Configuration")
+
+
 Pressure_Unit_Type = st.sidebar.selectbox(
     "Pressure Unit Type",
     [
@@ -315,15 +1022,35 @@ Pressure_Unit_Type = st.sidebar.selectbox(
     ],
 )
 
+
+# ==============================================================
+# 1. HIGH PRESSURE INLET
+# ==============================================================
+
 st.sidebar.header("1. High-Pressure Inlet Steam")
+
+
 High_Pressure_Inlet_Steam_Pressure = st.sidebar.number_input(
-    "Inlet Pressure", value=50.0
-)
-High_Pressure_Inlet_Steam_Temperature_Degrees_Celsius = (
-    st.sidebar.number_input("Inlet Temp (°C)", value=419.0)
+    "Inlet Pressure",
+    value=50.0,
 )
 
+
+High_Pressure_Inlet_Steam_Temperature_Degrees_Celsius = (
+    st.sidebar.number_input(
+        "Inlet Temp (°C)",
+        value=419.0,
+    )
+)
+
+
+# ==============================================================
+# 2. DESUPERHEATER OUTLET
+# ==============================================================
+
 st.sidebar.header("2. Desuperheater Outlet Parameters & Mode")
+
+
 Outlet_Temperature_Calculation_Mode = st.sidebar.radio(
     "Calculation Mode",
     [
@@ -332,223 +1059,568 @@ Outlet_Temperature_Calculation_Mode = st.sidebar.radio(
     ],
 )
 
+
 is_calc_mode = (
     Outlet_Temperature_Calculation_Mode
     == "CALC - Calculate Outlet Temperature from Spray Flow"
 )
 
+
 Desuperheater_Outlet_Steam_Pressure = st.sidebar.number_input(
-    "Outlet Pressure", value=4.6
+    "Outlet Pressure",
+    value=4.6,
 )
+
 
 Desuperheater_Outlet_Steam_Target_Temperature_Degrees_Celsius = (
     st.sidebar.number_input(
-        "Target Outlet Temp (°C)", value=158.0, disabled=is_calc_mode
+        "Target Outlet Temp (°C)",
+        value=158.0,
+        disabled=is_calc_mode,
     )
 )
 
+
+# ==============================================================
+# 3. FEEDWATER
+# ==============================================================
+
 st.sidebar.header("3. Spray Feedwater Parameters")
+
+
 Spray_Feedwater_Inlet_Pressure = st.sidebar.number_input(
-    "Feedwater Pressure", value=70.0
+    "Feedwater Pressure",
+    value=70.0,
 )
-Spray_Feedwater_Inlet_Temperature_Degrees_Celsius = st.sidebar.number_input(
-    "Feedwater Temp (°C)", value=90.0
+
+
+Spray_Feedwater_Inlet_Temperature_Degrees_Celsius = (
+    st.sidebar.number_input(
+        "Feedwater Temp (°C)",
+        value=90.0,
+    )
 )
+
 
 Specified_Spray_Feedwater_Mass_Flow_Rate_Tons_Per_Hour = (
     st.sidebar.number_input(
-        "Specified Spray Flow (t/h)", value=2.35, disabled=not is_calc_mode
+        "Specified Spray Flow (t/h)",
+        value=2.35,
+        disabled=not is_calc_mode,
     )
 )
 
+
+# ==============================================================
+# 4. FLOW BASIS
+# ==============================================================
+
 st.sidebar.header("4. Flow Rate Basis")
+
+
 Mass_Flow_Rate_Basis = st.sidebar.selectbox(
-    "Basis", ["Inlet Steam Flow Rate", "Outlet Target Steam Flow Rate"]
-)
-Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour = st.sidebar.number_input(
-    "Specified Steam Flow (t/h)", value=107.0
+    "Basis",
+    [
+        "Inlet Steam Flow Rate",
+        "Outlet Target Steam Flow Rate",
+    ],
 )
 
-# --- CALCULATION LOGIC ---
+
+Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour = (
+    st.sidebar.number_input(
+        "Specified Steam Flow (t/h)",
+        value=107.0,
+    )
+)
+
+
+# ==============================================================
+# PRESSURE CONVERSION
+# ==============================================================
+
 ATMOSPHERIC_PRESSURE_MEGAPASCALS = 0.101325
 ATMOSPHERIC_PRESSURE_BAR = 1.01325
 
+
 if Pressure_Unit_Type == "Bar Gauge (barG)":
+
     p_in_mpaa = (
-        High_Pressure_Inlet_Steam_Pressure + ATMOSPHERIC_PRESSURE_BAR
+        High_Pressure_Inlet_Steam_Pressure
+        + ATMOSPHERIC_PRESSURE_BAR
     ) / 10.0
+
     p_out_mpaa = (
-        Desuperheater_Outlet_Steam_Pressure + ATMOSPHERIC_PRESSURE_BAR
+        Desuperheater_Outlet_Steam_Pressure
+        + ATMOSPHERIC_PRESSURE_BAR
     ) / 10.0
+
     p_fw_mpaa = (
-        Spray_Feedwater_Inlet_Pressure + ATMOSPHERIC_PRESSURE_BAR
+        Spray_Feedwater_Inlet_Pressure
+        + ATMOSPHERIC_PRESSURE_BAR
     ) / 10.0
+
     unit_label = "barG"
+
+
 elif Pressure_Unit_Type == "Bar Absolute (barA)":
-    p_in_mpaa = High_Pressure_Inlet_Steam_Pressure / 10.0
-    p_out_mpaa = Desuperheater_Outlet_Steam_Pressure / 10.0
-    p_fw_mpaa = Spray_Feedwater_Inlet_Pressure / 10.0
-    unit_label = "barA"
-elif Pressure_Unit_Type == "Megapascals Gauge (MPaG)":
+
     p_in_mpaa = (
-        High_Pressure_Inlet_Steam_Pressure + ATMOSPHERIC_PRESSURE_MEGAPASCALS
+        High_Pressure_Inlet_Steam_Pressure / 10.0
     )
+
     p_out_mpaa = (
-        Desuperheater_Outlet_Steam_Pressure + ATMOSPHERIC_PRESSURE_MEGAPASCALS
+        Desuperheater_Outlet_Steam_Pressure / 10.0
     )
+
     p_fw_mpaa = (
-        Spray_Feedwater_Inlet_Pressure + ATMOSPHERIC_PRESSURE_MEGAPASCALS
+        Spray_Feedwater_Inlet_Pressure / 10.0
     )
+
+    unit_label = "barA"
+
+
+elif Pressure_Unit_Type == "Megapascals Gauge (MPaG)":
+
+    p_in_mpaa = (
+        High_Pressure_Inlet_Steam_Pressure
+        + ATMOSPHERIC_PRESSURE_MEGAPASCALS
+    )
+
+    p_out_mpaa = (
+        Desuperheater_Outlet_Steam_Pressure
+        + ATMOSPHERIC_PRESSURE_MEGAPASCALS
+    )
+
+    p_fw_mpaa = (
+        Spray_Feedwater_Inlet_Pressure
+        + ATMOSPHERIC_PRESSURE_MEGAPASCALS
+    )
+
     unit_label = "MPaG"
+
+
 else:
+
     p_in_mpaa = High_Pressure_Inlet_Steam_Pressure
     p_out_mpaa = Desuperheater_Outlet_Steam_Pressure
     p_fw_mpaa = Spray_Feedwater_Inlet_Pressure
+
     unit_label = "MPaA"
 
-# Pressure Display Conversions
-p_in_bara, p_in_barg = p_in_mpaa * 10.0, (
-    p_in_mpaa * 10.0
-) - ATMOSPHERIC_PRESSURE_BAR
-p_out_bara, p_out_barg = p_out_mpaa * 10.0, (
-    p_out_mpaa * 10.0
-) - ATMOSPHERIC_PRESSURE_BAR
-p_fw_bara, p_fw_barg = p_fw_mpaa * 10.0, (
-    p_fw_mpaa * 10.0
-) - ATMOSPHERIC_PRESSURE_BAR
 
-temperature_steam_inlet = High_Pressure_Inlet_Steam_Temperature_Degrees_Celsius
+# ==============================================================
+# PRESSURE DISPLAY VALUES
+# ==============================================================
+
+p_in_bara = p_in_mpaa * 10.0
+p_in_barg = p_in_bara - ATMOSPHERIC_PRESSURE_BAR
+
+p_out_bara = p_out_mpaa * 10.0
+p_out_barg = p_out_bara - ATMOSPHERIC_PRESSURE_BAR
+
+p_fw_bara = p_fw_mpaa * 10.0
+p_fw_barg = p_fw_bara - ATMOSPHERIC_PRESSURE_BAR
+
+
+# ==============================================================
+# TEMPERATURES
+# ==============================================================
+
+temperature_steam_inlet = (
+    High_Pressure_Inlet_Steam_Temperature_Degrees_Celsius
+)
+
 temperature_feedwater_inlet = (
     Spray_Feedwater_Inlet_Temperature_Degrees_Celsius
 )
 
-# Enthalpies via IAPWS-IF97
+
+# ==============================================================
+# IAPWS ENTHALPIES
+# ==============================================================
+
 enthalpy_steam_inlet = IAPWS97(
-    P=p_in_mpaa, T=temperature_steam_inlet + 273.15
-).h
-enthalpy_feedwater_inlet = IAPWS97(
-    P=p_fw_mpaa, T=temperature_feedwater_inlet + 273.15
+    P=p_in_mpaa,
+    T=temperature_steam_inlet + 273.15,
 ).h
 
+
+enthalpy_feedwater_inlet = IAPWS97(
+    P=p_fw_mpaa,
+    T=temperature_feedwater_inlet + 273.15,
+).h
+
+
+# ==============================================================
+# CALCULATION MODE
+# ==============================================================
+
 if is_calc_mode:
+
     mass_flow_feedwater_inlet = (
         Specified_Spray_Feedwater_Mass_Flow_Rate_Tons_Per_Hour
     )
+
     if Mass_Flow_Rate_Basis == "Inlet Steam Flow Rate":
-        mass_flow_steam_inlet = Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
-        mass_flow_steam_outlet = mass_flow_steam_inlet + mass_flow_feedwater_inlet
+
+        mass_flow_steam_inlet = (
+            Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
+        )
+
+        mass_flow_steam_outlet = (
+            mass_flow_steam_inlet
+            + mass_flow_feedwater_inlet
+        )
+
     else:
-        mass_flow_steam_outlet = Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
-        mass_flow_steam_inlet = mass_flow_steam_outlet - mass_flow_feedwater_inlet
+
+        mass_flow_steam_outlet = (
+            Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
+        )
+
+        mass_flow_steam_inlet = (
+            mass_flow_steam_outlet
+            - mass_flow_feedwater_inlet
+        )
+
+
+    # ----------------------------------------------------------
+    # ENERGY BALANCE
+    # ----------------------------------------------------------
 
     enthalpy_steam_outlet = (
-        (mass_flow_steam_inlet * enthalpy_steam_inlet)
-        + (mass_flow_feedwater_inlet * enthalpy_feedwater_inlet)
+        (
+            mass_flow_steam_inlet
+            * enthalpy_steam_inlet
+        )
+        +
+        (
+            mass_flow_feedwater_inlet
+            * enthalpy_feedwater_inlet
+        )
     ) / mass_flow_steam_outlet
 
-    outlet_state = IAPWS97(P=p_out_mpaa, h=enthalpy_steam_outlet)
-    temperature_steam_outlet = outlet_state.T - 273.15
+
+    outlet_state = IAPWS97(
+        P=p_out_mpaa,
+        h=enthalpy_steam_outlet,
+    )
+
+
+    temperature_steam_outlet = (
+        outlet_state.T - 273.15
+    )
+
+
 else:
+
     temperature_steam_outlet = (
         Desuperheater_Outlet_Steam_Target_Temperature_Degrees_Celsius
     )
+
+
     enthalpy_steam_outlet = IAPWS97(
-        P=p_out_mpaa, T=temperature_steam_outlet + 273.15
+        P=p_out_mpaa,
+        T=temperature_steam_outlet + 273.15,
     ).h
 
+
+    # ----------------------------------------------------------
+    # FLOW BASIS
+    # ----------------------------------------------------------
+
     if Mass_Flow_Rate_Basis == "Inlet Steam Flow Rate":
-        mass_flow_steam_inlet = Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
+
+        mass_flow_steam_inlet = (
+            Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
+        )
+
+
         mass_flow_feedwater_inlet = (
             mass_flow_steam_inlet
-            * (enthalpy_steam_outlet - enthalpy_steam_inlet)
-            / (enthalpy_feedwater_inlet - enthalpy_steam_outlet)
+            *
+            (
+                enthalpy_steam_outlet
+                - enthalpy_steam_inlet
+            )
+            /
+            (
+                enthalpy_feedwater_inlet
+                - enthalpy_steam_outlet
+            )
         )
-        mass_flow_steam_outlet = mass_flow_steam_inlet + mass_flow_feedwater_inlet
+
+
+        mass_flow_steam_outlet = (
+            mass_flow_steam_inlet
+            + mass_flow_feedwater_inlet
+        )
+
+
     else:
-        mass_flow_steam_outlet = Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
+
+        mass_flow_steam_outlet = (
+            Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
+        )
+
+
         mass_flow_steam_inlet = (
             mass_flow_steam_outlet
-            * (enthalpy_steam_outlet - enthalpy_feedwater_inlet)
-            / (enthalpy_steam_inlet - enthalpy_feedwater_inlet)
+            *
+            (
+                enthalpy_steam_outlet
+                - enthalpy_feedwater_inlet
+            )
+            /
+            (
+                enthalpy_steam_inlet
+                - enthalpy_feedwater_inlet
+            )
         )
-        mass_flow_feedwater_inlet = mass_flow_steam_outlet - mass_flow_steam_inlet
 
-# Saturation Properties
-saturated_liquid = IAPWS97(P=p_out_mpaa, x=0)
-saturation_temp = saturated_liquid.T - 273.15
-superheat_margin = temperature_steam_outlet - saturation_temp
+
+        mass_flow_feedwater_inlet = (
+            mass_flow_steam_outlet
+            - mass_flow_steam_inlet
+        )
+
+
+# ==============================================================
+# SATURATION PROPERTIES
+# ==============================================================
+
+saturated_liquid = IAPWS97(
+    P=p_out_mpaa,
+    x=0,
+)
+
+
+saturation_temp = (
+    saturated_liquid.T - 273.15
+)
+
+
+superheat_margin = (
+    temperature_steam_outlet
+    - saturation_temp
+)
+
 
 if superheat_margin > 0.1:
-    outlet_steam_condition = "SUPERHEATED STEAM"
+
+    outlet_steam_condition = (
+        "SUPERHEATED STEAM"
+    )
+
 elif abs(superheat_margin) <= 0.1:
-    outlet_steam_condition = "SATURATED STEAM (Dry Saturated)"
+
+    outlet_steam_condition = (
+        "SATURATED STEAM (Dry Saturated)"
+    )
+
 else:
-    outlet_steam_condition = "WET STEAM (Two-Phase Liquid and Vapor)"
 
-pressure_drop_bar = (p_in_mpaa - p_out_mpaa) * 10.0
+    outlet_steam_condition = (
+        "WET STEAM (Two-Phase Liquid and Vapor)"
+    )
 
-# --- RENDER SVG PROCESS FLOW DIAGRAM NATIVELY ---
-svg_data = build_svg_figure(
+
+pressure_drop_bar = (
+    p_in_mpaa - p_out_mpaa
+) * 10.0
+
+
+# ==============================================================
+# ANIMATED PROCESS DIAGRAM
+# ==============================================================
+
+svg_data = build_animated_process_svg(
+
     p_in=High_Pressure_Inlet_Steam_Pressure,
+
     t_in=temperature_steam_inlet,
+
     m_in=mass_flow_steam_inlet,
+
     p_fw=Spray_Feedwater_Inlet_Pressure,
+
     t_fw=temperature_feedwater_inlet,
+
     m_fw=mass_flow_feedwater_inlet,
+
     p_out=Desuperheater_Outlet_Steam_Pressure,
+
     t_out=temperature_steam_outlet,
+
     m_out=mass_flow_steam_outlet,
+
     p_unit=unit_label,
 )
 
-# Reduced column ratio to shrink total image width to 80% (0.64 vs previous 0.8)
-col_left, col_center, col_right = st.columns([0.18, 0.64, 0.18])
-with col_center:
-    st.image(svg_data, use_container_width=True)
 
-# Safety Alert Banners
+# ==============================================================
+# DISPLAY ANIMATED SVG
+# ==============================================================
+
+components.html(
+    f"""
+    <div style="
+        width:100%;
+        height:390px;
+        display:flex;
+        justify-content:center;
+        align-items:center;
+        overflow:hidden;
+        background:transparent;
+    ">
+
+        {svg_data}
+
+    </div>
+    """,
+    height=400,
+    scrolling=False,
+)
+
+
+# ==============================================================
+# SYSTEM STATE
+# ==============================================================
+
 if superheat_margin < 0:
-    st.error(
-        "CRITICAL ALERT: Outlet temperature is below saturation! Liquid"
-        " droplets will be present in the steam line."
-    )
-elif superheat_margin < 2.0:
-    st.warning(
-        "WARNING: Low superheat margin (< 2.0 °C)! High risk of incomplete"
-        " vaporization and water carryover."
-    )
-else:
-    st.success(f"System State: {outlet_steam_condition}")
 
-# Detailed Results Table
+    st.error(
+        "CRITICAL ALERT: Outlet temperature is below saturation! "
+        "Liquid droplets will be present in the steam line."
+    )
+
+elif superheat_margin < 2.0:
+
+    st.warning(
+        "WARNING: Low superheat margin (< 2.0 °C)! "
+        "High risk of incomplete vaporization and water carryover."
+    )
+
+else:
+
+    st.success(
+        f"System State: {outlet_steam_condition}"
+    )
+
+
+# ==============================================================
+# RESULTS
+# ==============================================================
+
 st.subheader("Process Results Breakdown")
+
 
 col_left, col_right = st.columns(2)
 
+
+# ==============================================================
+# PRESSURE & THERMAL
+# ==============================================================
+
 with col_left:
-    st.markdown("##### Pressure & Thermal Summary")
-    st.write(
-        f"**Inlet Pressure:** {p_in_barg:.2f} barG | {p_in_bara:.2f} barA |"
-        f" {p_in_mpaa:.3f} MPaA"
+
+    st.markdown(
+        "##### Pressure & Thermal Summary"
     )
+
+
     st.write(
-        f"**Outlet Pressure:** {p_out_barg:.2f} barG | {p_out_bara:.2f} barA |"
-        f" {p_out_mpaa:.3f} MPaA"
+        f"**Inlet Pressure:** "
+        f"{p_in_barg:.2f} barG | "
+        f"{p_in_bara:.2f} barA | "
+        f"{p_in_mpaa:.3f} MPaA"
     )
+
+
     st.write(
-        f"**Spray Pressure:** {p_fw_barg:.2f} barG | {p_fw_bara:.2f} barA |"
-        f" {p_fw_mpaa:.3f} MPaA"
+        f"**Outlet Pressure:** "
+        f"{p_out_barg:.2f} barG | "
+        f"{p_out_bara:.2f} barA | "
+        f"{p_out_mpaa:.3f} MPaA"
     )
-    st.write(f"**Steam Pressure Drop:** {pressure_drop_bar:.2f} bar")
-    st.write(f"**Resulting Outlet Temp:** {temperature_steam_outlet:.2f} °C")
-    st.write(f"**Outlet Saturation Temp:** {saturation_temp:.2f} °C")
-    st.write(f"**Superheat Margin:** {superheat_margin:.2f} °C")
+
+
+    st.write(
+        f"**Spray Pressure:** "
+        f"{p_fw_barg:.2f} barG | "
+        f"{p_fw_bara:.2f} barA | "
+        f"{p_fw_mpaa:.3f} MPaA"
+    )
+
+
+    st.write(
+        f"**Steam Pressure Drop:** "
+        f"{pressure_drop_bar:.2f} bar"
+    )
+
+
+    st.write(
+        f"**Resulting Outlet Temp:** "
+        f"{temperature_steam_outlet:.2f} °C"
+    )
+
+
+    st.write(
+        f"**Outlet Saturation Temp:** "
+        f"{saturation_temp:.2f} °C"
+    )
+
+
+    st.write(
+        f"**Superheat Margin:** "
+        f"{superheat_margin:.2f} °C"
+    )
+
+
+# ==============================================================
+# ENTHALPY & MASS
+# ==============================================================
 
 with col_right:
-    st.markdown("##### Enthalpy & Mass Balance")
-    st.write(f"**Inlet Steam Enthalpy:** {enthalpy_steam_inlet:.2f} kJ/kg")
-    st.write(f"**Spray Water Enthalpy:** {enthalpy_feedwater_inlet:.2f} kJ/kg")
-    st.write(f"**Outlet Steam Enthalpy:** {enthalpy_steam_outlet:.2f} kJ/kg")
-    st.write(f"**Inlet Steam Mass Flow:** {mass_flow_steam_inlet:.2f} t/h")
-    st.write(f"**Spray Water Mass Flow:** {mass_flow_feedwater_inlet:.2f} t/h")
-    st.write(f"**Outlet Steam Mass Flow:** {mass_flow_steam_outlet:.2f} t/h")
+
+    st.markdown(
+        "##### Enthalpy & Mass Balance"
+    )
+
+
+    st.write(
+        f"**Inlet Steam Enthalpy:** "
+        f"{enthalpy_steam_inlet:.2f} kJ/kg"
+    )
+
+
+    st.write(
+        f"**Spray Water Enthalpy:** "
+        f"{enthalpy_feedwater_inlet:.2f} kJ/kg"
+    )
+
+
+    st.write(
+        f"**Outlet Steam Enthalpy:** "
+        f"{enthalpy_steam_outlet:.2f} kJ/kg"
+    )
+
+
+    st.write(
+        f"**Inlet Steam Mass Flow:** "
+        f"{mass_flow_steam_inlet:.2f} t/h"
+    )
+
+
+    st.write(
+        f"**Spray Water Mass Flow:** "
+        f"{mass_flow_feedwater_inlet:.2f} t/h"
+    )
+
+
+    st.write(
+        f"**Outlet Steam Mass Flow:** "
+        f"{mass_flow_steam_outlet:.2f} t/h"
+    )
+```
