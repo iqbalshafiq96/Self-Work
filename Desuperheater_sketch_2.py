@@ -87,9 +87,12 @@ def build_animated_process_svg(
     p_fw,
     t_fw,
     m_fw,
+    target_m_fw,
     p_out,
     t_out,
+    target_t_out,
     m_out,
+    target_m_out,
     t_sat,
     t_margin,
     p_unit,
@@ -106,8 +109,8 @@ def build_animated_process_svg(
     svg = f"""
     <svg
         width="100%"
-        height="330"
-        viewBox="0 0 1500 330"
+        height="350"
+        viewBox="0 0 1500 350"
         xmlns="http://www.w3.org/2000/svg"
         preserveAspectRatio="xMidYMid meet"
     >
@@ -294,19 +297,19 @@ def build_animated_process_svg(
         <text x="60" y="100" font-weight="bold" fill="{HP_COLOR}">High Pressure Steam Line</text>
         <text x="60" y="125" fill="{HP_COLOR}">Flow: {m_in:.2f} t/h</text>
         <text x="60" y="150" fill="{HP_COLOR}">Press: {p_in:.2f} {p_unit}</text>
-        <text x="60" y="175" fill="{HP_COLOR}">Temp: {t_in:.1f} °C</text>
+        <text x="60" y="175" fill="{HP_COLOR}">Temp: {t_in:.1f} degC</text>
 
-        <text x="830" y="35" font-weight="bold" fill="{FW_COLOR}">Feedwater Spray Line</text>
-        <text x="830" y="60" fill="{FW_COLOR}">Flow: {m_fw:.2f} t/h</text>
-        <text x="830" y="85" fill="{FW_COLOR}">Press: {p_fw:.2f} {p_unit}</text>
-        <text x="830" y="110" fill="{FW_COLOR}">Temp: {t_fw:.1f} °C</text>
+        <text x="830" y="30" font-weight="bold" fill="{FW_COLOR}">Feedwater Spray Line</text>
+        <text x="830" y="55" fill="{FW_COLOR}">Flow: {m_fw:.2f} t/h (Target {target_m_fw:.2f} t/h)</text>
+        <text x="830" y="80" fill="{FW_COLOR}">Press: {p_fw:.2f} {p_unit}</text>
+        <text x="830" y="105" fill="{FW_COLOR}">Temp: {t_fw:.1f} degC</text>
 
-        <text x="1150" y="50" font-weight="bold" fill="{lp_color}">Low Pressure Steam Line</text>
-        <text x="1150" y="75" fill="{lp_color}">Flow: {m_out:.2f} t/h</text>
-        <text x="1150" y="100" fill="{lp_color}">Press: {p_out:.2f} {p_unit}</text>
-        <text x="1150" y="125" fill="{lp_color}">Temp: {t_out:.1f} °C</text>
-        <text x="1150" y="150" fill="{lp_color}">Sat Temp: {t_sat:.1f} °C</text>
-        <text x="1150" y="175" fill="{lp_color}">Superheat Margin: {t_margin:.1f} °C</text>
+        <text x="1150" y="30" font-weight="bold" fill="{lp_color}">LP Pressure Steam Line</text>
+        <text x="1150" y="55" fill="{lp_color}">Flow: {m_out:.2f} t/h (Target {target_m_out:.2f} t/h)</text>
+        <text x="1150" y="80" fill="{lp_color}">Press: {p_out:.2f} {p_unit}</text>
+        <text x="1150" y="105" fill="{lp_color}">Temp: {t_out:.1f} degC (Target {target_t_out:.1f} degC)</text>
+        <text x="1150" y="130" fill="{lp_color}">Sat Temp: {t_sat:.1f} degC</text>
+        <text x="1150" y="155" fill="{lp_color}">Superheat Margin: {t_margin:.1f} degC</text>
     </g>
 
     </svg>
@@ -569,16 +572,19 @@ svg_code = build_animated_process_svg(
     p_fw=Spray_Feedwater_Inlet_Pressure,
     t_fw=Spray_Feedwater_Inlet_Temperature_Degrees_Celsius,
     m_fw=st.session_state.spray_flow_history[-1],
+    target_m_fw=target_fw_flow,
     p_out=Desuperheater_Outlet_Steam_Pressure,
     t_out=current_outlet_temp,
+    target_t_out=target_temp_outlet,
     m_out=st.session_state.outlet_flow_history[-1],
+    target_m_out=target_outlet_flow,
     t_sat=saturation_temp,
     t_margin=current_margin,
     p_unit=Pressure_Unit_Type.split("(")[-1].replace(")", ""),
 )
 
 # Using components.html forces clean rendering of embedded SVG animations
-components.html(svg_code, height=340)
+components.html(svg_code, height=360)
 
 # Lead-Lag Ratio Indicator Banner
 lead_lag_ratio = tau_spray / tau_steam
