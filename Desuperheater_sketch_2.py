@@ -37,8 +37,8 @@ def build_animated_process_svg(
     svg = f"""
     <svg
         width="100%"
-        height="390"
-        viewBox="0 0 1500 390"
+        height="310"
+        viewBox="0 0 1500 310"
         xmlns="http://www.w3.org/2000/svg"
         preserveAspectRatio="xMidYMid meet"
     >
@@ -103,7 +103,7 @@ def build_animated_process_svg(
     <!-- LAYER 1: BACK - CONTINUOUS HP & MAIN STEAM PIPING -->
     <!-- Glow background path -->
     <path
-        d="M60 220 H1450"
+        d="M60 210 H1450"
         stroke="{STEAM_COLOR}"
         stroke-width="9"
         stroke-linecap="round"
@@ -112,40 +112,40 @@ def build_animated_process_svg(
     />
 
     <!-- Continuous Main Steam Line -->
-    <path d="M60 220 H1450" stroke="{STEAM_COLOR}" stroke-width="5" stroke-linecap="round" />
+    <path d="M60 210 H1450" stroke="{STEAM_COLOR}" stroke-width="5" stroke-linecap="round" />
 
     <!-- STEAM PARTICLES (FLOWING THROUGH BACKGROUND LINE) -->
     <g filter="url(#steamGlow)">
         <circle r="7" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_inlet:.2f}s" repeatCount="indefinite" path="M60 220 H490"/>
+            <animateMotion dur="{dur_inlet:.2f}s" repeatCount="indefinite" path="M60 210 H490"/>
         </circle>
         <circle r="5" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_inlet:.2f}s" begin="-1.2s" repeatCount="indefinite" path="M60 220 H490"/>
+            <animateMotion dur="{dur_inlet:.2f}s" begin="-1.2s" repeatCount="indefinite" path="M60 210 H490"/>
         </circle>
         <circle r="4" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_inlet:.2f}s" begin="-2.5s" repeatCount="indefinite" path="M60 220 H490"/>
+            <animateMotion dur="{dur_inlet:.2f}s" begin="-2.5s" repeatCount="indefinite" path="M60 210 H490"/>
         </circle>
 
         <circle r="7" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_valve:.2f}s" repeatCount="indefinite" path="M490 220 H800"/>
+            <animateMotion dur="{dur_valve:.2f}s" repeatCount="indefinite" path="M490 210 H800"/>
         </circle>
         <circle r="5" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_valve:.2f}s" begin="-1s" repeatCount="indefinite" path="M490 220 H800"/>
+            <animateMotion dur="{dur_valve:.2f}s" begin="-1s" repeatCount="indefinite" path="M490 210 H800"/>
         </circle>
 
         <circle r="7" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_outlet:.2f}s" repeatCount="indefinite" path="M800 220 H1450"/>
+            <animateMotion dur="{dur_outlet:.2f}s" repeatCount="indefinite" path="M800 210 H1450"/>
         </circle>
         <circle r="5" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_outlet:.2f}s" begin="-1.5s" repeatCount="indefinite" path="M800 220 H1450"/>
+            <animateMotion dur="{dur_outlet:.2f}s" begin="-1.5s" repeatCount="indefinite" path="M800 210 H1450"/>
         </circle>
         <circle r="4" fill="url(#steamParticle)">
-            <animateMotion dur="{dur_outlet:.2f}s" begin="-3s" repeatCount="indefinite" path="M800 220 H1450"/>
+            <animateMotion dur="{dur_outlet:.2f}s" begin="-3s" repeatCount="indefinite" path="M800 210 H1450"/>
         </circle>
     </g>
 
     <!-- LAYER 2: FOREGROUND - PRESSURE CONTROL VALVE -->
-    <g transform="translate(490,220)">
+    <g transform="translate(490,210)">
         <!-- Solid White Background Fill to Occlude Pipe Line -->
         <polygon points="-35,-30 0,0 -35,30" fill="#FFFFFF"/>
         <polygon points="35,-30 0,0 35,30" fill="#FFFFFF"/>
@@ -163,10 +163,10 @@ def build_animated_process_svg(
             </circle>
         </g>
     </g>
-    <text x="490" y="275" text-anchor="middle" fill="#334155" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600">Isenthalpic Expansion</text>
+    <text x="490" y="260" text-anchor="middle" fill="#334155" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600">Isenthalpic Expansion</text>
 
     <!-- LAYER 3: FOREGROUND - DESUPERHEATER BODY -->
-    <g transform="translate(800,220)">
+    <g transform="translate(800,210)">
         <!-- Solid White Background Fill -->
         <path d="M-105 -42 L-35 -16 L35 -16 L105 -42 L105 42 L35 16 L-35 16 L-105 42 Z" fill="#FFFFFF"/>
         
@@ -191,45 +191,45 @@ def build_animated_process_svg(
             </g>
         </g>
     </g>
-    <text x="800" y="280" text-anchor="middle" fill="#334155" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600">Desuperheater</text>
+    <text x="800" y="265" text-anchor="middle" fill="#334155" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600">Desuperheater</text>
 
     <!-- FEEDWATER PIPE -->
-    <path d="M800 75 V215" stroke="{FW_COLOR}" stroke-width="5" stroke-linecap="round"/>
-    <path d="M800 75 V215" stroke="{FW_COLOR}" stroke-width="10" stroke-linecap="round" opacity="0.15" filter="url(#lineGlow)"/>
-    <path d="M800 110 V160" stroke="{FW_COLOR}" stroke-width="2" marker-end="url(#waterArrow)"/>
+    <path d="M800 65 V205" stroke="{FW_COLOR}" stroke-width="5" stroke-linecap="round"/>
+    <path d="M800 65 V205" stroke="{FW_COLOR}" stroke-width="10" stroke-linecap="round" opacity="0.15" filter="url(#lineGlow)"/>
+    <path d="M800 100 V150" stroke="{FW_COLOR}" stroke-width="2" marker-end="url(#waterArrow)"/>
 
     <!-- FEEDWATER PARTICLES -->
     <g filter="url(#waterGlow)">
         <circle r="7" fill="url(#waterParticle)">
-            <animateMotion dur="{dur_fw:.2f}s" repeatCount="indefinite" path="M800 75 V215"/>
+            <animateMotion dur="{dur_fw:.2f}s" repeatCount="indefinite" path="M800 65 V205"/>
         </circle>
         <circle r="5" fill="url(#waterParticle)">
-            <animateMotion dur="{dur_fw:.2f}s" begin="-0.65s" repeatCount="indefinite" path="M800 75 V215"/>
+            <animateMotion dur="{dur_fw:.2f}s" begin="-0.65s" repeatCount="indefinite" path="M800 65 V205"/>
         </circle>
         <circle r="4" fill="url(#waterParticle)">
-            <animateMotion dur="{dur_fw:.2f}s" begin="-1.3s" repeatCount="indefinite" path="M800 75 V215"/>
+            <animateMotion dur="{dur_fw:.2f}s" begin="-1.3s" repeatCount="indefinite" path="M800 65 V205"/>
         </circle>
     </g>
 
     <!-- PROCESS LABELS -->
     <g font-family="Segoe UI, sans-serif" font-size="15" fill="#334155">
         <!-- Inlet Steam Text -->
-        <text x="60" y="110" font-weight="bold">High Pressure Steam Line</text>
-        <text x="60" y="135">Flow: {m_in:.2f} t/h</text>
-        <text x="60" y="160">Press: {p_in:.2f} {p_unit}</text>
-        <text x="60" y="185">Temp: {t_in:.1f} °C</text>
+        <text x="60" y="100" font-weight="bold">High Pressure Steam Line</text>
+        <text x="60" y="125">Flow: {m_in:.2f} t/h</text>
+        <text x="60" y="150">Press: {p_in:.2f} {p_unit}</text>
+        <text x="60" y="175">Temp: {t_in:.1f} °C</text>
 
         <!-- Feedwater Text -->
-        <text x="830" y="45" font-weight="bold" fill="{FW_COLOR}">Feedwater Spray Line</text>
-        <text x="830" y="70" fill="{FW_COLOR}">Flow: {m_fw:.2f} t/h</text>
-        <text x="830" y="95" fill="{FW_COLOR}">Press: {p_fw:.2f} {p_unit}</text>
-        <text x="830" y="120" fill="{FW_COLOR}">Temp: {t_fw:.1f} °C</text>
+        <text x="830" y="35" font-weight="bold" fill="{FW_COLOR}">Feedwater Spray Line</text>
+        <text x="830" y="60" fill="{FW_COLOR}">Flow: {m_fw:.2f} t/h</text>
+        <text x="830" y="85" fill="{FW_COLOR}">Press: {p_fw:.2f} {p_unit}</text>
+        <text x="830" y="110" fill="{FW_COLOR}">Temp: {t_fw:.1f} °C</text>
 
         <!-- Outlet Steam Text -->
-        <text x="1150" y="110" font-weight="bold">Low Pressure Steam Line</text>
-        <text x="1150" y="135">Flow: {m_out:.2f} t/h</text>
-        <text x="1150" y="160">Press: {p_out:.2f} {p_unit}</text>
-        <text x="1150" y="185">Temp: {t_out:.1f} °C</text>
+        <text x="1150" y="100" font-weight="bold">Low Pressure Steam Line</text>
+        <text x="1150" y="125">Flow: {m_out:.2f} t/h</text>
+        <text x="1150" y="150">Press: {p_out:.2f} {p_unit}</text>
+        <text x="1150" y="175">Temp: {t_out:.1f} °C</text>
     </g>
 
     </svg>
@@ -449,7 +449,7 @@ col_left, col_center, col_right = st.columns([0.05, 0.90, 0.05])
 with col_center:
     st.components.v1.html(
         f'<div style="display:flex;justify-content:center;width:100%;">{svg_data}</div>',
-        height=400,
+        height=315,
     )
 
 # Safety Alert Banners
