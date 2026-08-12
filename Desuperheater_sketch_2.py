@@ -94,11 +94,7 @@ def build_animated_process_svg(
             <stop offset="100%" stop-color="{FW_COLOR}" stop-opacity="0"/>
         </radialGradient>
 
-        <!-- ARROW MARKERS -->
-        <marker id="steamArrow" markerWidth="12" markerHeight="12" refX="10" refY="5" orient="auto">
-            <path d="M0,0 L10,5 L0,10 Z" fill="{STEAM_COLOR}"/>
-        </marker>
-
+        <!-- WATER ARROW MARKER ONLY -->
         <marker id="waterArrow" markerWidth="12" markerHeight="12" refX="10" refY="5" orient="auto">
             <path d="M0,0 L10,5 L0,10 Z" fill="{FW_COLOR}"/>
         </marker>
@@ -117,11 +113,6 @@ def build_animated_process_svg(
 
     <!-- Continuous Main Steam Line -->
     <path d="M60 220 H1450" stroke="{STEAM_COLOR}" stroke-width="5" stroke-linecap="round" />
-
-    <!-- STEAM FLOW ARROWS -->
-    <path d="M210 220 H275" stroke="{STEAM_COLOR}" stroke-width="2" marker-end="url(#steamArrow)" opacity="0.8" />
-    <path d="M410 220 H460" stroke="{STEAM_COLOR}" stroke-width="2" marker-end="url(#steamArrow)" opacity="0.8" />
-    <path d="M1120 220 H1190" stroke="{STEAM_COLOR}" stroke-width="2" marker-end="url(#steamArrow)" opacity="0.8" />
 
     <!-- STEAM PARTICLES (FLOWING THROUGH BACKGROUND LINE) -->
     <g filter="url(#steamGlow)">
@@ -153,20 +144,20 @@ def build_animated_process_svg(
         </circle>
     </g>
 
-    <!-- LAYER 2: FOREGROUND - PRESSURE CONTROL VALVE (SOLID WHITE FILL TO BLOCK BACKGROUND LINE) -->
+    <!-- LAYER 2: FOREGROUND - PRESSURE CONTROL VALVE -->
     <g transform="translate(490,220)">
         <!-- Solid White Background Fill to Occlude Pipe Line -->
         <polygon points="-35,-30 0,0 -35,30" fill="#FFFFFF"/>
         <polygon points="35,-30 0,0 35,30" fill="#FFFFFF"/>
-        <circle cx="0" cy="-82" r="17" fill="#FFFFFF"/>
+        <circle cx="0" cy="-70" r="17" fill="#FFFFFF"/>
         
-        <!-- Foreground Valve Outlines & Actuator -->
+        <!-- Foreground Valve Outlines & Actuator (Stem aligned exactly to center at x=0, y=0) -->
         <g filter="url(#equipmentGlow)">
             <polygon points="-35,-30 0,0 -35,30" fill="#FFFFFF" fill-opacity="0.9" stroke="{EQUIP_COLOR}" stroke-width="3"/>
             <polygon points="35,-30 0,0 35,30" fill="#FFFFFF" fill-opacity="0.9" stroke="{EQUIP_COLOR}" stroke-width="3"/>
-            <line x1="0" y1="-30" x2="0" y2="-65" stroke="{EQUIP_COLOR}" stroke-width="3"/>
-            <circle cx="0" cy="-82" r="17" fill="#FFFFFF" stroke="{EQUIP_COLOR}" stroke-width="3"/>
-            <circle cx="0" cy="-82" r="20" fill="none" stroke="{EQUIP_GLOW}" stroke-width="2" opacity="0">
+            <line x1="0" y1="0" x2="0" y2="-53" stroke="{EQUIP_COLOR}" stroke-width="3"/>
+            <circle cx="0" cy="-70" r="17" fill="#FFFFFF" stroke="{EQUIP_COLOR}" stroke-width="3"/>
+            <circle cx="0" cy="-70" r="20" fill="none" stroke="{EQUIP_GLOW}" stroke-width="2" opacity="0">
                 <animate attributeName="r" values="18;28;18" dur="2.5s" repeatCount="indefinite"/>
                 <animate attributeName="opacity" values="0.7;0;0.7" dur="2.5s" repeatCount="indefinite"/>
             </circle>
