@@ -22,21 +22,25 @@ driver_speed_input = st.sidebar.number_input(
     f"Driver Speed ({unit})", min_value=1.0, value=1500.0, step=10.0
 )
 
-# Gear Orientation Selection
+# Gear Orientation Selection (Speed Increaser as Default)
+orientation_options = [
+    "Speed Increaser (Driver = Gear)",
+    "Speed Reducer (Driver = Pinion)",
+]
 orientation = st.sidebar.selectbox(
     "Gearbox Orientation",
-    ["Speed Reducer (Driver = Pinion)", "Speed Increaser (Driver = Gear)"],
+    orientation_options,
+    index=0,  # Default to Speed Increaser
     help="Determines driven speed based on driver attachment."
 )
 
-# Core Computations
+# Core Computations (Driven Speed & GMF)
 fr_driver_hz = (
     driver_speed_input if unit == "Hz" else driver_speed_input / 60.0
 )
 fr_driver_rpm = fr_driver_hz * 60.0
 gear_ratio = n_gear / n_pinion
 
-# Driven Speed & Fundamental GMF Calculations based on Orientation
 if "Reducer" in orientation:
     fr_driven_hz = fr_driver_hz / gear_ratio
     gmf_hz = fr_driver_hz * n_pinion  # GMF = Driver speed * Driver teeth
@@ -45,6 +49,14 @@ else:
     gmf_hz = fr_driver_hz * n_gear    # GMF = Driver speed * Driver teeth
 
 fr_driven_rpm = fr_driven_hz * 60.0
+
+# Display Calculated Driven Speed directly under Gearbox Orientation
+st.sidebar.metric(
+    label="Calculated Driven Speed",
+    value=f"{fr_driven_rpm:.1f} RPM",
+    delta=f"{fr_driven_hz:.2f} Hz",
+    delta_color="off"
+)
 
 st.sidebar.header("Spectrum Simulation Controls")
 # Select X-axis Display Unit
