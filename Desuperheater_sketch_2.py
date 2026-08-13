@@ -2,9 +2,9 @@ import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 
-st.set_page_config(page_title="Gear Mesh Analysis", layout="wide")
+st.set_page_config(page_title="Gear Mesh & Spectrum Analysis", layout="wide")
 
-st.title("Gear Mesh & Frequency Analysis")
+st.title("Gear Mesh & Frequency Spectrum Analysis")
 
 # Sidebar - Inputs
 st.sidebar.header("Operating Parameters")
@@ -26,7 +26,18 @@ fr_driver = (
     driver_speed_input if unit == "Hz" else driver_speed_input / 60.0
 )  # Driver speed in Hz
 gear_ratio = n_gear / n_pinion
-gmf = fr_driver * n_pinion  # GMF based on driver teeth
+gmf = fr_driver * n_pinion  # Fundamental GMF
+
+st.sidebar.header("Spectrum Simulation Controls")
+# Dynamic default for Fmax to cover up to 3x GMF initially
+default_fmax = float(np.ceil(3.5 * gmf / 100.0) * 100.0) if gmf > 0 else 2000.0
+fmax = st.sidebar.slider(
+    "Spectrum Fmax (Hz)",
+    min_value=100.0,
+    max_value=10000.0,
+    value=max(500.0, default_fmax),
+    step=50.0,
+)
 
 # Layout Columns
 col1, col2 = st.columns([1, 1.2])
@@ -115,8 +126,94 @@ with col2:
         yaxis_title="Y (mm)",
         yaxis=dict(scaleanchor="x", scaleratio=1),
         margin=dict(l=20, r=20, t=20, b=20),
-        height=400,
+        height=320,
         template="plotly_white",
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+# Full-width Spectrum Plot Section
+st.subheader("Simulated Vibration Spectrum")
+
+# Peak lists for plotting
+freq_peaks = []
+amp_peaks = []
+labels = []
+
+# Base Noise Floor
+noise_floor = 0.02
+
+# Generate peaks for higher harmonic orders dynamically (up to order 10) to support larger Fmax values
+max_harmonic_order = int(np.ceil(fmax / gmf)) + 1 if gmf > 0 else 3
+
+for h in range(1, max_harmonic_order + 1):
+    center = h * gmf
+    # Decreasing base amplitude for higher harmonics
+    base_amp = 1.0 / (h**0.7)
+
+    # Add GMF Center Peak
+    if center <= fmax:
+        freq_peaks.append(center)
+        amp_peaks.append(base_amp)
+        labels.append(f"GMF {h}")
+
+    # Add Sidebands (up to 5 orders)
+    for sb in range(1, 6):
+        sb_amp = base_amp * (0.35 / (sb**0.8))  # Sideband attenuation factor
+
+        lower_f = center - (sb * fr_driver)
+        upper_f = center + (sb * fr_driver)
+
+        if 0 <= lower_f <= fmax:
+            freq_peaks.append(lower_f)
+            amp_peaks.append(sb_amp)
+            labels.append("")
+
+        if 0 <= upper_f <= fmax:
+            freq_peaks.append(upper_f)
+            amp_peaks.append(sb_amp)
+            labels.append("")
+
+fig_spec = go.Figure()
+
+# Plot spectral line stems
+for f_peak, a_peak in zip(freq_peaks, amp_peaks):
+    fig_spec.add_trace(
+        go.Scatter(
+            x=[f_peak, f_peak],
+            y=[noise_floor, a_peak],
+            mode="lines",
+            line=dict(color="#008080", width=2),
+            showlegend=False,
+            hoverinfo="x+y",
+        )
+    )
+
+# Add GMF Markers & Labels (GMF 1, GMF 2, GMF 3, etc.)
+gmf_freqs = [f for f, lbl in zip(freq_peaks, labels) if lbl.startswith("GMF")]
+gmf_amps = [a for a, lbl in zip(amp_peaks, labels) if lbl.startswith("GMF")]
+gmf_text = [lbl for lbl in labels if lbl.startswith("GMF")]
+
+fig_spec.add_trace(
+    go.Scatter(
+        x=gmf_freqs,
+        y=gmf_amps,
+        mode="markers+text",
+        text=gmf_text,
+        textposition="top center",
+        marker=dict(color="crimson", size=8),
+        name="GMF Harmonics",
+    )
+)
+
+fig_spec.update_layout(
+    xaxis_title="Frequency (Hz)",
+    yaxis_title="Amplitude (g / peak)",
+    xaxis=dict(range=[0, fmax]),
+    yaxis=dict(range=[0, 1.3]),
+    template="plotly_white",
+    height=400,
+    margin=dict(l=40, r=20, t=30, b=40),
+)
+
+st.plotly_chart(fig_spec, use_container_width=True)
