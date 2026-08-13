@@ -317,10 +317,20 @@ for h in range(1, max_harmonic_order + 1):
                 x_sb.append(upper_scaled)
                 amp_sb.append(sb_amp)
 
+# Match f_n spectral amplitude to 1x amplitude (default to 0.5 if 1x trace is out of range)
+fn_amp = amp_1x[0] if amp_1x else 0.5
+
 fig_spec = go.Figure()
 
 all_x = x_1x + x_gmf + x_sb
 all_amps = amp_1x + amp_gmf + amp_sb
+
+# Include f_n spectral line if specified and within range
+if fn_hz > 0:
+    fn_scaled = fn_hz * scale_factor
+    if 0 < fn_scaled <= fmax:
+        all_x.append(fn_scaled)
+        all_amps.append(fn_amp)
 
 # Plot spectral lines
 for x_p, a_p in zip(all_x, all_amps):
@@ -383,14 +393,14 @@ if x_gmf:
             font=dict(color="crimson", size=11, family="Segoe UI"),
         )
 
-# Natural Frequency Marker (if specified)
+# Natural Frequency Marker & Spectral Line Peak (Matched to 1x Amplitude)
 if fn_hz > 0:
     fn_scaled = fn_hz * scale_factor
     if 0 < fn_scaled <= fmax:
         fig_spec.add_trace(
             go.Scatter(
                 x=[fn_scaled],
-                y=[1.2],
+                y=[fn_amp],
                 mode="markers",
                 marker=dict(
                     color="gold",
@@ -403,7 +413,7 @@ if fn_hz > 0:
         )
         fig_spec.add_annotation(
             x=fn_scaled,
-            y=1.25,
+            y=fn_amp + 0.05,
             text=f"f_n ({fn_scaled:.1f})",
             showarrow=False,
             textangle=-90,
@@ -425,7 +435,7 @@ fig_spec.update_layout(
         tickformat=".1f",
         zeroline=False,
     ),
-    yaxis=dict(range=[0, 1.75]),
+    yaxis=dict(range=[0, 1.65]),
     template="plotly_white",
     height=480,
     margin=dict(l=40, r=20, t=60, b=40),
