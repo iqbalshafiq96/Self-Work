@@ -322,6 +322,7 @@ fig_spec = go.Figure()
 all_x = x_1x + x_gmf + x_sb
 all_amps = amp_1x + amp_gmf + amp_sb
 
+# Plot spectral lines
 for x_p, a_p in zip(all_x, all_amps):
     fig_spec.add_trace(
         go.Scatter(
@@ -334,39 +335,55 @@ for x_p, a_p in zip(all_x, all_amps):
         )
     )
 
+# 1x Running Speeds Markers
 if x_1x:
     fig_spec.add_trace(
         go.Scatter(
             x=x_1x,
             y=amp_1x,
-            mode="markers+text",
-            text=lbl_1x,
-            textposition="middle right",
-            textfont=dict(color="darkorange", size=11, family="Segoe UI"),
-            textangle=-90,
+            mode="markers",
             marker=dict(color="darkorange", size=9),
             cliponaxis=False,
             name="1x Running Speeds",
         )
     )
+    for x_p, a_p, txt in zip(x_1x, amp_1x, lbl_1x):
+        fig_spec.add_annotation(
+            x=x_p,
+            y=a_p + 0.05,
+            text=txt,
+            showarrow=False,
+            textangle=-90,
+            xanchor="center",
+            yanchor="bottom",
+            font=dict(color="darkorange", size=11, family="Segoe UI"),
+        )
 
+# GMF Harmonics Markers
 if x_gmf:
     fig_spec.add_trace(
         go.Scatter(
             x=x_gmf,
             y=amp_gmf,
-            mode="markers+text",
-            text=lbl_gmf,
-            textposition="middle right",
-            textfont=dict(color="crimson", size=11, family="Segoe UI"),
-            textangle=-90,
+            mode="markers",
             marker=dict(color="crimson", size=9),
             cliponaxis=False,
             name="GMF Harmonics",
         )
     )
+    for x_p, a_p, txt in zip(x_gmf, amp_gmf, lbl_gmf):
+        fig_spec.add_annotation(
+            x=x_p,
+            y=a_p + 0.05,
+            text=txt,
+            showarrow=False,
+            textangle=-90,
+            xanchor="center",
+            yanchor="bottom",
+            font=dict(color="crimson", size=11, family="Segoe UI"),
+        )
 
-# Highlight Natural Frequency (f_n) on Spectrum if specified (> 0)
+# Natural Frequency Marker (if specified)
 if fn_hz > 0:
     fn_scaled = fn_hz * scale_factor
     if 0 < fn_scaled <= fmax:
@@ -374,11 +391,7 @@ if fn_hz > 0:
             go.Scatter(
                 x=[fn_scaled],
                 y=[1.2],
-                mode="markers+text",
-                text=[f"f_n ({fn_scaled:.1f})"],
-                textposition="middle right",
-                textfont=dict(color="purple", size=11, family="Segoe UI"),
-                textangle=-90,
+                mode="markers",
                 marker=dict(
                     color="gold",
                     size=12,
@@ -387,6 +400,16 @@ if fn_hz > 0:
                 ),
                 name="Natural Frequency (f_n)",
             )
+        )
+        fig_spec.add_annotation(
+            x=fn_scaled,
+            y=1.25,
+            text=f"f_n ({fn_scaled:.1f})",
+            showarrow=False,
+            textangle=-90,
+            xanchor="center",
+            yanchor="bottom",
+            font=dict(color="purple", size=11, family="Segoe UI"),
         )
         tick_vals.append(fn_scaled)
 
@@ -402,7 +425,7 @@ fig_spec.update_layout(
         tickformat=".1f",
         zeroline=False,
     ),
-    yaxis=dict(range=[0, 1.65]),
+    yaxis=dict(range=[0, 1.75]),
     template="plotly_white",
     height=480,
     margin=dict(l=40, r=20, t=60, b=40),
