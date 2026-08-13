@@ -30,7 +30,7 @@ orientation_options = [
 orientation = st.sidebar.selectbox(
     "Gearbox Orientation",
     orientation_options,
-    index=0,  # Default to Speed Increaser
+    index=0,
     help="Determines driven speed based on driver attachment."
 )
 
@@ -251,9 +251,7 @@ noise_floor = 0.02
 x_1x, amp_1x, lbl_1x = [], [], []
 x_2x, amp_2x, lbl_2x = [], [], []
 x_gmf, amp_gmf, lbl_gmf = [], [], []
-x_sb, amp_sb = [], []
-
-tick_vals = []
+x_sb, amp_sb, lbl_sb = [], [], []
 
 # Collect 1x and 2x Running Speed
 for order in [1, 2]:
@@ -262,7 +260,6 @@ for order in [1, 2]:
     amp = 0.6 / order
 
     if 0 < val_scaled <= fmax:
-        tick_vals.append(val_scaled)
         if order == 1:
             x_1x.append(val_scaled)
             amp_1x.append(amp)
@@ -281,7 +278,6 @@ for h in range(1, max_harmonic_order + 1):
     base_amp = 1.0 / (h**0.7)
 
     if 0 < center_scaled <= fmax:
-        tick_vals.append(center_scaled)
         x_gmf.append(center_scaled)
         amp_gmf.append(base_amp)
         lbl_gmf.append(f"GMF {h}")
@@ -295,16 +291,20 @@ for h in range(1, max_harmonic_order + 1):
         if 0 < lower_scaled <= fmax:
             x_sb.append(lower_scaled)
             amp_sb.append(sb_amp)
+            lbl_sb.append(f"GMF{h} -{sb}x")
 
         if 0 < upper_scaled <= fmax:
             x_sb.append(upper_scaled)
             amp_sb.append(sb_amp)
+            lbl_sb.append(f"GMF{h} +{sb}x")
 
 fig_spec = go.Figure()
 
 all_x = x_1x + x_2x + x_gmf + x_sb
 all_amps = amp_1x + amp_2x + amp_gmf + amp_sb
+all_labels = lbl_1x + lbl_2x + lbl_gmf + lbl_sb
 
+# Render Spectrum Stems
 for x_p, a_p in zip(all_x, all_amps):
     fig_spec.add_trace(
         go.Scatter(
@@ -362,19 +362,58 @@ if x_gmf:
         )
     )
 
-clean_ticks = sorted(list(set([t for t in tick_vals if t > 0])))
+# Find and Highlight Top Peak
+if all_amps:
+    max_idx = int(np.argmax(all_amps))
+    top_x = all_x[max_idx]
+    top_amp = all_amps[max_idx]
+    top_label = all_labels[max_idx]
+
+    # Highlight Marker for Peak
+    fig_spec.add_trace(
+        go.Scatter(
+            x=[top_x],
+            y=[top_amp],
+            mode="markers",
+            marker=dict(
+                size=14,
+                color="red",
+                symbol="diamond",
+                line=dict(color="black", width=1.5)
+            ),
+            name="Peak Amplitude",
+            showlegend=True
+        )
+    )
+
+    # Peak Annotation Callout
+    fig_spec.add_annotation(
+        x=top_x,
+        y=top_amp,
+        text=f"<b>Max Peak: {top_label}</b><br>{top_x:.1f} {unit_label} | {top_amp:.2f} g",
+        showarrow=True,
+        arrowhead=2,
+        arrowsize=1,
+        arrowwidth=2,
+        arrowcolor="red",
+        ax=0,
+        ay=-45,
+        bordercolor="red",
+        borderwidth=1.5,
+        borderpad=4,
+        bgcolor="rgba(255, 255, 255, 0.9)",
+        font=dict(size=11, family="Segoe UI", color="black")
+    )
 
 fig_spec.update_layout(
     xaxis_title=f"Frequency ({unit_label})",
     yaxis_title="Amplitude (g / peak)",
     xaxis=dict(
-        range=[min(clean_ticks) * 0.8 if clean_ticks else 1.0, fmax],
-        tickmode="array",
-        tickvals=clean_ticks,
-        tickformat=".1f",
+        range=[0, fmax],
+        nticks=5,  # 5 major, equally-spaced ticks
         zeroline=False,
     ),
-    yaxis=dict(range=[0, 1.45]),
+    yaxis=dict(range=[0, max(all_amps, default=1.0) * 1.35]),
     template="plotly_white",
     height=450,
     margin=dict(l=40, r=20, t=40, b=40),
