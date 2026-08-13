@@ -36,7 +36,6 @@ fn_hz = fn_input if fn_unit == "Hz" else fn_input / 60.0
 # Sidebar - Operating Parameters
 st.sidebar.header("Operating Parameters")
 
-# Driver Speed Input with Unit Dropdown inline directly on the right
 col_spd1, col_spd2 = st.sidebar.columns([2, 1])
 
 with col_spd1:
@@ -47,7 +46,6 @@ with col_spd1:
 with col_spd2:
     unit = st.selectbox("Unit", ["RPM", "Hz"], index=0, key="driver_speed_unit_select")
 
-# Gear Orientation Selection
 orientation_options = [
     "Speed Increaser (Driver = Gear)",
     "Speed Reducer (Driver = Pinion)",
@@ -160,6 +158,23 @@ else:
             value=max(20.0, default_fmax),
             step=1.0,
         )
+
+# Time Waveform Simulation Controls in Sidebar
+st.sidebar.header("Time Waveform Controls")
+twf_revolutions = st.sidebar.slider(
+    "Plot Duration (Driver Shaft Revolutions)",
+    min_value=1.0,
+    max_value=20.0,
+    value=5.0,
+    step=0.5,
+)
+twf_noise_level = st.sidebar.slider(
+    "Noise Level (g RMS)",
+    min_value=0.00,
+    max_value=0.10,
+    value=0.02,
+    step=0.005,
+)
 
 # Main Panel - Frequency Calculations Section
 st.subheader("Frequency Calculations")
@@ -317,7 +332,6 @@ for h in range(1, max_harmonic_order + 1):
                 x_sb.append(upper_scaled)
                 amp_sb.append(sb_amp)
 
-# Match f_n spectral amplitude to 1x amplitude (default to 0.5 if 1x trace is out of range)
 fn_amp = amp_1x[0] if amp_1x else 0.5
 
 fig_spec = go.Figure()
@@ -325,14 +339,12 @@ fig_spec = go.Figure()
 all_x = x_1x + x_gmf + x_sb
 all_amps = amp_1x + amp_gmf + amp_sb
 
-# Include f_n spectral line if specified and within range
 if fn_hz > 0:
     fn_scaled = fn_hz * scale_factor
     if 0 < fn_scaled <= fmax:
         all_x.append(fn_scaled)
         all_amps.append(fn_amp)
 
-# Plot spectral lines
 for x_p, a_p in zip(all_x, all_amps):
     fig_spec.add_trace(
         go.Scatter(
@@ -345,7 +357,6 @@ for x_p, a_p in zip(all_x, all_amps):
         )
     )
 
-# 1x Running Speeds Markers
 if x_1x:
     fig_spec.add_trace(
         go.Scatter(
@@ -369,7 +380,6 @@ if x_1x:
             font=dict(color="darkorange", size=11, family="Segoe UI"),
         )
 
-# GMF Harmonics Markers
 if x_gmf:
     fig_spec.add_trace(
         go.Scatter(
@@ -393,7 +403,6 @@ if x_gmf:
             font=dict(color="crimson", size=11, family="Segoe UI"),
         )
 
-# Natural Frequency Marker & Spectral Line Peak (Matched to 1x Amplitude)
 if fn_hz > 0:
     fn_scaled = fn_hz * scale_factor
     if 0 < fn_scaled <= fmax:
@@ -437,8 +446,69 @@ fig_spec.update_layout(
     ),
     yaxis=dict(range=[0, 1.65]),
     template="plotly_white",
-    height=480,
+    height=450,
     margin=dict(l=40, r=20, t=60, b=40),
 )
 
 st.plotly_chart(fig_spec, use_container_width=True)
+
+# Time Waveform Simulation Section
+st.subheader("Simulated Time Waveform")
+
+# Determine total simulation time based on driver revolutions
+t_max = twf_revolutions / fr_driver_hz if fr_driver_hz > 0 else 0.1
+fs = max(10000.0, 10 * fmax_hz)  # Sampling frequency meeting Nyquist criteria
+t = np.linspace(0, t_max, int(fs * t_max), endpoint=False)
+
+# Reconstruct signal components
+signal = np.zeros_like(t)
+
+# 1. Add Running Speeds (1x Pinion & 1x Gear)
+signal += 0.5 * np.sin(2 * np.pi * f_pinion_hz * t)
+signal += 0.5 * np.sin(2 * np.pi * f_gear_hz * t + np.pi / 4)
+
+# 2. Add GMF Harmonics modulated by shaft sidebands (AM Envelope)
+for h in [1, 2, 3]:
+    center_hz = h * gmf_hz
+    base_amp = 1.0 / (h**0.7)
+
+    # Calculate amplitude modulation envelope
+    mod_envelope = np.ones_like(t)
+    for source_name, freq in mod_freqs:
+        for k in sb_orders:
+            depth = 0.3 / (k**0.8)
+            mod_envelope += depth * np.cos(2 * np.pi * k * freq * t)
+
+    signal += base_amp * mod_envelope * np.sin(2 * np.pi * center_hz * t)
+
+# 3. Add Natural Frequency component if set
+if fn_hz > 0:
+    signal += fn_amp * np.sin(2 * np.pi * fn_hz * t)
+
+# 4. Add random noise floor
+np.random.seed(42)
+signal += np.random.normal(0, twf_noise_level, size=len(t))
+
+# Construct time waveform figure
+fig_twf = go.Figure()
+
+fig_twf.add_trace(
+    go.Scatter(
+        x=t * 1000.0,  # Convert seconds to milliseconds
+        y=signal,
+        mode="lines",
+        line=dict(color="#008080", width=1),
+        name="Vibration Waveform",
+    )
+)
+
+fig_twf.update_layout(
+    xaxis_title="Time (ms)",
+    yaxis_title="Acceleration (g)",
+    template="plotly_white",
+    height=400,
+    margin=dict(l=40, r=20, t=40, b=40),
+    xaxis=dict(zeroline=False),
+)
+
+st.plotly_chart(fig_twf, use_container_width=True)
