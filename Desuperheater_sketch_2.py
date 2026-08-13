@@ -15,8 +15,7 @@ n_pinion = st.sidebar.number_input(
     "Pinion Teeth Count (N_pinion)", min_value=1, value=19, step=1
 )
 
-# Gear Natural Frequency Input with Unit Dropdown beside it
-st.sidebar.subheader("Structural Resonance")
+# Gear Natural Frequency Input with Unit Dropdown beside it in Gear Geometry
 col_fn1, col_fn2 = st.sidebar.columns([2, 1])
 
 with col_fn1:
@@ -31,15 +30,22 @@ with col_fn1:
 with col_fn2:
     fn_unit = st.selectbox("Unit", ["Hz", "RPM"], index=0, key="fn_unit_select")
 
-# Convert fn input to Hz internally
+# Convert fn input to Hz internally (0 = not specified)
 fn_hz = fn_input if fn_unit == "Hz" else fn_input / 60.0
 
 # Sidebar - Operating Parameters
 st.sidebar.header("Operating Parameters")
-unit = st.sidebar.radio("Driver Speed Unit", ["RPM", "Hz"])
-driver_speed_input = st.sidebar.number_input(
-    f"Driver Speed ({unit})", min_value=1.0, value=1500.0, step=10.0
-)
+
+# Driver Speed Input with Unit Dropdown inline directly on the right
+col_spd1, col_spd2 = st.sidebar.columns([2, 1])
+
+with col_spd1:
+    driver_speed_input = st.number_input(
+        "Driver Speed", min_value=1.0, value=1500.0, step=10.0
+    )
+
+with col_spd2:
+    unit = st.selectbox("Unit", ["RPM", "Hz"], index=0, key="driver_speed_unit_select")
 
 # Gear Orientation Selection
 orientation_options = [
@@ -369,9 +375,7 @@ if fn_hz > 0:
                 mode="markers+text",
                 text=[f"f_n ({fn_scaled:.1f})"],
                 textposition="top center",
-                textfont=dict(
-                    color="purple", size=11, family="Segoe UI"
-                ),
+                textfont=dict(color="purple", size=11, family="Segoe UI"),
                 marker=dict(
                     color="gold",
                     size=12,
