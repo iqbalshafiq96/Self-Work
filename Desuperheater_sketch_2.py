@@ -6,7 +6,7 @@ st.set_page_config(page_title="Gear Mesh Analysis", layout="wide")
 
 st.title("Gear Mesh & Frequency Spectrum Analysis")
 
-# Sidebar - Gear Geometry
+# Sidebar - Gear Geometry First
 st.sidebar.header("Gear Geometry")
 n_gear = st.sidebar.number_input(
     "Gear Teeth Count (N_gear)", min_value=1, value=57, step=1
@@ -14,6 +14,25 @@ n_gear = st.sidebar.number_input(
 n_pinion = st.sidebar.number_input(
     "Pinion Teeth Count (N_pinion)", min_value=1, value=19, step=1
 )
+
+# Gear Natural Frequency Input with Unit Dropdown beside it
+st.sidebar.subheader("Structural Resonance")
+col_fn1, col_fn2 = st.sidebar.columns([2, 1])
+
+with col_fn1:
+    fn_input = st.number_input(
+        "Gear Natural Freq (f_n)",
+        min_value=0.0,
+        value=0.0,
+        step=50.0,
+        help="Set to 0 if not specified.",
+    )
+
+with col_fn2:
+    fn_unit = st.selectbox("Unit", ["Hz", "RPM"], index=0, key="fn_unit_select")
+
+# Convert fn input to Hz internally
+fn_hz = fn_input if fn_unit == "Hz" else fn_input / 60.0
 
 # Sidebar - Operating Parameters
 st.sidebar.header("Operating Parameters")
@@ -31,7 +50,7 @@ orientation = st.sidebar.selectbox(
     "Gearbox Orientation",
     orientation_options,
     index=0,
-    help="Determines driven speed based on driver attachment."
+    help="Determines driven speed based on driver attachment.",
 )
 
 # Core Speed Computations
@@ -55,7 +74,7 @@ st.sidebar.metric(
     label="Calculated Driven Speed",
     value=f"{fr_driven_hz * 60.0:.1f} RPM",
     delta=f"{fr_driven_hz:.2f} Hz",
-    delta_color="off"
+    delta_color="off",
 )
 
 st.sidebar.header("Spectrum Simulation Controls")
@@ -75,8 +94,13 @@ else:
 
 optimize_option = st.sidebar.selectbox(
     "Optimize Fmax Target",
-    ["Manual Slider", "1x GMF (+ Sidebands)", "2x GMF (+ Sidebands)", "3x GMF (+ Sidebands)"],
-    help="Selecting a GMF target automatically calculates the ideal Fmax range with headroom for sidebands."
+    [
+        "Manual Slider",
+        "1x GMF (+ Sidebands)",
+        "2x GMF (+ Sidebands)",
+        "3x GMF (+ Sidebands)",
+    ],
+    help="Selecting a GMF target automatically calculates the ideal Fmax range with headroom for sidebands.",
 )
 
 gmf_headroom_multiplier = {
@@ -95,7 +119,9 @@ if optimize_option != "Manual Slider":
 else:
     if spectrum_unit == "Hz":
         default_fmax = (
-            float(np.ceil(3.5 * gmf_hz / 100.0) * 100.0) if gmf_hz > 0 else 2000.0
+            float(np.ceil(3.5 * gmf_hz / 100.0) * 100.0)
+            if gmf_hz > 0
+            else 2000.0
         )
         fmax = st.sidebar.slider(
             "Spectrum Fmax (Hz)",
@@ -139,9 +165,13 @@ st.markdown(
     f"**Gear Running Speed ($f_{{gear}}$):** `{f_gear_hz:.2f} Hz` / `{f_gear_hz*60:.0f} RPM`"
 )
 st.markdown(f"**Gear Ratio ($i$):** `{gear_ratio:.3f}`")
-st.markdown(
-    f"**Fundamental GMF:** `{gmf_hz:.2f} Hz` / `{gmf_hz*60:.0f} RPM`"
-)
+st.markdown(f"**Fundamental GMF:** `{gmf_hz:.2f} Hz` / `{gmf_hz*60:.0f} RPM`")
+
+if fn_hz > 0:
+    fn_display = fn_hz * scale_factor
+    st.markdown(
+        f"**Gear Natural Frequency ($f_n$):** `{fn_display:.1f} {unit_label}` ({fn_hz:.2f} Hz)"
+    )
 
 st.markdown("### GMF Harmonics & Sidebands")
 
@@ -151,25 +181,25 @@ with col_sb1:
         "Sideband Reference Source:",
         ["Pinion Side", "Gear Side", "Both Sides"],
         horizontal=True,
-        help="Select which shaft running speed to use for sideband modulation calculations."
+        help="Select which shaft running speed to use for sideband modulation calculations.",
     )
 with col_sb2:
     selected_orders = st.multiselect(
         "Select Sideband Multipliers (k):",
         options=[1, 2, 3, 4, 5],
         default=[1, 2],
-        help="Order multiplier (k) for calculating ±k*f_shaft sidebands."
+        help="Order multiplier (k) for calculating ±k*f_shaft sidebands.",
     )
 
-# Determine modulating frequencies for calculation and resolution limits
 mod_freqs = []
 if sideband_source in ["Pinion Side", "Both Sides"]:
     mod_freqs.append(("Pinion", f_pinion_hz))
 if sideband_source in ["Gear Side", "Both Sides"]:
     mod_freqs.append(("Gear", f_gear_hz))
 
-# Calculation of Max Allowed Resolution Step (\Delta f) based on smallest selected modulating frequency
-min_mod_freq = min([freq for _, freq in mod_freqs]) if mod_freqs else fr_driver_hz
+min_mod_freq = (
+    min([freq for _, freq in mod_freqs]) if mod_freqs else fr_driver_hz
+)
 req_delta_f = min_mod_freq / 2.5 if min_mod_freq > 0 else 1.0
 
 fmax_hz = fmax / scale_factor
@@ -186,10 +216,15 @@ harmonics = [1, 2, 3]
 sb_orders = sorted(selected_orders)
 
 table_data = []
+resonance_warning = False
+
 for h in harmonics:
     center = h * gmf_hz
     row = {"Harmonic": f"{h}x GMF ({center:.1f} Hz)"}
-    
+
+    if fn_hz > 0 and abs(center - fn_hz) / fn_hz <= 0.05:
+        resonance_warning = True
+
     if not sb_orders or not mod_freqs:
         row["Status"] = "No sidebands or source selected"
     else:
@@ -198,11 +233,29 @@ for h in harmonics:
             for k in sb_orders:
                 lower = center - (k * freq)
                 upper = center + (k * freq)
-                row[f"{prefix} SB -{k}"] = f"{lower:.1f}" if lower > 0 else "N/A"
+
+                if (
+                    fn_hz > 0
+                    and (
+                        abs(lower - fn_hz) / fn_hz <= 0.05
+                        or abs(upper - fn_hz) / fn_hz <= 0.05
+                    )
+                ):
+                    resonance_warning = True
+
+                row[f"{prefix} SB -{k}"] = (
+                    f"{lower:.1f}" if lower > 0 else "N/A"
+                )
                 row[f"{prefix} SB +{k}"] = f"{upper:.1f}"
     table_data.append(row)
 
 st.dataframe(table_data, use_container_width=True)
+
+if resonance_warning:
+    st.warning(
+        f"**Potential Resonance Alert:** Gear Natural Frequency ($f_n = {fn_hz:.1f}\\text{{ Hz}}$) "
+        f"is within 5% of a GMF harmonic or primary sideband! Expect amplified excitation."
+    )
 
 # Resolution Guidance Box
 st.info(
@@ -223,7 +276,6 @@ x_gmf, amp_gmf, lbl_gmf = [], [], []
 x_sb, amp_sb = [], []
 tick_vals = []
 
-# Shaft Running Speeds
 for name, val_hz in [("Pinion", f_pinion_hz), ("Gear", f_gear_hz)]:
     val_scaled = val_hz * scale_factor
     if 0 < val_scaled <= fmax:
@@ -305,6 +357,31 @@ if x_gmf:
             name="GMF Harmonics",
         )
     )
+
+# Highlight Natural Frequency (f_n) on Spectrum if specified (> 0)
+if fn_hz > 0:
+    fn_scaled = fn_hz * scale_factor
+    if 0 < fn_scaled <= fmax:
+        fig_spec.add_trace(
+            go.Scatter(
+                x=[fn_scaled],
+                y=[1.2],
+                mode="markers+text",
+                text=[f"f_n ({fn_scaled:.1f})"],
+                textposition="top center",
+                textfont=dict(
+                    color="purple", size=11, family="Segoe UI"
+                ),
+                marker=dict(
+                    color="gold",
+                    size=12,
+                    symbol="diamond",
+                    line=dict(color="purple", width=2),
+                ),
+                name="Natural Frequency (f_n)",
+            )
+        )
+        tick_vals.append(fn_scaled)
 
 clean_ticks = sorted(list(set([t for t in tick_vals if t > 0])))
 
