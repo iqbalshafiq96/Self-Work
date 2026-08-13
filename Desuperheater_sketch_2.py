@@ -6,7 +6,7 @@ st.set_page_config(page_title="Gear Mesh Analysis", layout="wide")
 
 st.title("Gear Mesh & Frequency Spectrum Analysis")
 
-# Sidebar - Gear Geometry First
+# Sidebar - Gear Geometry
 st.sidebar.header("Gear Geometry")
 n_gear = st.sidebar.number_input(
     "Gear Teeth Count (N_gear)", min_value=1, value=57, step=1
@@ -15,7 +15,7 @@ n_pinion = st.sidebar.number_input(
     "Pinion Teeth Count (N_pinion)", min_value=1, value=19, step=1
 )
 
-# Gear Natural Frequency Input with Unit Dropdown beside it in Gear Geometry
+# Gear Natural Frequency Input with Unit Dropdown inline
 col_fn1, col_fn2 = st.sidebar.columns([2, 1])
 
 with col_fn1:
@@ -341,8 +341,9 @@ if x_1x:
             y=amp_1x,
             mode="markers+text",
             text=lbl_1x,
-            textposition="top center",
+            textposition="middle right",
             textfont=dict(color="darkorange", size=11, family="Segoe UI"),
+            textangle=-90,
             marker=dict(color="darkorange", size=9),
             cliponaxis=False,
             name="1x Running Speeds",
@@ -356,8 +357,9 @@ if x_gmf:
             y=amp_gmf,
             mode="markers+text",
             text=lbl_gmf,
-            textposition="top center",
+            textposition="middle right",
             textfont=dict(color="crimson", size=11, family="Segoe UI"),
+            textangle=-90,
             marker=dict(color="crimson", size=9),
             cliponaxis=False,
             name="GMF Harmonics",
@@ -374,8 +376,9 @@ if fn_hz > 0:
                 y=[1.2],
                 mode="markers+text",
                 text=[f"f_n ({fn_scaled:.1f})"],
-                textposition="top center",
+                textposition="middle right",
                 textfont=dict(color="purple", size=11, family="Segoe UI"),
+                textangle=-90,
                 marker=dict(
                     color="gold",
                     size=12,
@@ -399,10 +402,10 @@ fig_spec.update_layout(
         tickformat=".1f",
         zeroline=False,
     ),
-    yaxis=dict(range=[0, 1.45]),
+    yaxis=dict(range=[0, 1.65]),
     template="plotly_white",
-    height=450,
-    margin=dict(l=40, r=20, t=40, b=40),
+    height=480,
+    margin=dict(l=40, r=20, t=60, b=40),
 )
 
 st.plotly_chart(fig_spec, use_container_width=True)
