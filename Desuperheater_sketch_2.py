@@ -22,7 +22,7 @@ driver_speed_input = st.sidebar.number_input(
     f"Driver Speed ({unit})", min_value=1.0, value=1500.0, step=10.0
 )
 
-# Gear Orientation Selection (Speed Increaser as Default)
+# Gear Orientation Selection
 orientation_options = [
     "Speed Increaser (Driver = Gear)",
     "Speed Reducer (Driver = Pinion)",
@@ -30,11 +30,11 @@ orientation_options = [
 orientation = st.sidebar.selectbox(
     "Gearbox Orientation",
     orientation_options,
-    index=0,  # Default to Speed Increaser
+    index=0,
     help="Determines driven speed based on driver attachment."
 )
 
-# Core Computations (Driven Speed & GMF)
+# Core Computations
 fr_driver_hz = (
     driver_speed_input if unit == "Hz" else driver_speed_input / 60.0
 )
@@ -43,14 +43,13 @@ gear_ratio = n_gear / n_pinion
 
 if "Reducer" in orientation:
     fr_driven_hz = fr_driver_hz / gear_ratio
-    gmf_hz = fr_driver_hz * n_pinion  # GMF = Driver speed * Driver teeth
+    gmf_hz = fr_driver_hz * n_pinion
 else:
     fr_driven_hz = fr_driver_hz * gear_ratio
-    gmf_hz = fr_driver_hz * n_gear    # GMF = Driver speed * Driver teeth
+    gmf_hz = fr_driver_hz * n_gear
 
 fr_driven_rpm = fr_driven_hz * 60.0
 
-# Display Calculated Driven Speed directly under Gearbox Orientation
 st.sidebar.metric(
     label="Calculated Driven Speed",
     value=f"{fr_driven_rpm:.1f} RPM",
@@ -59,23 +58,20 @@ st.sidebar.metric(
 )
 
 st.sidebar.header("Spectrum Simulation Controls")
-# Select X-axis Display Unit
 spectrum_unit = st.sidebar.radio(
     "Spectrum X-Axis Unit", ["Hz", "RPM", "Orders"]
 )
 
-# Frequency Scale Factor per Unit
 if spectrum_unit == "Hz":
     scale_factor = 1.0
     unit_label = "Hz"
 elif spectrum_unit == "RPM":
     scale_factor = 60.0
     unit_label = "RPM"
-else:  # Orders (normalized to Driver 1x running speed)
+else:
     scale_factor = 1.0 / fr_driver_hz if fr_driver_hz > 0 else 1.0
     unit_label = "Orders"
 
-# Optimize Fmax Override Dropdown
 optimize_option = st.sidebar.selectbox(
     "Optimize Fmax Target",
     ["Manual Slider", "1x GMF (+ Sidebands)", "2x GMF (+ Sidebands)", "3x GMF (+ Sidebands)"],
@@ -120,7 +116,7 @@ else:
             value=max(10000.0, default_fmax),
             step=1000.0,
         )
-    else:  # Orders
+    else:
         default_fmax = (
             float(np.ceil(3.5 * n_pinion)) if n_pinion > 0 else 100.0
         )
@@ -132,7 +128,7 @@ else:
             step=1.0,
         )
 
-# Dynamic Resolution Calculations
+# Resolution & Recording Duration Calculations
 fmax_hz = fmax / scale_factor
 req_delta_f = fr_driver_hz / 2.5 if fr_driver_hz > 0 else 1.0
 min_fft_lines = int(np.ceil(fmax_hz / req_delta_f)) if req_delta_f > 0 else 800
@@ -143,7 +139,9 @@ recommended_lines = next(
 )
 actual_delta_f = fmax_hz / recommended_lines if recommended_lines > 0 else 0.0
 
-# Layout Columns
+# Time per recording block calculation
+recording_time_sec = recommended_lines / fmax_hz if fmax_hz > 0 else 0.0
+
 col1, col2 = st.columns([1, 1.2])
 
 with col1:
@@ -178,12 +176,13 @@ with col1:
 
     st.dataframe(table_data, use_container_width=True)
 
-    # Resolution Guidance Box
+    # Resolution Guidance & Recording Duration Box
     st.info(
         f"**Required Spectral Resolution Guidance:**\n"
         f"* **Max Allowed Resolution Step ($\Delta f$):** `{req_delta_f:.2f} Hz`\n"
         f"* **Recommended Lines ($N_{{lines}}$):** `{recommended_lines:,} Lines` at $F_{{max}} = {fmax_hz:.0f}\\text{{ Hz}}$\n"
-        f"* **Achieved Resolution:** `{actual_delta_f:.3f} Hz/line` (Sidebands clearly resolvable)"
+        f"* **Achieved Resolution:** `{actual_delta_f:.3f} Hz/line` (Sidebands clearly resolvable)\n"
+        f"* **Recording Duration per Time Block ($T_{{record}}$):** `{recording_time_sec:.2f} s`"
     )
 
 with col2:
@@ -251,18 +250,14 @@ noise_floor = 0.02
 x_1x, amp_1x, lbl_1x = [], [], []
 x_2x, amp_2x, lbl_2x = [], [], []
 x_gmf, amp_gmf, lbl_gmf = [], [], []
-x_sb, amp_sb = [], []
+x_sb, amp_sb, lbl_sb = [], [], []
 
-tick_vals = []
-
-# Collect 1x and 2x Running Speed
 for order in [1, 2]:
     val_hz = order * fr_driver_hz
     val_scaled = val_hz * scale_factor
     amp = 0.6 / order
 
     if 0 < val_scaled <= fmax:
-        tick_vals.append(val_scaled)
         if order == 1:
             x_1x.append(val_scaled)
             amp_1x.append(amp)
@@ -272,7 +267,6 @@ for order in [1, 2]:
             amp_2x.append(amp)
             lbl_2x.append("2x")
 
-# Collect GMF Harmonics and Sidebands
 max_harmonic_order = int(np.ceil(fmax_hz / gmf_hz)) + 1 if gmf_hz > 0 else 3
 
 for h in range(1, max_harmonic_order + 1):
@@ -281,7 +275,6 @@ for h in range(1, max_harmonic_order + 1):
     base_amp = 1.0 / (h**0.7)
 
     if 0 < center_scaled <= fmax:
-        tick_vals.append(center_scaled)
         x_gmf.append(center_scaled)
         amp_gmf.append(base_amp)
         lbl_gmf.append(f"GMF {h}")
@@ -295,15 +288,18 @@ for h in range(1, max_harmonic_order + 1):
         if 0 < lower_scaled <= fmax:
             x_sb.append(lower_scaled)
             amp_sb.append(sb_amp)
+            lbl_sb.append(f"GMF{h} -{sb}x")
 
         if 0 < upper_scaled <= fmax:
             x_sb.append(upper_scaled)
             amp_sb.append(sb_amp)
+            lbl_sb.append(f"GMF{h} +{sb}x")
 
 fig_spec = go.Figure()
 
 all_x = x_1x + x_2x + x_gmf + x_sb
 all_amps = amp_1x + amp_2x + amp_gmf + amp_sb
+all_labels = lbl_1x + lbl_2x + lbl_gmf + lbl_sb
 
 for x_p, a_p in zip(all_x, all_amps):
     fig_spec.add_trace(
@@ -362,19 +358,55 @@ if x_gmf:
         )
     )
 
-clean_ticks = sorted(list(set([t for t in tick_vals if t > 0])))
+if all_amps:
+    max_idx = int(np.argmax(all_amps))
+    top_x = all_x[max_idx]
+    top_amp = all_amps[max_idx]
+    top_label = all_labels[max_idx]
+
+    fig_spec.add_trace(
+        go.Scatter(
+            x=[top_x],
+            y=[top_amp],
+            mode="markers",
+            marker=dict(
+                size=14,
+                color="red",
+                symbol="diamond",
+                line=dict(color="black", width=1.5)
+            ),
+            name="Peak Amplitude",
+            showlegend=True
+        )
+    )
+
+    fig_spec.add_annotation(
+        x=top_x,
+        y=top_amp,
+        text=f"<b>Max Peak: {top_label}</b><br>{top_x:.1f} {unit_label} | {top_amp:.2f} g",
+        showarrow=True,
+        arrowhead=2,
+        arrowsize=1,
+        arrowwidth=2,
+        arrowcolor="red",
+        ax=0,
+        ay=-45,
+        bordercolor="red",
+        borderwidth=1.5,
+        borderpad=4,
+        bgcolor="rgba(255, 255, 255, 0.9)",
+        font=dict(size=11, family="Segoe UI", color="black")
+    )
 
 fig_spec.update_layout(
     xaxis_title=f"Frequency ({unit_label})",
     yaxis_title="Amplitude (g / peak)",
     xaxis=dict(
-        range=[min(clean_ticks) * 0.8 if clean_ticks else 1.0, fmax],
-        tickmode="array",
-        tickvals=clean_ticks,
-        tickformat=".1f",
+        range=[0, fmax],
+        nticks=5,
         zeroline=False,
     ),
-    yaxis=dict(range=[0, 1.45]),
+    yaxis=dict(range=[0, max(all_amps, default=1.0) * 1.35]),
     template="plotly_white",
     height=450,
     margin=dict(l=40, r=20, t=40, b=40),
