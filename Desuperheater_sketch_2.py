@@ -193,18 +193,14 @@ for order in [1, 2]:
 fmax_hz = fmax / scale_factor
 max_harmonic_order = int(np.ceil(fmax_hz / gmf_hz)) + 1 if gmf_hz > 0 else 3
 
+# Ticks on X-axis now contain ONLY numerical values to avoid crowding
 tick_vals = [0]
-tick_text = ["0"]
 
 # Add 1x and 2x Running Speed Ticks
 for order in [1, 2]:
     val = (order * fr_driver_hz) * scale_factor
     if val <= fmax:
         tick_vals.append(val)
-        if spectrum_unit == "Orders":
-            tick_text.append(f"{order}x fr")
-        else:
-            tick_text.append(f"{order}x fr\n({val:.1f})")
 
 # Add GMF Harmonics Ticks & Peaks
 for h in range(1, max_harmonic_order + 1):
@@ -214,10 +210,6 @@ for h in range(1, max_harmonic_order + 1):
 
     if center_scaled <= fmax:
         tick_vals.append(center_scaled)
-        if spectrum_unit == "Orders":
-            tick_text.append(f"GMF {h}\n({h*n_pinion:.0f}x)")
-        else:
-            tick_text.append(f"GMF {h}\n({center_scaled:.1f})")
 
         freq_peaks_hz.append(center_hz)
         amp_peaks.append(base_amp)
@@ -259,37 +251,52 @@ for x_p, a_p in zip(x_peaks, amp_peaks):
             )
         )
 
-# Marker grouping for GMF vs Running Speed (1x, 2x)
-gmf_x = [x for x, lbl in zip(x_peaks, labels) if lbl.startswith("GMF")]
-gmf_amps = [a for a, lbl in zip(amp_peaks, labels) if lbl.startswith("GMF")]
-gmf_text = [lbl for lbl in labels if lbl.startswith("GMF")]
+# Separate 1x, 2x, and GMF for distinct styling
+x_1x = [x for x, lbl in zip(x_peaks, labels) if lbl == "1x fr"]
+amp_1x = [a for a, lbl in zip(amp_peaks, labels) if lbl == "1x fr"]
 
-fr_x = [x for x, lbl in zip(x_peaks, labels) if lbl.endswith("fr")]
-fr_amps = [a for a, lbl in zip(amp_peaks, labels) if lbl.endswith("fr")]
-fr_text = [lbl for lbl in labels if lbl.endswith("fr")]
+x_2x = [x for x, lbl in zip(x_peaks, labels) if lbl == "2x fr"]
+amp_2x = [a for a, lbl in zip(amp_peaks, labels) if lbl == "2x fr"]
 
-# Highlight Running Speeds (1x, 2x)
+x_gmf = [x for x, lbl in zip(x_peaks, labels) if lbl.startswith("GMF")]
+amp_gmf = [a for a, lbl in zip(amp_peaks, labels) if lbl.startswith("GMF")]
+lbl_gmf = [lbl for lbl in labels if lbl.startswith("GMF")]
+
+# Highlight 1x Running Speed (Dark Orange)
 fig_spec.add_trace(
     go.Scatter(
-        x=fr_x,
-        y=fr_amps,
+        x=x_1x,
+        y=amp_1x,
         mode="markers+text",
-        text=fr_text,
+        text=["1x fr"],
         textposition="top center",
-        marker=dict(color="orange", size=8),
-        name="1x / 2x Running Speed",
+        marker=dict(color="darkorange", size=9),
+        name="1x Running Speed",
     )
 )
 
-# Highlight GMF Peaks
+# Highlight 2x Running Speed (Purple)
 fig_spec.add_trace(
     go.Scatter(
-        x=gmf_x,
-        y=gmf_amps,
+        x=x_2x,
+        y=amp_2x,
         mode="markers+text",
-        text=gmf_text,
+        text=["2x fr"],
         textposition="top center",
-        marker=dict(color="crimson", size=8),
+        marker=dict(color="purple", size=9),
+        name="2x Running Speed",
+    )
+)
+
+# Highlight GMF Peaks (Crimson)
+fig_spec.add_trace(
+    go.Scatter(
+        x=x_gmf,
+        y=amp_gmf,
+        mode="markers+text",
+        text=lbl_gmf,
+        textposition="top center",
+        marker=dict(color="crimson", size=9),
         name="GMF Harmonics",
     )
 )
@@ -300,10 +307,10 @@ fig_spec.update_layout(
     xaxis=dict(
         range=[0, fmax],
         tickmode="array",
-        tickvals=tick_vals,
-        ticktext=tick_text,
+        tickvals=sorted(list(set(tick_vals))),
+        tickformat=".1f",
     ),
-    yaxis=dict(range=[0, 1.3]),
+    yaxis=dict(range=[0, 1.35]),
     template="plotly_white",
     height=440,
     margin=dict(l=40, r=20, t=30, b=40),
