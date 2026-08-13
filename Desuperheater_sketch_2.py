@@ -76,7 +76,7 @@ else:  # Orders (normalized to Driver 1x running speed)
         step=1.0,
     )
     scale_factor = 1.0 / fr_driver_hz if fr_driver_hz > 0 else 1.0
-    unit_label = "Orders (x fr)"
+    unit_label = "Orders"
 
 # Layout Columns
 col1, col2 = st.columns([1, 1.2])
@@ -107,7 +107,7 @@ with col1:
         for sb in sb_orders:
             lower = center - (sb * fr_driver_hz)
             upper = center + (sb * fr_driver_hz)
-            row[f"SB -{sb}"] = f"{lower:.1f}"
+            row[f"SB -{sb}"] = f"{lower:.1f}" if lower > 0 else "N/A"
             row[f"SB +{sb}"] = f"{upper:.1f}"
         table_data.append(row)
 
@@ -117,12 +117,11 @@ with col2:
     st.subheader("Mesh Region Schematic")
 
     # Geometry Setup for Visualization (Pitch Circles)
-    module = 1.0  # Normalized module
+    module = 1.0
     r_pinion = (n_pinion * module) / 2.0
     r_gear = (n_gear * module) / 2.0
     center_dist = r_pinion + r_gear
 
-    # Focus on top mesh point region (arc segment)
     theta = np.linspace(-np.pi / 6, np.pi / 6, 100)
 
     x_p = r_pinion * np.sin(theta)
@@ -176,144 +175,148 @@ with col2:
 # Full-width Spectrum Plot Section
 st.subheader("Simulated Vibration Spectrum")
 
-freq_peaks_hz = []
-amp_peaks = []
-labels = []
-
 noise_floor = 0.02
-
-# 1. Add 1x and 2x Running Speed Peaks
-for order in [1, 2]:
-    f_run = order * fr_driver_hz
-    freq_peaks_hz.append(f_run)
-    amp_peaks.append(0.6 / order)
-    labels.append(f"{order}x fr")
-
-# 2. Add GMF Harmonics and Sidebands (up to 2 orders)
 fmax_hz = fmax / scale_factor
+
+# Peak Collections
+x_1x, amp_1x, lbl_1x = [], [], []
+x_2x, amp_2x, lbl_2x = [], [], []
+x_gmf, amp_gmf, lbl_gmf = [], [], []
+x_sb, amp_sb = [], []
+
+# Explicitly excluding 0 from tick values
+tick_vals = []
+
+# 1. Collect 1x and 2x Running Speed
+for order in [1, 2]:
+    val_hz = order * fr_driver_hz
+    val_scaled = val_hz * scale_factor
+    amp = 0.6 / order
+
+    if 0 < val_scaled <= fmax:
+        tick_vals.append(val_scaled)
+        if order == 1:
+            x_1x.append(val_scaled)
+            amp_1x.append(amp)
+            lbl_1x.append("1x")
+        else:
+            x_2x.append(val_scaled)
+            amp_2x.append(amp)
+            lbl_2x.append("2x")
+
+# 2. Collect GMF Harmonics and Sidebands (up to 2 orders)
 max_harmonic_order = int(np.ceil(fmax_hz / gmf_hz)) + 1 if gmf_hz > 0 else 3
 
-# Ticks on X-axis now contain ONLY numerical values to avoid crowding
-tick_vals = [0]
-
-# Add 1x and 2x Running Speed Ticks
-for order in [1, 2]:
-    val = (order * fr_driver_hz) * scale_factor
-    if val <= fmax:
-        tick_vals.append(val)
-
-# Add GMF Harmonics Ticks & Peaks
 for h in range(1, max_harmonic_order + 1):
     center_hz = h * gmf_hz
     center_scaled = center_hz * scale_factor
     base_amp = 1.0 / (h**0.7)
 
-    if center_scaled <= fmax:
+    if 0 < center_scaled <= fmax:
         tick_vals.append(center_scaled)
+        x_gmf.append(center_scaled)
+        amp_gmf.append(base_amp)
+        lbl_gmf.append(f"GMF {h}")
 
-        freq_peaks_hz.append(center_hz)
-        amp_peaks.append(base_amp)
-        labels.append(f"GMF {h}")
-
-    # Sidebands restricted to 2 orders (SB 1 & SB 2)
+    # Sidebands (SB 1 & SB 2)
     for sb in [1, 2]:
         sb_amp = base_amp * (0.35 / (sb**0.8))
 
-        lower_f = center_hz - (sb * fr_driver_hz)
-        upper_f = center_hz + (sb * fr_driver_hz)
+        lower_scaled = (center_hz - (sb * fr_driver_hz)) * scale_factor
+        upper_scaled = (center_hz + (sb * fr_driver_hz)) * scale_factor
 
-        if lower_f >= 0 and (lower_f * scale_factor) <= fmax:
-            freq_peaks_hz.append(lower_f)
-            amp_peaks.append(sb_amp)
-            labels.append("")
+        # Strict > 0 check to ensure 0 / negative values are null
+        if lower_scaled > 0 and lower_scaled <= fmax:
+            x_sb.append(lower_scaled)
+            amp_sb.append(sb_amp)
 
-        if upper_f >= 0 and (upper_f * scale_factor) <= fmax:
-            freq_peaks_hz.append(upper_f)
-            amp_peaks.append(sb_amp)
-            labels.append("")
-
-# Scale x-axis coordinates according to selected unit
-x_peaks = [f * scale_factor for f in freq_peaks_hz]
+        if upper_scaled > 0 and upper_scaled <= fmax:
+            x_sb.append(upper_scaled)
+            amp_sb.append(sb_amp)
 
 fig_spec = go.Figure()
 
-# Plot spectral line stems
-for x_p, a_p in zip(x_peaks, amp_peaks):
-    if x_p <= fmax:
-        fig_spec.add_trace(
-            go.Scatter(
-                x=[x_p, x_p],
-                y=[noise_floor, a_p],
-                mode="lines",
-                line=dict(color="#008080", width=2),
-                showlegend=False,
-                hoverinfo="x+y",
-            )
+# Plot Stems for all valid (> 0) peaks
+all_x = x_1x + x_2x + x_gmf + x_sb
+all_amps = amp_1x + amp_2x + amp_gmf + amp_sb
+
+for x_p, a_p in zip(all_x, all_amps):
+    fig_spec.add_trace(
+        go.Scatter(
+            x=[x_p, x_p],
+            y=[noise_floor, a_p],
+            mode="lines",
+            line=dict(color="#008080", width=2),
+            showlegend=False,
+            hoverinfo="x+y",
         )
-
-# Separate 1x, 2x, and GMF for distinct styling
-x_1x = [x for x, lbl in zip(x_peaks, labels) if lbl == "1x fr"]
-amp_1x = [a for a, lbl in zip(amp_peaks, labels) if lbl == "1x fr"]
-
-x_2x = [x for x, lbl in zip(x_peaks, labels) if lbl == "2x fr"]
-amp_2x = [a for a, lbl in zip(amp_peaks, labels) if lbl == "2x fr"]
-
-x_gmf = [x for x, lbl in zip(x_peaks, labels) if lbl.startswith("GMF")]
-amp_gmf = [a for a, lbl in zip(amp_peaks, labels) if lbl.startswith("GMF")]
-lbl_gmf = [lbl for lbl in labels if lbl.startswith("GMF")]
-
-# Highlight 1x Running Speed (Dark Orange)
-fig_spec.add_trace(
-    go.Scatter(
-        x=x_1x,
-        y=amp_1x,
-        mode="markers+text",
-        text=["1x fr"],
-        textposition="top center",
-        marker=dict(color="darkorange", size=9),
-        name="1x Running Speed",
     )
-)
 
-# Highlight 2x Running Speed (Purple)
-fig_spec.add_trace(
-    go.Scatter(
-        x=x_2x,
-        y=amp_2x,
-        mode="markers+text",
-        text=["2x fr"],
-        textposition="top center",
-        marker=dict(color="purple", size=9),
-        name="2x Running Speed",
+# 1x Running Speed Trace
+if x_1x:
+    fig_spec.add_trace(
+        go.Scatter(
+            x=x_1x,
+            y=amp_1x,
+            mode="markers+text",
+            text=lbl_1x,
+            textposition="top center",
+            textfont=dict(color="darkorange", size=11, family="Segoe UI"),
+            marker=dict(color="darkorange", size=9),
+            cliponaxis=False,
+            name="1x Running Speed",
+        )
     )
-)
 
-# Highlight GMF Peaks (Crimson)
-fig_spec.add_trace(
-    go.Scatter(
-        x=x_gmf,
-        y=amp_gmf,
-        mode="markers+text",
-        text=lbl_gmf,
-        textposition="top center",
-        marker=dict(color="crimson", size=9),
-        name="GMF Harmonics",
+# 2x Running Speed Trace
+if x_2x:
+    fig_spec.add_trace(
+        go.Scatter(
+            x=x_2x,
+            y=amp_2x,
+            mode="markers+text",
+            text=lbl_2x,
+            textposition="top center",
+            textfont=dict(color="purple", size=11, family="Segoe UI"),
+            marker=dict(color="purple", size=9),
+            cliponaxis=False,
+            name="2x Running Speed",
+        )
     )
-)
+
+# GMF Harmonics Trace
+if x_gmf:
+    fig_spec.add_trace(
+        go.Scatter(
+            x=x_gmf,
+            y=amp_gmf,
+            mode="markers+text",
+            text=lbl_gmf,
+            textposition="top center",
+            textfont=dict(color="crimson", size=11, family="Segoe UI"),
+            marker=dict(color="crimson", size=9),
+            cliponaxis=False,
+            name="GMF Harmonics",
+        )
+    )
+
+# Filter out any 0 values explicitly from tick values
+clean_ticks = sorted(list(set([t for t in tick_vals if t > 0])))
 
 fig_spec.update_layout(
     xaxis_title=f"Frequency ({unit_label})",
     yaxis_title="Amplitude (g / peak)",
     xaxis=dict(
-        range=[0, fmax],
+        range=[min(clean_ticks) * 0.8 if clean_ticks else 1.0, fmax],
         tickmode="array",
-        tickvals=sorted(list(set(tick_vals))),
+        tickvals=clean_ticks,
         tickformat=".1f",
+        zeroline=False,  # Disables zero reference line
     ),
-    yaxis=dict(range=[0, 1.35]),
+    yaxis=dict(range=[0, 1.45]),
     template="plotly_white",
-    height=440,
-    margin=dict(l=40, r=20, t=30, b=40),
+    height=450,
+    margin=dict(l=40, r=20, t=40, b=40),
 )
 
 st.plotly_chart(fig_spec, use_container_width=True)
