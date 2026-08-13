@@ -6,28 +6,45 @@ st.set_page_config(page_title="Gear Mesh Analysis", layout="wide")
 
 st.title("Gear Mesh & Frequency Spectrum Analysis")
 
-# Sidebar - Inputs
+# Sidebar - Gear Geometry First
+st.sidebar.header("Gear Geometry")
+n_gear = st.sidebar.number_input(
+    "Gear Teeth Count (N_gear)", min_value=1, value=57, step=1
+)
+n_pinion = st.sidebar.number_input(
+    "Pinion Teeth Count (N_pinion)", min_value=1, value=19, step=1
+)
+
+# Sidebar - Operating Parameters
 st.sidebar.header("Operating Parameters")
 unit = st.sidebar.radio("Driver Speed Unit", ["RPM", "Hz"])
 driver_speed_input = st.sidebar.number_input(
     f"Driver Speed ({unit})", min_value=1.0, value=1500.0, step=10.0
 )
 
-st.sidebar.header("Gear Geometry")
-n_pinion = st.sidebar.number_input(
-    "Pinion Teeth Count (N_pinion)", min_value=1, value=19, step=1
-)
-n_gear = st.sidebar.number_input(
-    "Gear Teeth Count (N_gear)", min_value=1, value=57, step=1
+# Gear Orientation Selection
+orientation = st.sidebar.selectbox(
+    "Gearbox Orientation",
+    ["Speed Reducer (Driver = Pinion)", "Speed Increaser (Driver = Gear)"],
+    help="Determines driven speed based on driver attachment."
 )
 
 # Core Computations
 fr_driver_hz = (
     driver_speed_input if unit == "Hz" else driver_speed_input / 60.0
-)  # Driver speed in Hz
+)
 fr_driver_rpm = fr_driver_hz * 60.0
 gear_ratio = n_gear / n_pinion
-gmf_hz = fr_driver_hz * n_pinion  # Fundamental GMF in Hz
+
+# Driven Speed & Fundamental GMF Calculations based on Orientation
+if "Reducer" in orientation:
+    fr_driven_hz = fr_driver_hz / gear_ratio
+    gmf_hz = fr_driver_hz * n_pinion  # GMF = Driver speed * Driver teeth
+else:
+    fr_driven_hz = fr_driver_hz * gear_ratio
+    gmf_hz = fr_driver_hz * n_gear    # GMF = Driver speed * Driver teeth
+
+fr_driven_rpm = fr_driven_hz * 60.0
 
 st.sidebar.header("Spectrum Simulation Controls")
 # Select X-axis Display Unit
@@ -46,14 +63,13 @@ else:  # Orders (normalized to Driver 1x running speed)
     scale_factor = 1.0 / fr_driver_hz if fr_driver_hz > 0 else 1.0
     unit_label = "Orders"
 
-# --- OPTIMIZE FMAX OVERRIDE DROPDOWN ---
+# Optimize Fmax Override Dropdown
 optimize_option = st.sidebar.selectbox(
     "Optimize Fmax Target",
     ["Manual Slider", "1x GMF (+ Sidebands)", "2x GMF (+ Sidebands)", "3x GMF (+ Sidebands)"],
     help="Selecting a GMF target automatically calculates the ideal Fmax range with headroom for sidebands."
 )
 
-# Target GMF multiplier map (includes +15% headroom for sidebands)
 gmf_headroom_multiplier = {
     "1x GMF (+ Sidebands)": 1.15,
     "2x GMF (+ Sidebands)": 2.15,
@@ -61,7 +77,6 @@ gmf_headroom_multiplier = {
 }
 
 if optimize_option != "Manual Slider":
-    # Auto-calculate ideal Fmax based on selected GMF target
     calc_fmax_hz = gmf_hz * gmf_headroom_multiplier[optimize_option]
     fmax = float(calc_fmax_hz * scale_factor)
     st.sidebar.info(
@@ -69,7 +84,6 @@ if optimize_option != "Manual Slider":
         f"*(Targeting `{optimize_option[:2]}` at `{gmf_hz * int(optimize_option[0]):.1f} Hz`)*"
     )
 else:
-    # Default Manual Slider Behavior
     if spectrum_unit == "Hz":
         default_fmax = (
             float(np.ceil(3.5 * gmf_hz / 100.0) * 100.0) if gmf_hz > 0 else 2000.0
@@ -124,18 +138,18 @@ with col1:
     st.subheader("Frequency Calculations")
 
     st.markdown(
-        f"**Driver Running Speed ($f_r$):** `{fr_driver_hz:.2f} Hz` /"
-        f" `{fr_driver_rpm:.0f} RPM`"
+        f"**Driver Running Speed ($f_{{driver}}$):** `{fr_driver_hz:.2f} Hz` / `{fr_driver_rpm:.0f} RPM`"
+    )
+    st.markdown(
+        f"**Driven Running Speed ($f_{{driven}}$):** `{fr_driven_hz:.2f} Hz` / `{fr_driven_rpm:.0f} RPM`"
     )
     st.markdown(f"**Gear Ratio ($i$):** `{gear_ratio:.3f}`")
     st.markdown(
-        f"**Fundamental GMF:** `{gmf_hz:.2f} Hz` /"
-        f" `{gmf_hz*60:.0f} RPM` (`{n_pinion:.0f}x` Orders)"
+        f"**Fundamental GMF:** `{gmf_hz:.2f} Hz` / `{gmf_hz*60:.0f} RPM`"
     )
 
     st.markdown("### GMF Harmonics & Sidebands (Hz)")
 
-    # Generate Sideband Table (Sideband 1 and 2)
     harmonics = [1, 2, 3]
     sb_orders = [1, 2]
 
@@ -163,7 +177,6 @@ with col1:
 with col2:
     st.subheader("Mesh Region Schematic")
 
-    # Geometry Setup for Visualization (Pitch Circles)
     module = 1.0
     r_pinion = (n_pinion * module) / 2.0
     r_gear = (n_gear * module) / 2.0
@@ -181,15 +194,6 @@ with col2:
 
     fig.add_trace(
         go.Scatter(
-            x=x_p,
-            y=y_p,
-            mode="lines",
-            name="Pinion Pitch Arc",
-            line=dict(color="teal", width=3),
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
             x=x_g,
             y=y_g,
             mode="lines",
@@ -197,7 +201,15 @@ with col2:
             line=dict(color="royalblue", width=3),
         )
     )
-
+    fig.add_trace(
+        go.Scatter(
+            x=x_p,
+            y=y_p,
+            mode="lines",
+            name="Pinion Pitch Arc",
+            line=dict(color="teal", width=3),
+        )
+    )
     fig.add_trace(
         go.Scatter(
             x=[0],
@@ -224,7 +236,6 @@ st.subheader("Simulated Vibration Spectrum")
 
 noise_floor = 0.02
 
-# Peak Collections
 x_1x, amp_1x, lbl_1x = [], [], []
 x_2x, amp_2x, lbl_2x = [], [], []
 x_gmf, amp_gmf, lbl_gmf = [], [], []
@@ -232,7 +243,7 @@ x_sb, amp_sb = [], []
 
 tick_vals = []
 
-# 1. Collect 1x and 2x Running Speed
+# Collect 1x and 2x Running Speed
 for order in [1, 2]:
     val_hz = order * fr_driver_hz
     val_scaled = val_hz * scale_factor
@@ -249,7 +260,7 @@ for order in [1, 2]:
             amp_2x.append(amp)
             lbl_2x.append("2x")
 
-# 2. Collect GMF Harmonics and Sidebands (up to 3 orders)
+# Collect GMF Harmonics and Sidebands
 max_harmonic_order = int(np.ceil(fmax_hz / gmf_hz)) + 1 if gmf_hz > 0 else 3
 
 for h in range(1, max_harmonic_order + 1):
@@ -263,7 +274,6 @@ for h in range(1, max_harmonic_order + 1):
         amp_gmf.append(base_amp)
         lbl_gmf.append(f"GMF {h}")
 
-    # Sidebands (SB 1 & SB 2)
     for sb in [1, 2]:
         sb_amp = base_amp * (0.35 / (sb**0.8))
 
@@ -280,7 +290,6 @@ for h in range(1, max_harmonic_order + 1):
 
 fig_spec = go.Figure()
 
-# Plot Stems for all valid (> 0) peaks
 all_x = x_1x + x_2x + x_gmf + x_sb
 all_amps = amp_1x + amp_2x + amp_gmf + amp_sb
 
@@ -296,7 +305,6 @@ for x_p, a_p in zip(all_x, all_amps):
         )
     )
 
-# 1x Running Speed Trace
 if x_1x:
     fig_spec.add_trace(
         go.Scatter(
@@ -312,7 +320,6 @@ if x_1x:
         )
     )
 
-# 2x Running Speed Trace
 if x_2x:
     fig_spec.add_trace(
         go.Scatter(
@@ -328,7 +335,6 @@ if x_2x:
         )
     )
 
-# GMF Harmonics Trace
 if x_gmf:
     fig_spec.add_trace(
         go.Scatter(
@@ -344,7 +350,6 @@ if x_gmf:
         )
     )
 
-# Clean ticks strictly greater than 0
 clean_ticks = sorted(list(set([t for t in tick_vals if t > 0])))
 
 fig_spec.update_layout(
