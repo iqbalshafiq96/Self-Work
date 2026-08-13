@@ -180,10 +180,10 @@ twf_noise_level = st.sidebar.slider(
 st.subheader("Frequency Calculations")
 
 st.markdown(
-    f"**Pinion Running Speed ($f_{{pinion}}$):** `{f_pinion_hz:.2f} Hz` / `{f_pinion_hz*60:.0f} RPM`"
+    f"**Gear Running Speed ($f_{{gear}}$):** `{f_gear_hz:.2f} Hz` / `{f_gear_hz*60:.0f} RPM`"
 )
 st.markdown(
-    f"**Gear Running Speed ($f_{{gear}}$):** `{f_gear_hz:.2f} Hz` / `{f_gear_hz*60:.0f} RPM`"
+    f"**Pinion Running Speed ($f_{{pinion}}$):** `{f_pinion_hz:.2f} Hz` / `{f_pinion_hz*60:.0f} RPM`"
 )
 st.markdown(f"**Gear Ratio ($i$):** `{gear_ratio:.3f}`")
 st.markdown(f"**Fundamental GMF:** `{gmf_hz:.2f} Hz` / `{gmf_hz*60:.0f} RPM`")
@@ -200,7 +200,7 @@ col_sb1, col_sb2 = st.columns([1, 1])
 with col_sb1:
     sideband_source = st.radio(
         "Sideband Reference Source:",
-        ["Pinion Side", "Gear Side", "Both Sides"],
+        ["Gear Side", "Pinion Side", "Both Sides"],
         horizontal=True,
         help="Select which shaft running speed to use for sideband modulation calculations.",
     )
@@ -213,10 +213,10 @@ with col_sb2:
     )
 
 mod_freqs = []
-if sideband_source in ["Pinion Side", "Both Sides"]:
-    mod_freqs.append(("Pinion", f_pinion_hz))
 if sideband_source in ["Gear Side", "Both Sides"]:
     mod_freqs.append(("Gear", f_gear_hz))
+if sideband_source in ["Pinion Side", "Both Sides"]:
+    mod_freqs.append(("Pinion", f_pinion_hz))
 
 min_mod_freq = (
     min([freq for _, freq in mod_freqs]) if mod_freqs else fr_driver_hz
@@ -250,7 +250,7 @@ for h in harmonics:
         row["Status"] = "No sidebands or source selected"
     else:
         for source_name, freq in mod_freqs:
-            prefix = "P" if source_name == "Pinion" else "G"
+            prefix = "G" if source_name == "Gear" else "P"
             for k in sb_orders:
                 lower = center - (k * freq)
                 upper = center + (k * freq)
@@ -297,7 +297,8 @@ x_gmf, amp_gmf, lbl_gmf = [], [], []
 x_sb, amp_sb = [], []
 tick_vals = []
 
-for name, val_hz in [("Pinion", f_pinion_hz), ("Gear", f_gear_hz)]:
+# Listed Gear first, then Pinion
+for name, val_hz in [("Gear", f_gear_hz), ("Pinion", f_pinion_hz)]:
     val_scaled = val_hz * scale_factor
     if 0 < val_scaled <= fmax:
         tick_vals.append(val_scaled)
@@ -457,22 +458,20 @@ st.subheader("Simulated Time Waveform")
 
 # Determine total simulation time based on driver revolutions
 t_max = twf_revolutions / fr_driver_hz if fr_driver_hz > 0 else 0.1
-fs = max(10000.0, 10 * fmax_hz)  # Sampling frequency meeting Nyquist criteria
+fs = max(10000.0, 10 * fmax_hz)
 t = np.linspace(0, t_max, int(fs * t_max), endpoint=False)
 
-# Reconstruct signal components
 signal = np.zeros_like(t)
 
-# 1. Add Running Speeds (1x Pinion & 1x Gear)
-signal += 0.5 * np.sin(2 * np.pi * f_pinion_hz * t)
-signal += 0.5 * np.sin(2 * np.pi * f_gear_hz * t + np.pi / 4)
+# 1. Add Running Speeds (1x Gear & 1x Pinion)
+signal += 0.5 * np.sin(2 * np.pi * f_gear_hz * t)
+signal += 0.5 * np.sin(2 * np.pi * f_pinion_hz * t + np.pi / 4)
 
 # 2. Add GMF Harmonics modulated by shaft sidebands (AM Envelope)
 for h in [1, 2, 3]:
     center_hz = h * gmf_hz
     base_amp = 1.0 / (h**0.7)
 
-    # Calculate amplitude modulation envelope
     mod_envelope = np.ones_like(t)
     for source_name, freq in mod_freqs:
         for k in sb_orders:
@@ -489,12 +488,11 @@ if fn_hz > 0:
 np.random.seed(42)
 signal += np.random.normal(0, twf_noise_level, size=len(t))
 
-# Construct time waveform figure
 fig_twf = go.Figure()
 
 fig_twf.add_trace(
     go.Scatter(
-        x=t * 1000.0,  # Convert seconds to milliseconds
+        x=t * 1000.0,
         y=signal,
         mode="lines",
         line=dict(color="#008080", width=1),
