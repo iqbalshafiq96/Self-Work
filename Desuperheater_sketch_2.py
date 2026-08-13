@@ -158,18 +158,30 @@ st.markdown(
 
 st.markdown("### GMF Harmonics & Sidebands (Hz)")
 
+# Multi-select Dropdown for Sideband Orders
+selected_sb = st.multiselect(
+    "Select Sideband Orders to Calculate:",
+    options=[1, 2, 3, 4, 5],
+    default=[1, 2],
+    help="Select which running speed sidebands (±N*fr) to calculate around the GMF harmonics."
+)
+
 harmonics = [1, 2, 3]
-sb_orders = [1, 2]
+sb_orders = sorted(selected_sb)
 
 table_data = []
 for h in harmonics:
     center = h * gmf_hz
     row = {"Harmonic": f"{h}x GMF ({center:.1f} Hz)"}
-    for sb in sb_orders:
-        lower = center - (sb * fr_driver_hz)
-        upper = center + (sb * fr_driver_hz)
-        row[f"SB -{sb}"] = f"{lower:.1f}" if lower > 0 else "N/A"
-        row[f"SB +{sb}"] = f"{upper:.1f}"
+    
+    if not sb_orders:
+        row["Status"] = "No sidebands selected"
+    else:
+        for sb in sb_orders:
+            lower = center - (sb * fr_driver_hz)
+            upper = center + (sb * fr_driver_hz)
+            row[f"SB -{sb}"] = f"{lower:.1f}" if lower > 0 else "N/A"
+            row[f"SB +{sb}"] = f"{upper:.1f}"
     table_data.append(row)
 
 st.dataframe(table_data, use_container_width=True)
@@ -224,7 +236,8 @@ for h in range(1, max_harmonic_order + 1):
         amp_gmf.append(base_amp)
         lbl_gmf.append(f"GMF {h}")
 
-    for sb in [1, 2]:
+    # Plot only the sideband orders selected in the dropdown
+    for sb in sb_orders:
         sb_amp = base_amp * (0.35 / (sb**0.8))
 
         lower_scaled = (center_hz - (sb * fr_driver_hz)) * scale_factor
