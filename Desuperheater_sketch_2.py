@@ -35,48 +35,76 @@ spectrum_unit = st.sidebar.radio(
     "Spectrum X-Axis Unit", ["Hz", "RPM", "Orders"]
 )
 
-# Set Default and Max Fmax based on Unit
+# Frequency Scale Factor per Unit
 if spectrum_unit == "Hz":
-    default_fmax = (
-        float(np.ceil(3.5 * gmf_hz / 100.0) * 100.0) if gmf_hz > 0 else 2000.0
-    )
-    fmax = st.sidebar.slider(
-        "Spectrum Fmax (Hz)",
-        min_value=100.0,
-        max_value=10000.0,
-        value=max(500.0, default_fmax),
-        step=50.0,
-    )
     scale_factor = 1.0
     unit_label = "Hz"
 elif spectrum_unit == "RPM":
-    default_fmax = (
-        float(np.ceil(3.5 * gmf_hz * 60 / 1000.0) * 1000.0)
-        if gmf_hz > 0
-        else 120000.0
-    )
-    fmax = st.sidebar.slider(
-        "Spectrum Fmax (RPM)",
-        min_value=1000.0,
-        max_value=600000.0,
-        value=max(10000.0, default_fmax),
-        step=1000.0,
-    )
     scale_factor = 60.0
     unit_label = "RPM"
 else:  # Orders (normalized to Driver 1x running speed)
-    default_fmax = (
-        float(np.ceil(3.5 * n_pinion)) if n_pinion > 0 else 100.0
-    )
-    fmax = st.sidebar.slider(
-        "Spectrum Fmax (Orders)",
-        min_value=5.0,
-        max_value=200.0,
-        value=max(20.0, default_fmax),
-        step=1.0,
-    )
     scale_factor = 1.0 / fr_driver_hz if fr_driver_hz > 0 else 1.0
     unit_label = "Orders"
+
+# --- OPTIMIZE FMAX OVERRIDE DROPDOWN ---
+optimize_option = st.sidebar.selectbox(
+    "Optimize Fmax Target",
+    ["Manual Slider", "1x GMF (+ Sidebands)", "2x GMF (+ Sidebands)", "3x GMF (+ Sidebands)"],
+    help="Selecting a GMF target automatically calculates the ideal Fmax range with headroom for sidebands."
+)
+
+# Target GMF multiplier map (includes +15% headroom for sidebands)
+gmf_headroom_multiplier = {
+    "1x GMF (+ Sidebands)": 1.15,
+    "2x GMF (+ Sidebands)": 2.15,
+    "3x GMF (+ Sidebands)": 3.15,
+}
+
+if optimize_option != "Manual Slider":
+    # Auto-calculate ideal Fmax based on selected GMF target
+    calc_fmax_hz = gmf_hz * gmf_headroom_multiplier[optimize_option]
+    fmax = float(calc_fmax_hz * scale_factor)
+    st.sidebar.info(
+        f"**Fmax Auto-Optimized:** `{fmax:.1f} {unit_label}`\n\n"
+        f"*(Targeting `{optimize_option[:2]}` at `{gmf_hz * int(optimize_option[0]):.1f} Hz`)*"
+    )
+else:
+    # Default Manual Slider Behavior
+    if spectrum_unit == "Hz":
+        default_fmax = (
+            float(np.ceil(3.5 * gmf_hz / 100.0) * 100.0) if gmf_hz > 0 else 2000.0
+        )
+        fmax = st.sidebar.slider(
+            "Spectrum Fmax (Hz)",
+            min_value=100.0,
+            max_value=10000.0,
+            value=max(500.0, default_fmax),
+            step=50.0,
+        )
+    elif spectrum_unit == "RPM":
+        default_fmax = (
+            float(np.ceil(3.5 * gmf_hz * 60 / 1000.0) * 1000.0)
+            if gmf_hz > 0
+            else 120000.0
+        )
+        fmax = st.sidebar.slider(
+            "Spectrum Fmax (RPM)",
+            min_value=1000.0,
+            max_value=600000.0,
+            value=max(10000.0, default_fmax),
+            step=1000.0,
+        )
+    else:  # Orders
+        default_fmax = (
+            float(np.ceil(3.5 * n_pinion)) if n_pinion > 0 else 100.0
+        )
+        fmax = st.sidebar.slider(
+            "Spectrum Fmax (Orders)",
+            min_value=5.0,
+            max_value=200.0,
+            value=max(20.0, default_fmax),
+            step=1.0,
+        )
 
 # Dynamic Resolution Calculations
 fmax_hz = fmax / scale_factor
@@ -221,7 +249,7 @@ for order in [1, 2]:
             amp_2x.append(amp)
             lbl_2x.append("2x")
 
-# 2. Collect GMF Harmonics and Sidebands (up to 2 orders)
+# 2. Collect GMF Harmonics and Sidebands (up to 3 orders)
 max_harmonic_order = int(np.ceil(fmax_hz / gmf_hz)) + 1 if gmf_hz > 0 else 3
 
 for h in range(1, max_harmonic_order + 1):
