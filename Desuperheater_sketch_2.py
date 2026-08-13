@@ -6,7 +6,7 @@ st.set_page_config(page_title="Gear Mesh Analysis", layout="wide")
 
 st.title("Gear Mesh & Frequency Spectrum Analysis")
 
-# Sidebar - Gear Geometry First
+# Sidebar - Gear Geometry
 st.sidebar.header("Gear Geometry")
 n_gear = st.sidebar.number_input(
     "Gear Teeth Count (N_gear)", min_value=1, value=57, step=1
@@ -22,7 +22,7 @@ driver_speed_input = st.sidebar.number_input(
     f"Driver Speed ({unit})", min_value=1.0, value=1500.0, step=10.0
 )
 
-# Gear Orientation Selection (Speed Increaser as Default)
+# Gear Orientation Selection
 orientation_options = [
     "Speed Increaser (Driver = Gear)",
     "Speed Reducer (Driver = Pinion)",
@@ -34,32 +34,33 @@ orientation = st.sidebar.selectbox(
     help="Determines driven speed based on driver attachment."
 )
 
-# Core Computations (Driven Speed & GMF)
+# Core Speed Computations
 fr_driver_hz = (
     driver_speed_input if unit == "Hz" else driver_speed_input / 60.0
 )
-fr_driver_rpm = fr_driver_hz * 60.0
 gear_ratio = n_gear / n_pinion
 
 if "Reducer" in orientation:
-    fr_driven_hz = fr_driver_hz / gear_ratio
-    gmf_hz = fr_driver_hz * n_pinion
+    f_pinion_hz = fr_driver_hz
+    f_gear_hz = fr_driver_hz / gear_ratio
+    gmf_hz = f_pinion_hz * n_pinion
 else:
-    fr_driven_hz = fr_driver_hz * gear_ratio
-    gmf_hz = fr_driver_hz * n_gear
+    f_gear_hz = fr_driver_hz
+    f_pinion_hz = fr_driver_hz * gear_ratio
+    gmf_hz = f_gear_hz * n_gear
 
-fr_driven_rpm = fr_driven_hz * 60.0
+fr_driven_hz = f_gear_hz if "Reducer" in orientation else f_pinion_hz
 
 st.sidebar.metric(
     label="Calculated Driven Speed",
-    value=f"{fr_driven_rpm:.1f} RPM",
+    value=f"{fr_driven_hz * 60.0:.1f} RPM",
     delta=f"{fr_driven_hz:.2f} Hz",
     delta_color="off"
 )
 
 st.sidebar.header("Spectrum Simulation Controls")
 spectrum_unit = st.sidebar.radio(
-    "Spectrum X-Axis Unit", ["Hz", "RPM", "Orders"]
+    "Spectrum X-Axis Unit", ["Hz", "RPM", "Orders (Driver)"]
 )
 
 if spectrum_unit == "Hz":
@@ -128,9 +129,50 @@ else:
             step=1.0,
         )
 
-# Dynamic Resolution Calculations
+# Main Panel - Frequency Calculations Section
+st.subheader("Frequency Calculations")
+
+st.markdown(
+    f"**Pinion Running Speed ($f_{{pinion}}$):** `{f_pinion_hz:.2f} Hz` / `{f_pinion_hz*60:.0f} RPM`"
+)
+st.markdown(
+    f"**Gear Running Speed ($f_{{gear}}$):** `{f_gear_hz:.2f} Hz` / `{f_gear_hz*60:.0f} RPM`"
+)
+st.markdown(f"**Gear Ratio ($i$):** `{gear_ratio:.3f}`")
+st.markdown(
+    f"**Fundamental GMF:** `{gmf_hz:.2f} Hz` / `{gmf_hz*60:.0f} RPM`"
+)
+
+st.markdown("### GMF Harmonics & Sidebands")
+
+col_sb1, col_sb2 = st.columns([1, 1])
+with col_sb1:
+    sideband_source = st.radio(
+        "Sideband Reference Source:",
+        ["Pinion Side", "Gear Side", "Both Sides"],
+        horizontal=True,
+        help="Select which shaft running speed to use for sideband modulation calculations."
+    )
+with col_sb2:
+    selected_orders = st.multiselect(
+        "Select Sideband Multipliers (k):",
+        options=[1, 2, 3, 4, 5],
+        default=[1, 2],
+        help="Order multiplier (k) for calculating ±k*f_shaft sidebands."
+    )
+
+# Determine modulating frequencies for calculation and resolution limits
+mod_freqs = []
+if sideband_source in ["Pinion Side", "Both Sides"]:
+    mod_freqs.append(("Pinion", f_pinion_hz))
+if sideband_source in ["Gear Side", "Both Sides"]:
+    mod_freqs.append(("Gear", f_gear_hz))
+
+# Calculation of Max Allowed Resolution Step (\Delta f) based on smallest selected modulating frequency
+min_mod_freq = min([freq for _, freq in mod_freqs]) if mod_freqs else fr_driver_hz
+req_delta_f = min_mod_freq / 2.5 if min_mod_freq > 0 else 1.0
+
 fmax_hz = fmax / scale_factor
-req_delta_f = fr_driver_hz / 2.5 if fr_driver_hz > 0 else 1.0
 min_fft_lines = int(np.ceil(fmax_hz / req_delta_f)) if req_delta_f > 0 else 800
 
 standard_lines = [400, 800, 1600, 3200, 6400, 12800]
@@ -138,50 +180,26 @@ recommended_lines = next(
     (l for l in standard_lines if l >= min_fft_lines), 12800
 )
 actual_delta_f = fmax_hz / recommended_lines if recommended_lines > 0 else 0.0
-
-# Total Recording Time in Seconds
 recording_time_sec = recommended_lines / fmax_hz if fmax_hz > 0 else 0.0
 
-# Main Panel - Frequency Calculations Section
-st.subheader("Frequency Calculations")
-
-st.markdown(
-    f"**Driver Running Speed ($f_{{driver}}$):** `{fr_driver_hz:.2f} Hz` / `{fr_driver_rpm:.0f} RPM`"
-)
-st.markdown(
-    f"**Driven Running Speed ($f_{{driven}}$):** `{fr_driven_hz:.2f} Hz` / `{fr_driven_rpm:.0f} RPM`"
-)
-st.markdown(f"**Gear Ratio ($i$):** `{gear_ratio:.3f}`")
-st.markdown(
-    f"**Fundamental GMF:** `{gmf_hz:.2f} Hz` / `{gmf_hz*60:.0f} RPM`"
-)
-
-st.markdown("### GMF Harmonics & Sidebands (Hz)")
-
-# Multi-select Dropdown for Sideband Orders
-selected_sb = st.multiselect(
-    "Select Sideband Orders to Calculate:",
-    options=[1, 2, 3, 4, 5],
-    default=[1, 2],
-    help="Select which running speed sidebands (±N*fr) to calculate around the GMF harmonics."
-)
-
 harmonics = [1, 2, 3]
-sb_orders = sorted(selected_sb)
+sb_orders = sorted(selected_orders)
 
 table_data = []
 for h in harmonics:
     center = h * gmf_hz
     row = {"Harmonic": f"{h}x GMF ({center:.1f} Hz)"}
     
-    if not sb_orders:
-        row["Status"] = "No sidebands selected"
+    if not sb_orders or not mod_freqs:
+        row["Status"] = "No sidebands or source selected"
     else:
-        for sb in sb_orders:
-            lower = center - (sb * fr_driver_hz)
-            upper = center + (sb * fr_driver_hz)
-            row[f"SB -{sb}"] = f"{lower:.1f}" if lower > 0 else "N/A"
-            row[f"SB +{sb}"] = f"{upper:.1f}"
+        for source_name, freq in mod_freqs:
+            prefix = "P" if source_name == "Pinion" else "G"
+            for k in sb_orders:
+                lower = center - (k * freq)
+                upper = center + (k * freq)
+                row[f"{prefix} SB -{k}"] = f"{lower:.1f}" if lower > 0 else "N/A"
+                row[f"{prefix} SB +{k}"] = f"{upper:.1f}"
     table_data.append(row)
 
 st.dataframe(table_data, use_container_width=True)
@@ -189,39 +207,30 @@ st.dataframe(table_data, use_container_width=True)
 # Resolution Guidance Box
 st.info(
     f"**Required Spectral Resolution Guidance:**\n"
-    f"* **Max Allowed Resolution Step ($\Delta f$):** `{req_delta_f:.2f} Hz`\n"
+    f"* **Target Modulating Frequency ($f_{{mod}}$):** `{min_mod_freq:.2f} Hz` (Based on {sideband_source})\n"
+    f"* **Max Allowed Resolution Step ($\Delta f = f_{{mod}} / 2.5$):** `{req_delta_f:.2f} Hz`\n"
     f"* **Recommended Lines ($N_{{lines}}$):** `{recommended_lines:,} Lines` at $F_{{max}} = {fmax_hz:.0f}\\text{{ Hz}}$\n"
     f"* **Achieved Resolution:** `{actual_delta_f:.3f} Hz/line` (Sidebands clearly resolvable)\n"
     f"* **Recording Duration ($T_{{record}}$):** `{recording_time_sec:.2f} seconds` per block"
 )
 
-# Full-width Spectrum Plot Section
+# Spectrum Plot Section
 st.subheader("Simulated Vibration Spectrum")
 
 noise_floor = 0.02
-
 x_1x, amp_1x, lbl_1x = [], [], []
-x_2x, amp_2x, lbl_2x = [], [], []
 x_gmf, amp_gmf, lbl_gmf = [], [], []
 x_sb, amp_sb = [], []
-
 tick_vals = []
 
-for order in [1, 2]:
-    val_hz = order * fr_driver_hz
+# Shaft Running Speeds
+for name, val_hz in [("Pinion", f_pinion_hz), ("Gear", f_gear_hz)]:
     val_scaled = val_hz * scale_factor
-    amp = 0.6 / order
-
     if 0 < val_scaled <= fmax:
         tick_vals.append(val_scaled)
-        if order == 1:
-            x_1x.append(val_scaled)
-            amp_1x.append(amp)
-            lbl_1x.append("1x")
-        else:
-            x_2x.append(val_scaled)
-            amp_2x.append(amp)
-            lbl_2x.append("2x")
+        x_1x.append(val_scaled)
+        amp_1x.append(0.5)
+        lbl_1x.append(f"1x {name}")
 
 max_harmonic_order = int(np.ceil(fmax_hz / gmf_hz)) + 1 if gmf_hz > 0 else 3
 
@@ -236,25 +245,24 @@ for h in range(1, max_harmonic_order + 1):
         amp_gmf.append(base_amp)
         lbl_gmf.append(f"GMF {h}")
 
-    # Plot only the sideband orders selected in the dropdown
-    for sb in sb_orders:
-        sb_amp = base_amp * (0.35 / (sb**0.8))
+    for source_name, freq in mod_freqs:
+        for k in sb_orders:
+            sb_amp = base_amp * (0.3 / (k**0.8))
+            lower_scaled = (center_hz - (k * freq)) * scale_factor
+            upper_scaled = (center_hz + (k * freq)) * scale_factor
 
-        lower_scaled = (center_hz - (sb * fr_driver_hz)) * scale_factor
-        upper_scaled = (center_hz + (sb * fr_driver_hz)) * scale_factor
+            if 0 < lower_scaled <= fmax:
+                x_sb.append(lower_scaled)
+                amp_sb.append(sb_amp)
 
-        if 0 < lower_scaled <= fmax:
-            x_sb.append(lower_scaled)
-            amp_sb.append(sb_amp)
-
-        if 0 < upper_scaled <= fmax:
-            x_sb.append(upper_scaled)
-            amp_sb.append(sb_amp)
+            if 0 < upper_scaled <= fmax:
+                x_sb.append(upper_scaled)
+                amp_sb.append(sb_amp)
 
 fig_spec = go.Figure()
 
-all_x = x_1x + x_2x + x_gmf + x_sb
-all_amps = amp_1x + amp_2x + amp_gmf + amp_sb
+all_x = x_1x + x_gmf + x_sb
+all_amps = amp_1x + amp_gmf + amp_sb
 
 for x_p, a_p in zip(all_x, all_amps):
     fig_spec.add_trace(
@@ -279,22 +287,7 @@ if x_1x:
             textfont=dict(color="darkorange", size=11, family="Segoe UI"),
             marker=dict(color="darkorange", size=9),
             cliponaxis=False,
-            name="1x Running Speed",
-        )
-    )
-
-if x_2x:
-    fig_spec.add_trace(
-        go.Scatter(
-            x=x_2x,
-            y=amp_2x,
-            mode="markers+text",
-            text=lbl_2x,
-            textposition="top center",
-            textfont=dict(color="purple", size=11, family="Segoe UI"),
-            marker=dict(color="purple", size=9),
-            cliponaxis=False,
-            name="2x Running Speed",
+            name="1x Running Speeds",
         )
     )
 
