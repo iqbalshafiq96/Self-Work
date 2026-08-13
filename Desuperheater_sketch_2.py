@@ -2,7 +2,7 @@ import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 
-st.set_page_config(page_title="Gear Mesh & Spectrum Analysis", layout="wide")
+st.set_page_config(page_title="Gear Mesh Analysis", layout="wide")
 
 st.title("Gear Mesh & Frequency Spectrum Analysis")
 
@@ -51,9 +51,9 @@ with col1:
 
     st.markdown("### GMF Harmonics & Sidebands (Hz)")
 
-    # Generate Sideband Table
+    # Generate Sideband Table (Restricted to Sideband 1 and 2)
     harmonics = [1, 2, 3]
-    sb_orders = range(1, 6)
+    sb_orders = [1, 2]
 
     table_data = []
     for h in harmonics:
@@ -143,23 +143,29 @@ labels = []
 # Base Noise Floor
 noise_floor = 0.02
 
-# Generate peaks for higher harmonic orders dynamically (up to order 10) to support larger Fmax values
+# Determine max harmonic visible in Fmax
 max_harmonic_order = int(np.ceil(fmax / gmf)) + 1 if gmf > 0 else 3
+
+# Store custom X-axis ticks and labels at GMF frequencies
+tick_vals = [0]
+tick_text = ["0"]
 
 for h in range(1, max_harmonic_order + 1):
     center = h * gmf
-    # Decreasing base amplitude for higher harmonics
     base_amp = 1.0 / (h**0.7)
 
-    # Add GMF Center Peak
+    # Record GMF frequency for custom X-axis labeling if within fmax
     if center <= fmax:
+        tick_vals.append(center)
+        tick_text.append(f"GMF {h}\n({center:.1f} Hz)")
+
         freq_peaks.append(center)
         amp_peaks.append(base_amp)
         labels.append(f"GMF {h}")
 
-    # Add Sidebands (up to 5 orders)
-    for sb in range(1, 6):
-        sb_amp = base_amp * (0.35 / (sb**0.8))  # Sideband attenuation factor
+    # Add Sidebands restricted to 2 orders (SB 1 & SB 2)
+    for sb in [1, 2]:
+        sb_amp = base_amp * (0.35 / (sb**0.8))
 
         lower_f = center - (sb * fr_driver)
         upper_f = center + (sb * fr_driver)
@@ -189,7 +195,7 @@ for f_peak, a_peak in zip(freq_peaks, amp_peaks):
         )
     )
 
-# Add GMF Markers & Labels (GMF 1, GMF 2, GMF 3, etc.)
+# Highlight GMF Peaks with Crimson Markers
 gmf_freqs = [f for f, lbl in zip(freq_peaks, labels) if lbl.startswith("GMF")]
 gmf_amps = [a for a, lbl in zip(amp_peaks, labels) if lbl.startswith("GMF")]
 gmf_text = [lbl for lbl in labels if lbl.startswith("GMF")]
@@ -206,13 +212,19 @@ fig_spec.add_trace(
     )
 )
 
+# Apply explicit X-axis tick values and text labels at GMF points
 fig_spec.update_layout(
     xaxis_title="Frequency (Hz)",
     yaxis_title="Amplitude (g / peak)",
-    xaxis=dict(range=[0, fmax]),
+    xaxis=dict(
+        range=[0, fmax],
+        tickmode="array",
+        tickvals=tick_vals,
+        ticktext=tick_text,
+    ),
     yaxis=dict(range=[0, 1.3]),
     template="plotly_white",
-    height=400,
+    height=420,
     margin=dict(l=40, r=20, t=30, b=40),
 )
 
