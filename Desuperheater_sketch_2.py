@@ -142,106 +142,46 @@ actual_delta_f = fmax_hz / recommended_lines if recommended_lines > 0 else 0.0
 # Total Recording Time in Seconds
 recording_time_sec = recommended_lines / fmax_hz if fmax_hz > 0 else 0.0
 
-# Layout Columns
-col1, col2 = st.columns([1, 1.2])
+# Main Panel - Frequency Calculations Section
+st.subheader("Frequency Calculations")
 
-with col1:
-    st.subheader("Frequency Calculations")
+st.markdown(
+    f"**Driver Running Speed ($f_{{driver}}$):** `{fr_driver_hz:.2f} Hz` / `{fr_driver_rpm:.0f} RPM`"
+)
+st.markdown(
+    f"**Driven Running Speed ($f_{{driven}}$):** `{fr_driven_hz:.2f} Hz` / `{fr_driven_rpm:.0f} RPM`"
+)
+st.markdown(f"**Gear Ratio ($i$):** `{gear_ratio:.3f}`")
+st.markdown(
+    f"**Fundamental GMF:** `{gmf_hz:.2f} Hz` / `{gmf_hz*60:.0f} RPM`"
+)
 
-    st.markdown(
-        f"**Driver Running Speed ($f_{{driver}}$):** `{fr_driver_hz:.2f} Hz` / `{fr_driver_rpm:.0f} RPM`"
-    )
-    st.markdown(
-        f"**Driven Running Speed ($f_{{driven}}$):** `{fr_driven_hz:.2f} Hz` / `{fr_driven_rpm:.0f} RPM`"
-    )
-    st.markdown(f"**Gear Ratio ($i$):** `{gear_ratio:.3f}`")
-    st.markdown(
-        f"**Fundamental GMF:** `{gmf_hz:.2f} Hz` / `{gmf_hz*60:.0f} RPM`"
-    )
+st.markdown("### GMF Harmonics & Sidebands (Hz)")
 
-    st.markdown("### GMF Harmonics & Sidebands (Hz)")
+harmonics = [1, 2, 3]
+sb_orders = [1, 2]
 
-    harmonics = [1, 2, 3]
-    sb_orders = [1, 2]
+table_data = []
+for h in harmonics:
+    center = h * gmf_hz
+    row = {"Harmonic": f"{h}x GMF ({center:.1f} Hz)"}
+    for sb in sb_orders:
+        lower = center - (sb * fr_driver_hz)
+        upper = center + (sb * fr_driver_hz)
+        row[f"SB -{sb}"] = f"{lower:.1f}" if lower > 0 else "N/A"
+        row[f"SB +{sb}"] = f"{upper:.1f}"
+    table_data.append(row)
 
-    table_data = []
-    for h in harmonics:
-        center = h * gmf_hz
-        row = {"Harmonic": f"{h}x GMF ({center:.1f} Hz)"}
-        for sb in sb_orders:
-            lower = center - (sb * fr_driver_hz)
-            upper = center + (sb * fr_driver_hz)
-            row[f"SB -{sb}"] = f"{lower:.1f}" if lower > 0 else "N/A"
-            row[f"SB +{sb}"] = f"{upper:.1f}"
-        table_data.append(row)
+st.dataframe(table_data, use_container_width=True)
 
-    st.dataframe(table_data, use_container_width=True)
-
-    # Resolution Guidance Box with Recording Time included
-    st.info(
-        f"**Required Spectral Resolution Guidance:**\n"
-        f"* **Max Allowed Resolution Step ($\Delta f$):** `{req_delta_f:.2f} Hz`\n"
-        f"* **Recommended Lines ($N_{{lines}}$):** `{recommended_lines:,} Lines` at $F_{{max}} = {fmax_hz:.0f}\\text{{ Hz}}$\n"
-        f"* **Achieved Resolution:** `{actual_delta_f:.3f} Hz/line` (Sidebands clearly resolvable)\n"
-        f"* **Recording Duration ($T_{{record}}$):** `{recording_time_sec:.2f} seconds` per block"
-    )
-
-with col2:
-    st.subheader("Mesh Region Schematic")
-
-    module = 1.0
-    r_pinion = (n_pinion * module) / 2.0
-    r_gear = (n_gear * module) / 2.0
-    center_dist = r_pinion + r_gear
-
-    theta = np.linspace(-np.pi / 6, np.pi / 6, 100)
-
-    x_p = r_pinion * np.sin(theta)
-    y_p = r_pinion * np.cos(theta)
-
-    x_g = r_gear * np.sin(theta)
-    y_g = -center_dist + r_gear * np.cos(theta)
-
-    fig = go.Figure()
-
-    fig.add_trace(
-        go.Scatter(
-            x=x_g,
-            y=y_g,
-            mode="lines",
-            name="Gear Pitch Arc",
-            line=dict(color="royalblue", width=3),
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x_p,
-            y=y_p,
-            mode="lines",
-            name="Pinion Pitch Arc",
-            line=dict(color="teal", width=3),
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=[0],
-            y=[r_pinion],
-            mode="markers",
-            name="Pitch Point",
-            marker=dict(size=10, color="red"),
-        )
-    )
-
-    fig.update_layout(
-        xaxis_title="X (mm)",
-        yaxis_title="Y (mm)",
-        yaxis=dict(scaleanchor="x", scaleratio=1),
-        margin=dict(l=20, r=20, t=20, b=20),
-        height=320,
-        template="plotly_white",
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
+# Resolution Guidance Box
+st.info(
+    f"**Required Spectral Resolution Guidance:**\n"
+    f"* **Max Allowed Resolution Step ($\Delta f$):** `{req_delta_f:.2f} Hz`\n"
+    f"* **Recommended Lines ($N_{{lines}}$):** `{recommended_lines:,} Lines` at $F_{{max}} = {fmax_hz:.0f}\\text{{ Hz}}$\n"
+    f"* **Achieved Resolution:** `{actual_delta_f:.3f} Hz/line` (Sidebands clearly resolvable)\n"
+    f"* **Recording Duration ($T_{{record}}$):** `{recording_time_sec:.2f} seconds` per block"
+)
 
 # Full-width Spectrum Plot Section
 st.subheader("Simulated Vibration Spectrum")
