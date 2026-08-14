@@ -590,13 +590,3 @@ fig_twf.update_layout(
 
 st.plotly_chart(fig_twf, use_container_width=True)
 
-for scenario tooth broken
-speed increaser
-1x gear amp 0.2
-1x pinion amp 0.1
-1x GMF 1.5
-Optimize Fmax - 1 GMF (+ sidebands)
-shaft revolution 6
-noise level 0
-sideband gear
-multiplier 1x and 2x
