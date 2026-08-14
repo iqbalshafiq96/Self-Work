@@ -82,6 +82,28 @@ st.sidebar.metric(
 )
 
 st.sidebar.header("Spectrum Simulation Controls")
+
+# Added Component Amplitude Controls
+col_amp1, col_amp2 = st.sidebar.columns(2)
+with col_amp1:
+    amp_1x_gear = st.number_input(
+        "1x Gear Amp (g)",
+        min_value=0.00,
+        max_value=5.00,
+        value=0.50,
+        step=0.05,
+        help="Set to 0 to disable 1x Gear component.",
+    )
+with col_amp2:
+    amp_1x_pinion = st.number_input(
+        "1x Pinion Amp (g)",
+        min_value=0.00,
+        max_value=5.00,
+        value=0.50,
+        step=0.05,
+        help="Set to 0 to disable 1x Pinion component.",
+    )
+
 spectrum_unit = st.sidebar.radio(
     "Spectrum X-Axis Unit", ["Hz", "RPM", "Orders (Driver)"]
 )
@@ -172,7 +194,7 @@ twf_noise_level = st.sidebar.slider(
     "Noise Level (g RMS)",
     min_value=0.00,
     max_value=0.10,
-    value=0.00,  # Default set to 0.00 for pure deterministic spectral conversion
+    value=0.00,
     step=0.005,
 )
 
@@ -297,14 +319,20 @@ x_gmf, amp_gmf, lbl_gmf = [], [], []
 x_sb, amp_sb = [], []
 tick_vals = []
 
-# Listed Gear first, then Pinion
-for name, val_hz in [("Gear", f_gear_hz), ("Pinion", f_pinion_hz)]:
-    val_scaled = val_hz * scale_factor
-    if 0 < val_scaled <= fmax:
-        tick_vals.append(val_scaled)
-        x_1x.append(val_scaled)
-        amp_1x.append(0.5)
-        lbl_1x.append(f"1x {name}")
+# Dynamic 1x Speeds handling with user-defined amplitudes
+gear_scaled = f_gear_hz * scale_factor
+if 0 < gear_scaled <= fmax and amp_1x_gear > 0:
+    tick_vals.append(gear_scaled)
+    x_1x.append(gear_scaled)
+    amp_1x.append(amp_1x_gear)
+    lbl_1x.append("1x Gear")
+
+pinion_scaled = f_pinion_hz * scale_factor
+if 0 < pinion_scaled <= fmax and amp_1x_pinion > 0:
+    tick_vals.append(pinion_scaled)
+    x_1x.append(pinion_scaled)
+    amp_1x.append(amp_1x_pinion)
+    lbl_1x.append("1x Pinion")
 
 max_harmonic_order = int(np.ceil(fmax_hz / gmf_hz)) + 1 if gmf_hz > 0 else 3
 
@@ -451,6 +479,7 @@ if fn_hz > 0:
         tick_vals.append(fn_scaled)
 
 clean_ticks = sorted(list(set([t for t in tick_vals if t > 0])))
+max_y = max(all_amps) + 0.5 if all_amps else 1.65
 
 fig_spec.update_layout(
     xaxis_title=f"Frequency ({unit_label})",
@@ -462,7 +491,7 @@ fig_spec.update_layout(
         tickformat=".1f",
         zeroline=False,
     ),
-    yaxis=dict(range=[0, 1.65]),
+    yaxis=dict(range=[0, max(1.65, max_y)]),
     template="plotly_white",
     height=450,
     margin=dict(l=40, r=20, t=60, b=40),
@@ -479,11 +508,12 @@ t = np.linspace(0, t_max, int(fs * t_max), endpoint=False)
 
 signal = np.zeros_like(t)
 
-# 1. Add Running Speeds (1x Gear & 1x Pinion) ONLY if within active Fmax display range
-if 0 < f_gear_hz * scale_factor <= fmax:
-    signal += 0.5 * np.sin(2 * np.pi * f_gear_hz * t)
-if 0 < f_pinion_hz * scale_factor <= fmax:
-    signal += 0.5 * np.sin(2 * np.pi * f_pinion_hz * t + np.pi / 4)
+# 1. Add Running Speeds ONLY if amplitude > 0 and within active Fmax display range
+if amp_1x_gear > 0 and (0 < f_gear_hz * scale_factor <= fmax):
+    signal += amp_1x_gear * np.sin(2 * np.pi * f_gear_hz * t)
+
+if amp_1x_pinion > 0 and (0 < f_pinion_hz * scale_factor <= fmax):
+    signal += amp_1x_pinion * np.sin(2 * np.pi * f_pinion_hz * t + np.pi / 4)
 
 # 2. Add GMF Harmonics & Modulation Envelopes ONLY if within active Fmax display range
 for h in range(1, max_harmonic_order + 1):
@@ -498,9 +528,10 @@ for h in range(1, max_harmonic_order + 1):
         for k in sb_orders:
             lower_hz = center_hz - (k * freq)
             upper_hz = center_hz + (k * freq)
-            
-            # Check if sideband exists inside active display bounds
-            sb_in_bounds = (0 < lower_hz * scale_factor <= fmax) or (0 < upper_hz * scale_factor <= fmax)
+
+            sb_in_bounds = (0 < lower_hz * scale_factor <= fmax) or (
+                0 < upper_hz * scale_factor <= fmax
+            )
             if sb_in_bounds:
                 depth = (0.3 / (k**0.8)) * 2.0
                 mod_envelope += depth * np.cos(2 * np.pi * k * freq * t)
