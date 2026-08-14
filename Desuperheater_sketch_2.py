@@ -24,6 +24,7 @@ PRESETS = {
         "selected_orders": [],
         "twf_revolutions": 5.0,
         "twf_noise_level": 0.000,
+        "optimize_option": "Manual Slider",
     },
     "Scenario 2: Unbalance / Misalignment": {
         "n_gear": 57,
@@ -41,6 +42,7 @@ PRESETS = {
         "selected_orders": [1],
         "twf_revolutions": 5.0,
         "twf_noise_level": 0.010,
+        "optimize_option": "Manual Slider",
     },
     "Scenario 3: Localized Gear Tooth Defect": {
         "n_gear": 57,
@@ -58,6 +60,7 @@ PRESETS = {
         "selected_orders": [1, 2],
         "twf_revolutions": 6.0,
         "twf_noise_level": 0.015,
+        "optimize_option": "Manual Slider",
     },
     "Scenario 4: Resonant Gear Excitation": {
         "n_gear": 57,
@@ -75,18 +78,37 @@ PRESETS = {
         "selected_orders": [1, 2],
         "twf_revolutions": 5.0,
         "twf_noise_level": 0.020,
+        "optimize_option": "Manual Slider",
+    },
+    "Scenario 5: Broken Tooth (Speed Increaser)": {
+        "n_gear": 57,
+        "n_pinion": 19,
+        "fn_input": 0.0,
+        "fn_unit": "Hz",
+        "driver_speed_input": 1500.0,
+        "unit": "RPM",
+        "orientation": "Speed Increaser (Driver = Gear)",
+        "amp_1x_gear": 0.20,
+        "amp_1x_pinion": 0.10,
+        "amp_gmf_1": 1.50,
+        "amp_fn": 0.00,
+        "sideband_source": "Gear Side",
+        "selected_orders": [1, 2],
+        "twf_revolutions": 6.0,
+        "twf_noise_level": 0.000,
+        "optimize_option": "1x GMF (+ Sidebands)",
     },
 }
 
-# Default initial values
-defaults = PRESETS["Scenario 1: Healthy Gearbox"]
+# Set default initial values to Scenario 5
+defaults = PRESETS["Scenario 5: Broken Tooth (Speed Increaser)"]
 
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
 if "preset_select" not in st.session_state:
-    st.session_state["preset_select"] = "Scenario 1: Healthy Gearbox"
+    st.session_state["preset_select"] = "Scenario 5: Broken Tooth (Speed Increaser)"
 
 
 def on_preset_change():
@@ -277,6 +299,8 @@ optimize_option = st.sidebar.selectbox(
         "2x GMF (+ Sidebands)",
         "3x GMF (+ Sidebands)",
     ],
+    key="optimize_option",
+    on_change=on_input_change,
 )
 
 gmf_headroom_multiplier = {
