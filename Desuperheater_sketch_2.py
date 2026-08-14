@@ -476,30 +476,37 @@ st.subheader("Simulated Time Waveform")
 
 # Determine total simulation time based on driver revolutions
 t_max = twf_revolutions / fr_driver_hz if fr_driver_hz > 0 else 0.1
-fs = max(10000.0, 10 * fmax_hz)
+fs = max(10000.0, 10.0 * fmax_hz)
 t = np.linspace(0, t_max, int(fs * t_max), endpoint=False)
 
 signal = np.zeros_like(t)
 
 # 1. Add Running Speeds (1x Gear & 1x Pinion)
-signal += 0.5 * np.sin(2 * np.pi * f_gear_hz * t)
-signal += 0.5 * np.sin(2 * np.pi * f_pinion_hz * t + np.pi / 4)
+if f_gear_hz * scale_factor <= fmax:
+    signal += 0.5 * np.sin(2 * np.pi * f_gear_hz * t)
+if f_pinion_hz * scale_factor <= fmax:
+    signal += 0.5 * np.sin(2 * np.pi * f_pinion_hz * t + np.pi / 4)
 
 # 2. Add GMF Harmonics modulated by shaft sidebands (AM Envelope)
-for h in [1, 2, 3]:
+# Dynamic synchronization with max_harmonic_order and Fmax cutoffs
+for h in range(1, max_harmonic_order + 1):
     center_hz = h * gmf_hz
+    if center_hz > fmax_hz:
+        continue
+
     base_amp = 1.0 / (h**0.7)
 
     mod_envelope = np.ones_like(t)
     for source_name, freq in mod_freqs:
         for k in sb_orders:
-            depth = 0.3 / (k**0.8)
+            # Scaled by 2.0 so FFT sideband peak matches sb_amp drawn in plot
+            depth = (0.3 / (k**0.8)) * 2.0
             mod_envelope += depth * np.cos(2 * np.pi * k * freq * t)
 
     signal += base_amp * mod_envelope * np.sin(2 * np.pi * center_hz * t)
 
-# 3. Add Natural Frequency component if set
-if fn_hz > 0:
+# 3. Add Natural Frequency component if enabled and within Fmax
+if fn_hz > 0 and fn_hz <= fmax_hz:
     signal += fn_amp * np.sin(2 * np.pi * fn_hz * t)
 
 # 4. Add random noise floor
@@ -510,7 +517,7 @@ fig_twf = go.Figure()
 
 fig_twf.add_trace(
     go.Scatter(
-        x=t * 1000.0,
+        x=t * 1000.0,  # Convert seconds to ms
         y=signal,
         mode="lines",
         line=dict(color="#008080", width=1),
