@@ -15,7 +15,7 @@ PRESETS = {
         "fn_unit": "Hz",
         "driver_speed_input": 1500.0,
         "unit": "RPM",
-        "orientation": "Speed Reducer (Driver = Pinion)",
+        "orientation": "Speed Increaser (Driver = Gear",
         "amp_1x_gear": 0.00,
         "amp_1x_pinion": 0.00,
         "amp_gmf_1": 1.00,
