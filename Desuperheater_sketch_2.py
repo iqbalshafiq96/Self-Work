@@ -91,8 +91,6 @@ def on_input_change():
 
 # --- 2. SIDEBAR CONTROLS ---
 
-st.sidebar.header("Spectrum Simulation Controls")
-
 st.sidebar.header("Gear Geometry")
 
 n_gear = st.sidebar.number_input(
@@ -189,7 +187,12 @@ st.sidebar.metric(
     delta_color="off",
 )
 
-# Simulation Preset relocated directly under Calculated Driven Speed
+# Divider line separating Operating Parameters and Spectrum Simulation
+st.sidebar.markdown("---")
+
+# Spectrum Simulation Controls Header & Preset
+st.sidebar.header("Spectrum Simulation Controls")
+
 st.sidebar.selectbox(
     "Simulation Preset",
     options=list(PRESETS.keys()),
@@ -197,8 +200,6 @@ st.sidebar.selectbox(
     on_change=on_preset_change,
     help="Selecting a scenario loads pre-configured parameters. Modifying any parameter switches mode to 'User Custom'.",
 )
-
-st.sidebar.markdown("---")
 
 col_amp1, col_amp2 = st.sidebar.columns(2)
 with col_amp1:
