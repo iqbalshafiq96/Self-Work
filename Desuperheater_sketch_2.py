@@ -8,25 +8,7 @@ st.title("Gear Mesh & Frequency Spectrum Analysis")
 # --- 1. PRESET DEFINITIONS & STATE MANAGEMENT ---
 PRESETS = {
     "User Custom": None,
-    "Scenario 1: Healthy Gearbox": {
-        "n_gear": 57,
-        "n_pinion": 19,
-        "fn_input": 0.0,
-        "fn_unit": "Hz",
-        "driver_speed_input": 1500.0,
-        "unit": "RPM",
-        "orientation": "Speed Reducer (Driver = Pinion)",
-        "amp_1x_gear": 0.00,
-        "amp_1x_pinion": 0.00,
-        "amp_gmf_1": 1.00,
-        "amp_fn": 0.00,
-        "sideband_source": "Gear Side",
-        "selected_orders": [],
-        "twf_revolutions": 5.0,
-        "twf_noise_level": 0.000,
-        "optimize_option": "Manual Slider",
-    },
-    "Scenario 2: Unbalance / Misalignment": {
+    "Scenario 1: Unbalance / Misalignment": {
         "n_gear": 57,
         "n_pinion": 19,
         "fn_input": 0.0,
@@ -44,25 +26,7 @@ PRESETS = {
         "twf_noise_level": 0.010,
         "optimize_option": "Manual Slider",
     },
-    "Scenario 3: Localized Gear Tooth Defect": {
-        "n_gear": 57,
-        "n_pinion": 19,
-        "fn_input": 0.0,
-        "fn_unit": "Hz",
-        "driver_speed_input": 1500.0,
-        "unit": "RPM",
-        "orientation": "Speed Reducer (Driver = Pinion)",
-        "amp_1x_gear": 0.20,
-        "amp_1x_pinion": 0.10,
-        "amp_gmf_1": 1.20,
-        "amp_fn": 0.00,
-        "sideband_source": "Gear Side",
-        "selected_orders": [1, 2],
-        "twf_revolutions": 6.0,
-        "twf_noise_level": 0.015,
-        "optimize_option": "Manual Slider",
-    },
-    "Scenario 4: Resonant Gear Excitation": {
+    "Scenario 2: Resonant Gear Excitation": {
         "n_gear": 57,
         "n_pinion": 19,
         "fn_input": 475.0,
@@ -80,7 +44,7 @@ PRESETS = {
         "twf_noise_level": 0.020,
         "optimize_option": "Manual Slider",
     },
-    "Scenario 5: Broken Tooth (Speed Increaser)": {
+    "Scenario 3: Broken Tooth (Speed Increaser)": {
         "n_gear": 57,
         "n_pinion": 19,
         "fn_input": 0.0,
@@ -100,15 +64,15 @@ PRESETS = {
     },
 }
 
-# Set default initial values to Scenario 5
-defaults = PRESETS["Scenario 5: Broken Tooth (Speed Increaser)"]
+# Set default initial values to Scenario 3 (Broken Tooth)
+defaults = PRESETS["Scenario 3: Broken Tooth (Speed Increaser)"]
 
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
 if "preset_select" not in st.session_state:
-    st.session_state["preset_select"] = "Scenario 5: Broken Tooth (Speed Increaser)"
+    st.session_state["preset_select"] = "Scenario 3: Broken Tooth (Speed Increaser)"
 
 
 def on_preset_change():
@@ -129,15 +93,6 @@ def on_input_change():
 
 st.sidebar.header("Spectrum Simulation Controls")
 
-st.sidebar.selectbox(
-    "Simulation Preset",
-    options=list(PRESETS.keys()),
-    key="preset_select",
-    on_change=on_preset_change,
-    help="Selecting a scenario loads pre-configured parameters. Modifying any parameter switches mode to 'User Custom'.",
-)
-
-st.sidebar.markdown("---")
 st.sidebar.header("Gear Geometry")
 
 n_gear = st.sidebar.number_input(
@@ -234,7 +189,16 @@ st.sidebar.metric(
     delta_color="off",
 )
 
-st.sidebar.header("Amplitude Controls")
+# Simulation Preset relocated directly under Calculated Driven Speed
+st.sidebar.selectbox(
+    "Simulation Preset",
+    options=list(PRESETS.keys()),
+    key="preset_select",
+    on_change=on_preset_change,
+    help="Selecting a scenario loads pre-configured parameters. Modifying any parameter switches mode to 'User Custom'.",
+)
+
+st.sidebar.markdown("---")
 
 col_amp1, col_amp2 = st.sidebar.columns(2)
 with col_amp1:
