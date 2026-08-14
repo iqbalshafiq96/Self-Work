@@ -516,165 +516,166 @@ if "time_history" not in st.session_state:
 if st.sidebar.button("Reset Dynamic Trends"):
     reset_to_steady_state()
 
-# --- NUMERICAL INTEGRATION WITH LEAD-LAG ENTHALPY BALANCE ---
-if is_running:
-    st.session_state.sim_time += dt
 
-    curr_inlet_flow = st.session_state.inlet_flow_history[-1]
-    curr_spray_flow = st.session_state.spray_flow_history[-1]
-    curr_temp = st.session_state.temp_history[-1]
+# --- ISOLATED SIMULATION & RENDER FRAGMENT ---
+@st.fragment(run_every=dt if is_running else None)
+def render_simulation_fragment():
+    if is_running:
+        st.session_state.sim_time += dt
 
-    # 1. Independent first-order lag updates for flows
-    new_inlet_flow = curr_inlet_flow + (dt / tau_steam) * (
-        target_inlet_flow - curr_inlet_flow
-    )
-    new_spray_flow = curr_spray_flow + (dt / tau_spray) * (
-        target_fw_flow - curr_spray_flow
-    )
-    new_outlet_flow = new_inlet_flow + new_spray_flow
+        curr_inlet_flow = st.session_state.inlet_flow_history[-1]
+        curr_spray_flow = st.session_state.spray_flow_history[-1]
+        curr_temp = st.session_state.temp_history[-1]
 
-    # 2. Instantaneous Enthalpy Balance from dynamic transient flow rates
-    if new_outlet_flow > 0:
-        dynamic_outlet_enthalpy = (
-            (new_inlet_flow * enthalpy_steam_inlet)
-            + (new_spray_flow * enthalpy_feedwater_inlet)
-        ) / new_outlet_flow
-        instantaneous_temp = (
-            IAPWS97(P=p_out_mpaa, h=dynamic_outlet_enthalpy).T - 273.15
+        # 1. Independent first-order lag updates for flows
+        new_inlet_flow = curr_inlet_flow + (dt / tau_steam) * (
+            target_inlet_flow - curr_inlet_flow
         )
-    else:
-        instantaneous_temp = curr_temp
+        new_spray_flow = curr_spray_flow + (dt / tau_spray) * (
+            target_fw_flow - curr_spray_flow
+        )
+        new_outlet_flow = new_inlet_flow + new_spray_flow
 
-    # 3. Apply thermal lag to temperature reading
-    new_temp = curr_temp + (dt / tau_thermal) * (
-        instantaneous_temp - curr_temp
+        # 2. Instantaneous Enthalpy Balance from dynamic transient flow rates
+        if new_outlet_flow > 0:
+            dynamic_outlet_enthalpy = (
+                (new_inlet_flow * enthalpy_steam_inlet)
+                + (new_spray_flow * enthalpy_feedwater_inlet)
+            ) / new_outlet_flow
+            instantaneous_temp = (
+                IAPWS97(P=p_out_mpaa, h=dynamic_outlet_enthalpy).T - 273.15
+            )
+        else:
+            instantaneous_temp = curr_temp
+
+        # 3. Apply thermal lag to temperature reading
+        new_temp = curr_temp + (dt / tau_thermal) * (
+            instantaneous_temp - curr_temp
+        )
+
+        # Append to rolling history buffers
+        st.session_state.time_history.append(st.session_state.sim_time)
+        st.session_state.temp_history.append(new_temp)
+        st.session_state.inlet_flow_history.append(new_inlet_flow)
+        st.session_state.spray_flow_history.append(new_spray_flow)
+        st.session_state.outlet_flow_history.append(new_outlet_flow)
+
+        if len(st.session_state.time_history) > 300:
+            st.session_state.time_history.pop(0)
+            st.session_state.temp_history.pop(0)
+            st.session_state.inlet_flow_history.pop(0)
+            st.session_state.spray_flow_history.pop(0)
+            st.session_state.outlet_flow_history.pop(0)
+
+    # Render Animated Letdown Station P&ID SVG via st.components.v1.html
+    current_outlet_temp = st.session_state.temp_history[-1]
+    current_margin = current_outlet_temp - saturation_temp
+
+    svg_code = build_animated_process_svg(
+        p_in=High_Pressure_Inlet_Steam_Pressure,
+        t_in=High_Pressure_Inlet_Steam_Temperature_Degrees_Celsius,
+        m_in=st.session_state.inlet_flow_history[-1],
+        p_fw=Spray_Feedwater_Inlet_Pressure,
+        t_fw=Spray_Feedwater_Inlet_Temperature_Degrees_Celsius,
+        m_fw=st.session_state.spray_flow_history[-1],
+        target_m_fw=target_fw_flow,
+        p_out=Desuperheater_Outlet_Steam_Pressure,
+        t_out=current_outlet_temp,
+        target_t_out=target_temp_outlet,
+        m_out=st.session_state.outlet_flow_history[-1],
+        target_m_out=target_outlet_flow,
+        t_sat=saturation_temp,
+        t_margin=current_margin,
+        p_unit=Pressure_Unit_Type.split("(")[-1].replace(")", ""),
     )
 
-    # Append to rolling history buffers
-    st.session_state.time_history.append(st.session_state.sim_time)
-    st.session_state.temp_history.append(new_temp)
-    st.session_state.inlet_flow_history.append(new_inlet_flow)
-    st.session_state.spray_flow_history.append(new_spray_flow)
-    st.session_state.outlet_flow_history.append(new_outlet_flow)
+    components.html(svg_code, height=360)
 
-    if len(st.session_state.time_history) > 300:
-        st.session_state.time_history.pop(0)
-        st.session_state.temp_history.pop(0)
-        st.session_state.inlet_flow_history.pop(0)
-        st.session_state.spray_flow_history.pop(0)
-        st.session_state.outlet_flow_history.pop(0)
+    # Lead-Lag Ratio Indicator Banner
+    lead_lag_ratio = tau_spray / tau_steam
+    if lead_lag_ratio > 1.2:
+        st.warning(
+            f"⚠️ Water Lags Steam (τ_spray/τ_steam = {lead_lag_ratio:.2f}):"
+            " Expect transient temperature OVERSHOOT (upshoot) during flow"
+            " increases!"
+        )
+    elif lead_lag_ratio < 0.8:
+        st.info(
+            f"ℹ️ Water Leads Steam (τ_spray/τ_steam = {lead_lag_ratio:.2f}):"
+            " Expect transient temperature UNDERSHOOT (dip) during flow increases."
+        )
 
-# Render Animated Letdown Station P&ID SVG via st.components.v1.html for reliable iframe execution
-current_outlet_temp = st.session_state.temp_history[-1]
-current_margin = current_outlet_temp - saturation_temp
-
-svg_code = build_animated_process_svg(
-    p_in=High_Pressure_Inlet_Steam_Pressure,
-    t_in=High_Pressure_Inlet_Steam_Temperature_Degrees_Celsius,
-    m_in=st.session_state.inlet_flow_history[-1],
-    p_fw=Spray_Feedwater_Inlet_Pressure,
-    t_fw=Spray_Feedwater_Inlet_Temperature_Degrees_Celsius,
-    m_fw=st.session_state.spray_flow_history[-1],
-    target_m_fw=target_fw_flow,
-    p_out=Desuperheater_Outlet_Steam_Pressure,
-    t_out=current_outlet_temp,
-    target_t_out=target_temp_outlet,
-    m_out=st.session_state.outlet_flow_history[-1],
-    target_m_out=target_outlet_flow,
-    t_sat=saturation_temp,
-    t_margin=current_margin,
-    p_unit=Pressure_Unit_Type.split("(")[-1].replace(")", ""),
-)
-
-# Using components.html forces clean rendering of embedded SVG animations
-components.html(svg_code, height=360)
-
-# Lead-Lag Ratio Indicator Banner
-lead_lag_ratio = tau_spray / tau_steam
-if lead_lag_ratio > 1.2:
-    st.warning(
-        f"⚠️ Water Lags Steam (τ_spray/τ_steam = {lead_lag_ratio:.2f}):"
-        " Expect transient temperature OVERSHOOT (upshoot) during flow"
-        " increases!"
-    )
-elif lead_lag_ratio < 0.8:
-    st.info(
-        f"ℹ️ Water Leads Steam (τ_spray/τ_steam = {lead_lag_ratio:.2f}):"
-        " Expect transient temperature UNDERSHOOT (dip) during flow increases."
+    # --- RENDER DYNAMIC PLOTS ---
+    fig = make_subplots(
+        rows=3,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.08,
+        subplot_titles=(
+            "Live Temperature Transient Response (°C)",
+            "Live Outlet Steam Mass Flow Rate (t/h)",
+            "Live Spray Feedwater Mass Flow Rate (t/h)",
+        ),
     )
 
-# --- RENDER DYNAMIC PLOTS ---
-fig = make_subplots(
-    rows=3,
-    cols=1,
-    shared_xaxes=True,
-    vertical_spacing=0.08,
-    subplot_titles=(
-        "Live Temperature Transient Response (°C)",
-        "Live Outlet Steam Mass Flow Rate (t/h)",
-        "Live Spray Feedwater Mass Flow Rate (t/h)",
-    ),
-)
+    fig.add_trace(
+        go.Scatter(
+            x=st.session_state.time_history,
+            y=st.session_state.temp_history,
+            mode="lines",
+            name="Outlet Temp (°C)",
+            line=dict(color="#008080", width=2.5),
+        ),
+        row=1,
+        col=1,
+    )
 
-fig.add_trace(
-    go.Scatter(
-        x=st.session_state.time_history,
-        y=st.session_state.temp_history,
-        mode="lines",
-        name="Outlet Temp (°C)",
-        line=dict(color="#008080", width=2.5),
-    ),
-    row=1,
-    col=1,
-)
+    fig.add_trace(
+        go.Scatter(
+            x=st.session_state.time_history,
+            y=[saturation_temp] * len(st.session_state.time_history),
+            mode="lines",
+            name="Saturation Limit (°C)",
+            line=dict(color="#E63946", dash="dash"),
+        ),
+        row=1,
+        col=1,
+    )
 
-fig.add_trace(
-    go.Scatter(
-        x=st.session_state.time_history,
-        y=[saturation_temp] * len(st.session_state.time_history),
-        mode="lines",
-        name="Saturation Limit (°C)",
-        line=dict(color="#E63946", dash="dash"),
-    ),
-    row=1,
-    col=1,
-)
+    fig.add_trace(
+        go.Scatter(
+            x=st.session_state.time_history,
+            y=st.session_state.outlet_flow_history,
+            mode="lines",
+            name="Outlet Steam Flow (t/h)",
+            line=dict(color="#4169E1", width=2.5),
+        ),
+        row=2,
+        col=1,
+    )
 
-fig.add_trace(
-    go.Scatter(
-        x=st.session_state.time_history,
-        y=st.session_state.outlet_flow_history,
-        mode="lines",
-        name="Outlet Steam Flow (t/h)",
-        line=dict(color="#4169E1", width=2.5),
-    ),
-    row=2,
-    col=1,
-)
+    fig.add_trace(
+        go.Scatter(
+            x=st.session_state.time_history,
+            y=st.session_state.spray_flow_history,
+            mode="lines",
+            name="Spray Water Flow (t/h)",
+            line=dict(color="#E67E22", width=2.5),
+        ),
+        row=3,
+        col=1,
+    )
 
-fig.add_trace(
-    go.Scatter(
-        x=st.session_state.time_history,
-        y=st.session_state.spray_flow_history,
-        mode="lines",
-        name="Spray Water Flow (t/h)",
-        line=dict(color="#E67E22", width=2.5),
-    ),
-    row=3,
-    col=1,
-)
+    fig.update_layout(
+        height=680,
+        template="plotly_white",
+        font=dict(family="Segoe UI, Aptos, Arial", size=12),
+        margin=dict(l=20, r=20, t=40, b=20),
+    )
 
-fig.update_layout(
-    height=680,
-    template="plotly_white",
-    font=dict(family="Segoe UI, Aptos, Arial", size=12),
-    margin=dict(l=20, r=20, t=40, b=20),
-)
+    fig.update_xaxes(title_text="Simulation Time (s)", row=3, col=1)
+    st.plotly_chart(fig, use_container_width=True)
 
-fig.update_xaxes(title_text="Simulation Time (s)", row=3, col=1)
-st.plotly_chart(fig, use_container_width=True)
 
-# --- STREAMLIT RE-RUN LOOP ---
-if is_running:
-    time.sleep(dt)
-    st.rerun()
+# Execute the fragment
+render_simulation_fragment()
