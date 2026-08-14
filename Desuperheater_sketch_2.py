@@ -83,7 +83,7 @@ st.sidebar.metric(
 
 st.sidebar.header("Spectrum Simulation Controls")
 
-# Added Component Amplitude Controls
+# Explicit Amplitude Controls for Individual Peak Components
 col_amp1, col_amp2 = st.sidebar.columns(2)
 with col_amp1:
     amp_1x_gear = st.number_input(
@@ -94,6 +94,15 @@ with col_amp1:
         step=0.05,
         help="Set to 0 to disable 1x Gear component.",
     )
+    amp_gmf_1 = st.number_input(
+        "GMF 1x Base Amp (g)",
+        min_value=0.00,
+        max_value=5.00,
+        value=1.00,
+        step=0.05,
+        help="Sets fundamental GMF amplitude (harmonics scale relative to this).",
+    )
+
 with col_amp2:
     amp_1x_pinion = st.number_input(
         "1x Pinion Amp (g)",
@@ -102,6 +111,14 @@ with col_amp2:
         value=0.50,
         step=0.05,
         help="Set to 0 to disable 1x Pinion component.",
+    )
+    amp_fn = st.number_input(
+        "Gear Fn Amp (g)",
+        min_value=0.00,
+        max_value=5.00,
+        value=0.50 if fn_hz > 0 else 0.00,
+        step=0.05,
+        help="Amplitude of the Gear Natural Frequency peak.",
     )
 
 spectrum_unit = st.sidebar.radio(
@@ -319,7 +336,7 @@ x_gmf, amp_gmf, lbl_gmf = [], [], []
 x_sb, amp_sb = [], []
 tick_vals = []
 
-# Dynamic 1x Speeds handling with user-defined amplitudes
+# 1x Speeds
 gear_scaled = f_gear_hz * scale_factor
 if 0 < gear_scaled <= fmax and amp_1x_gear > 0:
     tick_vals.append(gear_scaled)
@@ -336,43 +353,43 @@ if 0 < pinion_scaled <= fmax and amp_1x_pinion > 0:
 
 max_harmonic_order = int(np.ceil(fmax_hz / gmf_hz)) + 1 if gmf_hz > 0 else 3
 
-for h in range(1, max_harmonic_order + 1):
-    center_hz = h * gmf_hz
-    center_scaled = center_hz * scale_factor
-    base_amp = 1.0 / (h**0.7)
+# GMF Harmonics and Sidebands (Scaled by GMF 1x Base Amp)
+if amp_gmf_1 > 0:
+    for h in range(1, max_harmonic_order + 1):
+        center_hz = h * gmf_hz
+        center_scaled = center_hz * scale_factor
+        base_amp = amp_gmf_1 / (h**0.7)
 
-    if 0 < center_scaled <= fmax:
-        tick_vals.append(center_scaled)
-        x_gmf.append(center_scaled)
-        amp_gmf.append(base_amp)
-        lbl_gmf.append(f"GMF {h}")
+        if 0 < center_scaled <= fmax:
+            tick_vals.append(center_scaled)
+            x_gmf.append(center_scaled)
+            amp_gmf.append(base_amp)
+            lbl_gmf.append(f"GMF {h}")
 
-    for source_name, freq in mod_freqs:
-        for k in sb_orders:
-            sb_amp = base_amp * (0.3 / (k**0.8))
-            lower_scaled = (center_hz - (k * freq)) * scale_factor
-            upper_scaled = (center_hz + (k * freq)) * scale_factor
+        for source_name, freq in mod_freqs:
+            for k in sb_orders:
+                sb_amp = base_amp * (0.3 / (k**0.8))
+                lower_scaled = (center_hz - (k * freq)) * scale_factor
+                upper_scaled = (center_hz + (k * freq)) * scale_factor
 
-            if 0 < lower_scaled <= fmax:
-                x_sb.append(lower_scaled)
-                amp_sb.append(sb_amp)
+                if 0 < lower_scaled <= fmax:
+                    x_sb.append(lower_scaled)
+                    amp_sb.append(sb_amp)
 
-            if 0 < upper_scaled <= fmax:
-                x_sb.append(upper_scaled)
-                amp_sb.append(sb_amp)
-
-fn_amp = amp_1x[0] if amp_1x else 0.5
+                if 0 < upper_scaled <= fmax:
+                    x_sb.append(upper_scaled)
+                    amp_sb.append(sb_amp)
 
 fig_spec = go.Figure()
 
 all_x = x_1x + x_gmf + x_sb
 all_amps = amp_1x + amp_gmf + amp_sb
 
-if fn_hz > 0:
+if fn_hz > 0 and amp_fn > 0:
     fn_scaled = fn_hz * scale_factor
     if 0 < fn_scaled <= fmax:
         all_x.append(fn_scaled)
-        all_amps.append(fn_amp)
+        all_amps.append(amp_fn)
 
 for x_p, a_p in zip(all_x, all_amps):
     fig_spec.add_trace(
@@ -432,7 +449,7 @@ if x_gmf:
             font=dict(color="crimson", size=11, family="Segoe UI"),
         )
 
-if fn_hz > 0:
+if fn_hz > 0 and amp_fn > 0:
     fn_scaled = fn_hz * scale_factor
     if 0 < fn_scaled <= fmax:
         fn_low = fn_scaled * 0.95
@@ -455,7 +472,7 @@ if fn_hz > 0:
         fig_spec.add_trace(
             go.Scatter(
                 x=[fn_scaled],
-                y=[fn_amp],
+                y=[amp_fn],
                 mode="markers",
                 marker=dict(
                     color="gold",
@@ -468,7 +485,7 @@ if fn_hz > 0:
         )
         fig_spec.add_annotation(
             x=fn_scaled,
-            y=fn_amp + 0.05,
+            y=amp_fn + 0.05,
             text=f"f_n ({fn_scaled:.1f})",
             showarrow=False,
             textangle=-90,
@@ -508,41 +525,42 @@ t = np.linspace(0, t_max, int(fs * t_max), endpoint=False)
 
 signal = np.zeros_like(t)
 
-# 1. Add Running Speeds ONLY if amplitude > 0 and within active Fmax display range
+# 1. Add Running Speeds
 if amp_1x_gear > 0 and (0 < f_gear_hz * scale_factor <= fmax):
     signal += amp_1x_gear * np.sin(2 * np.pi * f_gear_hz * t)
 
 if amp_1x_pinion > 0 and (0 < f_pinion_hz * scale_factor <= fmax):
     signal += amp_1x_pinion * np.sin(2 * np.pi * f_pinion_hz * t + np.pi / 4)
 
-# 2. Add GMF Harmonics & Modulation Envelopes ONLY if within active Fmax display range
-for h in range(1, max_harmonic_order + 1):
-    center_hz = h * gmf_hz
-    if not (0 < center_hz * scale_factor <= fmax):
-        continue
+# 2. Add GMF Harmonics & Modulation Envelopes
+if amp_gmf_1 > 0:
+    for h in range(1, max_harmonic_order + 1):
+        center_hz = h * gmf_hz
+        if not (0 < center_hz * scale_factor <= fmax):
+            continue
 
-    base_amp = 1.0 / (h**0.7)
+        base_amp = amp_gmf_1 / (h**0.7)
 
-    mod_envelope = np.ones_like(t)
-    for source_name, freq in mod_freqs:
-        for k in sb_orders:
-            lower_hz = center_hz - (k * freq)
-            upper_hz = center_hz + (k * freq)
+        mod_envelope = np.ones_like(t)
+        for source_name, freq in mod_freqs:
+            for k in sb_orders:
+                lower_hz = center_hz - (k * freq)
+                upper_hz = center_hz + (k * freq)
 
-            sb_in_bounds = (0 < lower_hz * scale_factor <= fmax) or (
-                0 < upper_hz * scale_factor <= fmax
-            )
-            if sb_in_bounds:
-                depth = (0.3 / (k**0.8)) * 2.0
-                mod_envelope += depth * np.cos(2 * np.pi * k * freq * t)
+                sb_in_bounds = (0 < lower_hz * scale_factor <= fmax) or (
+                    0 < upper_hz * scale_factor <= fmax
+                )
+                if sb_in_bounds:
+                    depth = (0.3 / (k**0.8)) * 2.0
+                    mod_envelope += depth * np.cos(2 * np.pi * k * freq * t)
 
-    signal += base_amp * mod_envelope * np.sin(2 * np.pi * center_hz * t)
+        signal += base_amp * mod_envelope * np.sin(2 * np.pi * center_hz * t)
 
-# 3. Add Natural Frequency component ONLY if active in display range
-if fn_hz > 0 and (0 < fn_hz * scale_factor <= fmax):
-    signal += fn_amp * np.sin(2 * np.pi * fn_hz * t)
+# 3. Add Natural Frequency component
+if fn_hz > 0 and amp_fn > 0 and (0 < fn_hz * scale_factor <= fmax):
+    signal += amp_fn * np.sin(2 * np.pi * fn_hz * t)
 
-# 4. Add random noise floor ONLY if explicitly enabled (> 0.00)
+# 4. Add random noise floor
 if twf_noise_level > 0.0:
     np.random.seed(42)
     signal += np.random.normal(0, twf_noise_level, size=len(t))
