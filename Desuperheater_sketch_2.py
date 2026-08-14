@@ -407,6 +407,24 @@ if x_gmf:
 if fn_hz > 0:
     fn_scaled = fn_hz * scale_factor
     if 0 < fn_scaled <= fmax:
+        # Add +-5% vertical shaded band for Natural Frequency
+        fn_low = fn_scaled * 0.95
+        fn_high = fn_scaled * 1.05
+
+        fig_spec.add_vrect(
+            x0=fn_low,
+            x1=fn_high,
+            fillcolor="purple",
+            opacity=0.15,
+            layer="below",
+            line_width=1,
+            line_dash="dot",
+            line_color="purple",
+            annotation_text="±5% fn Band",
+            annotation_position="top left",
+            annotation_font=dict(size=10, color="purple"),
+        )
+
         fig_spec.add_trace(
             go.Scatter(
                 x=[fn_scaled],
