@@ -172,7 +172,7 @@ twf_noise_level = st.sidebar.slider(
     "Noise Level (g RMS)",
     min_value=0.00,
     max_value=0.10,
-    value=0.02,
+    value=0.00,  # Default set to 0.00 for pure deterministic spectral conversion
     step=0.005,
 )
 
@@ -407,7 +407,6 @@ if x_gmf:
 if fn_hz > 0:
     fn_scaled = fn_hz * scale_factor
     if 0 < fn_scaled <= fmax:
-        # Add +-5% vertical shaded band for Natural Frequency
         fn_low = fn_scaled * 0.95
         fn_high = fn_scaled * 1.05
 
@@ -474,24 +473,22 @@ st.plotly_chart(fig_spec, use_container_width=True)
 # Time Waveform Simulation Section
 st.subheader("Simulated Time Waveform")
 
-# Determine total simulation time based on driver revolutions
 t_max = twf_revolutions / fr_driver_hz if fr_driver_hz > 0 else 0.1
 fs = max(10000.0, 10.0 * fmax_hz)
 t = np.linspace(0, t_max, int(fs * t_max), endpoint=False)
 
 signal = np.zeros_like(t)
 
-# 1. Add Running Speeds (1x Gear & 1x Pinion)
-if f_gear_hz * scale_factor <= fmax:
+# 1. Add Running Speeds (1x Gear & 1x Pinion) ONLY if within active Fmax display range
+if 0 < f_gear_hz * scale_factor <= fmax:
     signal += 0.5 * np.sin(2 * np.pi * f_gear_hz * t)
-if f_pinion_hz * scale_factor <= fmax:
+if 0 < f_pinion_hz * scale_factor <= fmax:
     signal += 0.5 * np.sin(2 * np.pi * f_pinion_hz * t + np.pi / 4)
 
-# 2. Add GMF Harmonics modulated by shaft sidebands (AM Envelope)
-# Dynamic synchronization with max_harmonic_order and Fmax cutoffs
+# 2. Add GMF Harmonics & Modulation Envelopes ONLY if within active Fmax display range
 for h in range(1, max_harmonic_order + 1):
     center_hz = h * gmf_hz
-    if center_hz > fmax_hz:
+    if not (0 < center_hz * scale_factor <= fmax):
         continue
 
     base_amp = 1.0 / (h**0.7)
@@ -499,25 +496,31 @@ for h in range(1, max_harmonic_order + 1):
     mod_envelope = np.ones_like(t)
     for source_name, freq in mod_freqs:
         for k in sb_orders:
-            # Scaled by 2.0 so FFT sideband peak matches sb_amp drawn in plot
-            depth = (0.3 / (k**0.8)) * 2.0
-            mod_envelope += depth * np.cos(2 * np.pi * k * freq * t)
+            lower_hz = center_hz - (k * freq)
+            upper_hz = center_hz + (k * freq)
+            
+            # Check if sideband exists inside active display bounds
+            sb_in_bounds = (0 < lower_hz * scale_factor <= fmax) or (0 < upper_hz * scale_factor <= fmax)
+            if sb_in_bounds:
+                depth = (0.3 / (k**0.8)) * 2.0
+                mod_envelope += depth * np.cos(2 * np.pi * k * freq * t)
 
     signal += base_amp * mod_envelope * np.sin(2 * np.pi * center_hz * t)
 
-# 3. Add Natural Frequency component if enabled and within Fmax
-if fn_hz > 0 and fn_hz <= fmax_hz:
+# 3. Add Natural Frequency component ONLY if active in display range
+if fn_hz > 0 and (0 < fn_hz * scale_factor <= fmax):
     signal += fn_amp * np.sin(2 * np.pi * fn_hz * t)
 
-# 4. Add random noise floor
-np.random.seed(42)
-signal += np.random.normal(0, twf_noise_level, size=len(t))
+# 4. Add random noise floor ONLY if explicitly enabled (> 0.00)
+if twf_noise_level > 0.0:
+    np.random.seed(42)
+    signal += np.random.normal(0, twf_noise_level, size=len(t))
 
 fig_twf = go.Figure()
 
 fig_twf.add_trace(
     go.Scatter(
-        x=t * 1000.0,  # Convert seconds to ms
+        x=t * 1000.0,
         y=signal,
         mode="lines",
         line=dict(color="#008080", width=1),
