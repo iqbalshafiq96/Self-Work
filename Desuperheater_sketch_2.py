@@ -1,717 +1,680 @@
+import time
+from iapws import IAPWS97
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
+import streamlit.components.v1 as components
 
-st.set_page_config(page_title="Gear Mesh Analysis", layout="wide")
-st.title("Gear Mesh & Frequency Spectrum Analysis")
-
-# --- 1. PRESET DEFINITIONS & STATE MANAGEMENT ---
-# User Custom is populated with Scenario 3 settings and set as the default
-PRESETS = {
-    "User Custom": {
-        "n_gear": 57,
-        "n_pinion": 19,
-        "fn_input": 0.0,
-        "fn_unit": "Hz",
-        "driver_speed_input": 1500.0,
-        "unit": "RPM",
-        "orientation": "Speed Increaser (Driver = Gear)",
-        "amp_1x_gear": 0.20,
-        "amp_1x_pinion": 0.10,
-        "amp_gmf_1": 1.50,
-        "amp_fn": 0.00,
-        "sideband_source": "Gear Side",
-        "selected_orders": [1, 2],
-        "twf_revolutions": 6.0,
-        "twf_noise_level": 0.000,
-        "optimize_option": "1x GMF (+ Sidebands)",
-    },
-    "Scenario 1: Unbalance / Misalignment": {
-        "n_gear": 57,
-        "n_pinion": 19,
-        "fn_input": 0.0,
-        "fn_unit": "Hz",
-        "driver_speed_input": 1800.0,
-        "unit": "RPM",
-        "orientation": "Speed Increaser (Driver = Gear)",
-        "amp_1x_gear": 0.80,
-        "amp_1x_pinion": 0.20,
-        "amp_gmf_1": 0.30,
-        "amp_fn": 0.00,
-        "sideband_source": "Gear Side",
-        "selected_orders": [1],
-        "twf_revolutions": 5.0,
-        "twf_noise_level": 0.010,
-        "optimize_option": "Manual Slider",
-    },
-    "Scenario 2: Resonant Gear Excitation": {
-        "n_gear": 57,
-        "n_pinion": 19,
-        "fn_input": 475.0,
-        "fn_unit": "Hz",
-        "driver_speed_input": 1500.0,
-        "unit": "RPM",
-        "orientation": "Speed Reducer (Driver = Pinion)",
-        "amp_1x_gear": 0.10,
-        "amp_1x_pinion": 0.10,
-        "amp_gmf_1": 1.50,
-        "amp_fn": 2.00,
-        "sideband_source": "Gear Side",
-        "selected_orders": [1, 2],
-        "twf_revolutions": 5.0,
-        "twf_noise_level": 0.020,
-        "optimize_option": "Manual Slider",
-    },
-    "Scenario 3: Broken Tooth (Speed Increaser)": {
-        "n_gear": 57,
-        "n_pinion": 19,
-        "fn_input": 0.0,
-        "fn_unit": "Hz",
-        "driver_speed_input": 1500.0,
-        "unit": "RPM",
-        "orientation": "Speed Increaser (Driver = Gear)",
-        "amp_1x_gear": 0.20,
-        "amp_1x_pinion": 0.10,
-        "amp_gmf_1": 1.50,
-        "amp_fn": 0.00,
-        "sideband_source": "Gear Side",
-        "selected_orders": [1, 2],
-        "twf_revolutions": 6.0,
-        "twf_noise_level": 0.000,
-        "optimize_option": "1x GMF (+ Sidebands)",
-    },
-}
-
-# Set default initial values to User Custom
-defaults = PRESETS["User Custom"]
-
-for key, val in defaults.items():
-    if key not in st.session_state:
-        st.session_state[key] = val
-
-if "preset_select" not in st.session_state:
-    st.session_state["preset_select"] = "User Custom"
-
-
-def on_preset_change():
-    """Callback when user changes preset dropdown"""
-    selected = st.session_state["preset_select"]
-    if selected in PRESETS and PRESETS[selected] is not None:
-        p = PRESETS[selected]
-        for k, v in p.items():
-            st.session_state[k] = v
-
-
-def on_input_change():
-    """Callback when any individual input changes: reverts dropdown to 'User Custom'"""
-    st.session_state["preset_select"] = "User Custom"
-
-
-# --- 2. SIDEBAR CONTROLS ---
-
-st.sidebar.header("Gear Geometry")
-
-n_gear = st.sidebar.number_input(
-    "Gear Teeth Count (N_gear)",
-    min_value=1,
-    value=st.session_state["n_gear"],
-    step=1,
-    key="n_gear",
-    on_change=on_input_change,
-)
-n_pinion = st.sidebar.number_input(
-    "Pinion Teeth Count (N_pinion)",
-    min_value=1,
-    value=st.session_state["n_pinion"],
-    step=1,
-    key="n_pinion",
-    on_change=on_input_change,
+st.set_page_config(
+    page_title="Real-Time Desuperheater Lead-Lag Dynamics",
+    page_icon="💨",
+    layout="wide",
 )
 
-col_fn1, col_fn2 = st.sidebar.columns([2, 1])
-with col_fn1:
-    fn_input = st.number_input(
-        "Gear Natural Freq (f_n)",
-        min_value=0.0,
-        value=float(st.session_state["fn_input"]),
-        step=50.0,
-        key="fn_input",
-        on_change=on_input_change,
-        help="Set to 0 if not specified.",
-    )
-with col_fn2:
-    fn_unit = st.selectbox(
-        "Unit",
-        ["Hz", "RPM"],
-        key="fn_unit",
-        on_change=on_input_change,
-    )
-
-fn_hz = fn_input if fn_unit == "Hz" else fn_input / 60.0
-
-st.sidebar.header("Operating Parameters")
-col_spd1, col_spd2 = st.sidebar.columns([2, 1])
-
-with col_spd1:
-    driver_speed_input = st.number_input(
-        "Driver Speed",
-        min_value=1.0,
-        value=float(st.session_state["driver_speed_input"]),
-        step=10.0,
-        key="driver_speed_input",
-        on_change=on_input_change,
-    )
-
-with col_spd2:
-    unit = st.selectbox(
-        "Unit",
-        ["RPM", "Hz"],
-        key="unit",
-        on_change=on_input_change,
-    )
-
-orientation_options = [
-    "Speed Increaser (Driver = Gear)",
-    "Speed Reducer (Driver = Pinion)",
-]
-orientation = st.sidebar.selectbox(
-    "Gearbox Orientation",
-    orientation_options,
-    key="orientation",
-    on_change=on_input_change,
+st.title("💨 Real-Time Desuperheater Dynamic Simulation (Lead-Lag Enthalpy Model)")
+st.caption(
+    "Developed by Iqbal SHERPA 20260807. Contact me for further information"
+    " @iqbalshafiq96@gmail.com"
 )
 
-# Core Speed Computations
-fr_driver_hz = (
-    driver_speed_input if unit == "Hz" else driver_speed_input / 60.0
-)
-gear_ratio = n_gear / n_pinion
+# ----------------------------------------------------------------------
+# COLOR PALETTE CONFIGURATION & COLOR INTERPOLATION HELPER
+# ----------------------------------------------------------------------
+HP_COLOR = "#800020"  # Professional Maroon for HP Steam
+HP_GLOW = "#A52A2A"   # Soft Warm Maroon Glow for HP Steam
 
-if "Reducer" in orientation:
-    f_pinion_hz = fr_driver_hz
-    f_gear_hz = fr_driver_hz / gear_ratio
-    gmf_hz = f_pinion_hz * n_pinion
-else:
-    f_gear_hz = fr_driver_hz
-    f_pinion_hz = fr_driver_hz * gear_ratio
-    gmf_hz = f_gear_hz * n_gear
+FW_COLOR = "#0EA5E9"  # Vivid sky blue for feedwater spray
+FW_GLOW = "#38BDF8"   # Cyan glow for feedwater
 
-fr_driven_hz = f_gear_hz if "Reducer" in orientation else f_pinion_hz
+EQUIP_COLOR = "#D97706"  # Amber for control valve & desuperheater outline
+EQUIP_GLOW = "#F59E0B"  # Bright amber glow for active equipment
 
-st.sidebar.metric(
-    label="Calculated Driven Speed",
-    value=f"{fr_driven_hz * 60.0:.1f} RPM",
-    delta=f"{fr_driven_hz:.2f} Hz",
-    delta_color="off",
-)
+# Base LP line colors
+LP_COLOR = "#64748B"  # Low-Pressure Steam Line Color
+LP_GLOW = "#94A3B8"   # Low-Pressure Steam Glow
 
-# Divider line separating Operating Parameters and Spectrum Simulation
-st.sidebar.markdown("---")
 
-# Spectrum Simulation Controls Header & Preset
-st.sidebar.header("Spectrum Simulation Controls")
+def hex_to_rgb(hex_str):
+    hex_str = hex_str.lstrip("#")
+    return tuple(int(hex_str[i : i + 2], 16) for i in (0, 2, 4))
 
-st.sidebar.selectbox(
-    "Simulation Preset",
-    options=list(PRESETS.keys()),
-    key="preset_select",
-    on_change=on_preset_change,
-    help="Selecting a scenario loads pre-configured parameters. Modifying any parameter switches mode to 'User Custom'.",
-)
 
-col_amp1, col_amp2 = st.sidebar.columns(2)
-with col_amp1:
-    amp_1x_gear = st.number_input(
-        "1x Gear Amp (g)",
-        min_value=0.00,
-        max_value=5.00,
-        value=float(st.session_state["amp_1x_gear"]),
-        step=0.05,
-        key="amp_1x_gear",
-        on_change=on_input_change,
+def rgb_to_hex(rgb):
+    return f"#{int(rgb[0]):02x}{int(rgb[1]):02x}{int(rgb[2]):02x}"
+
+
+def interpolate_color(color_a, color_b, factor):
+    """Interpolate linearly between two hex colors by factor [0.0, 1.0]"""
+    factor = max(0.0, min(1.0, factor))
+    rgb_a = hex_to_rgb(color_a)
+    rgb_b = hex_to_rgb(color_b)
+    res_rgb = tuple(
+        rgb_a[i] + (rgb_b[i] - rgb_a[i]) * factor for i in range(3)
     )
-    amp_gmf_1 = st.number_input(
-        "GMF 1x Base Amp (g)",
-        min_value=0.00,
-        max_value=5.00,
-        value=float(st.session_state["amp_gmf_1"]),
-        step=0.05,
-        key="amp_gmf_1",
-        on_change=on_input_change,
-    )
+    return rgb_to_hex(res_rgb)
 
-with col_amp2:
-    amp_1x_pinion = st.number_input(
-        "1x Pinion Amp (g)",
-        min_value=0.00,
-        max_value=5.00,
-        value=float(st.session_state["amp_1x_pinion"]),
-        step=0.05,
-        key="amp_1x_pinion",
-        on_change=on_input_change,
-    )
-    amp_fn = st.number_input(
-        "Gear Fn Amp (g)",
-        min_value=0.00,
-        max_value=5.00,
-        value=float(st.session_state["amp_fn"]),
-        step=0.05,
-        key="amp_fn",
-        on_change=on_input_change,
-    )
 
-spectrum_unit = st.sidebar.radio(
-    "Spectrum X-Axis Unit", ["Hz", "RPM", "Orders (Driver)"]
-)
-
-if spectrum_unit == "Hz":
-    scale_factor = 1.0
-    unit_label = "Hz"
-elif spectrum_unit == "RPM":
-    scale_factor = 60.0
-    unit_label = "RPM"
-else:
-    scale_factor = 1.0 / fr_driver_hz if fr_driver_hz > 0 else 1.0
-    unit_label = "Orders"
-
-optimize_option = st.sidebar.selectbox(
-    "Optimize Fmax Target",
-    [
-        "Manual Slider",
-        "1x GMF (+ Sidebands)",
-        "2x GMF (+ Sidebands)",
-        "3x GMF (+ Sidebands)",
-    ],
-    key="optimize_option",
-    on_change=on_input_change,
-)
-
-gmf_headroom_multiplier = {
-    "1x GMF (+ Sidebands)": 1.15,
-    "2x GMF (+ Sidebands)": 2.15,
-    "3x GMF (+ Sidebands)": 3.15,
-}
-
-if optimize_option != "Manual Slider":
-    calc_fmax_hz = gmf_hz * gmf_headroom_multiplier[optimize_option]
-    fmax = float(calc_fmax_hz * scale_factor)
-    st.sidebar.info(
-        f"**Fmax Auto-Optimized:** `{fmax:.1f} {unit_label}`\n\n"
-        f"*(Targeting `{optimize_option[:2]}` at `{gmf_hz * int(optimize_option[0]):.1f} Hz`)*"
-    )
-else:
-    if spectrum_unit == "Hz":
-        default_fmax = (
-            float(np.ceil(3.5 * gmf_hz / 100.0) * 100.0)
-            if gmf_hz > 0
-            else 2000.0
-        )
-        fmax = st.sidebar.slider(
-            "Spectrum Fmax (Hz)",
-            min_value=100.0,
-            max_value=10000.0,
-            value=max(500.0, default_fmax),
-            step=50.0,
-        )
-    elif spectrum_unit == "RPM":
-        default_fmax = (
-            float(np.ceil(3.5 * gmf_hz * 60 / 1000.0) * 1000.0)
-            if gmf_hz > 0
-            else 120000.0
-        )
-        fmax = st.sidebar.slider(
-            "Spectrum Fmax (RPM)",
-            min_value=1000.0,
-            max_value=600000.0,
-            value=max(10000.0, default_fmax),
-            step=1000.0,
-        )
+def calculate_lp_colors(superheat_margin):
+    """Dynamically calculates the LP Steam Pipe & Particle Color spectrum:
+    - Margin > 8.0°C to 20.0°C: Transitions from Silver (#64748B) to HP Maroon (#800020).
+    - Margin < 2.0°C to 0.0°C: Transitions from Silver (#64748B) to Feedwater Blue (#0EA5E9).
+    - Margin between 2.0°C and 8.0°C: Remains neutral Silver (#64748B).
+    """
+    if superheat_margin > 8.0:
+        factor = (superheat_margin - 8.0) / (20.0 - 8.0)
+        lp_color = interpolate_color(LP_COLOR, HP_COLOR, factor)
+        lp_glow = interpolate_color(LP_GLOW, HP_GLOW, factor)
+    elif superheat_margin < 2.0:
+        factor = (2.0 - superheat_margin) / (2.0 - 0.0)
+        lp_color = interpolate_color(LP_COLOR, FW_COLOR, factor)
+        lp_glow = interpolate_color(LP_GLOW, FW_GLOW, factor)
     else:
-        default_fmax = (
-            float(np.ceil(3.5 * n_pinion)) if n_pinion > 0 else 100.0
-        )
-        fmax = st.sidebar.slider(
-            "Spectrum Fmax (Orders)",
-            min_value=5.0,
-            max_value=200.0,
-            value=max(20.0, default_fmax),
-            step=1.0,
-        )
+        lp_color = LP_COLOR
+        lp_glow = LP_GLOW
 
-# Time Waveform Controls
-st.sidebar.header("Time Waveform Controls")
-twf_revolutions = st.sidebar.slider(
-    "Plot Duration (Shaft Revolutions)",
-    min_value=1.0,
-    max_value=20.0,
-    value=float(st.session_state["twf_revolutions"]),
-    step=0.5,
-    key="twf_revolutions",
-    on_change=on_input_change,
+    return lp_color, lp_glow
+
+
+# ----------------------------------------------------------------------
+# ANIMATED PROCESS SVG ENGINE
+# ----------------------------------------------------------------------
+def build_animated_process_svg(
+    p_in,
+    t_in,
+    m_in,
+    p_fw,
+    t_fw,
+    m_fw,
+    target_m_fw,
+    p_out,
+    t_out,
+    target_t_out,
+    m_out,
+    target_m_out,
+    t_sat,
+    t_margin,
+    p_unit,
+):
+    # Dynamic particle speed calculation based on mass flow rates
+    dur_inlet = max(1.0, min(6.0, 150.0 / max(m_in, 1.0)))
+    dur_valve = max(0.8, min(4.0, 100.0 / max(m_in, 1.0)))
+    dur_fw = max(0.8, min(4.0, 10.0 / max(m_fw, 0.1)))
+    dur_outlet = max(1.0, min(6.0, 150.0 / max(m_out, 1.0)))
+
+    # Compute dynamic LP colors based on superheat margin spectrum
+    lp_color, lp_glow = calculate_lp_colors(t_margin)
+
+    svg = f"""
+    <svg
+        width="100%"
+        height="350"
+        viewBox="0 0 1500 350"
+        xmlns="http://www.w3.org/2000/svg"
+        preserveAspectRatio="xMidYMid meet"
+    >
+
+    <defs>
+        <!-- HP STEAM GLOW -->
+        <filter id="hpSteamGlow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="4" result="blur"/>
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+
+        <!-- LP STEAM GLOW -->
+        <filter id="lpSteamGlow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="4" result="blur"/>
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+
+        <!-- FEEDWATER GLOW -->
+        <filter id="waterGlow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="4" result="blur"/>
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+
+        <!-- EQUIPMENT GLOW -->
+        <filter id="equipmentGlow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="5" result="blur"/>
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+
+        <!-- PROCESS LINE GLOW -->
+        <filter id="lineGlow" x="-20%" y="-100%" width="140%" height="300%">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+
+        <!-- HP STEAM PARTICLE GRADIENT -->
+        <radialGradient id="hpSteamParticle">
+            <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
+            <stop offset="40%" stop-color="{HP_GLOW}" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="{HP_COLOR}" stop-opacity="0"/>
+        </radialGradient>
+
+        <!-- LP STEAM PARTICLE GRADIENT -->
+        <radialGradient id="lpSteamParticle">
+            <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
+            <stop offset="40%" stop-color="{lp_glow}" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="{lp_color}" stop-opacity="0"/>
+        </radialGradient>
+
+        <!-- WATER PARTICLE GRADIENT -->
+        <radialGradient id="waterParticle">
+            <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
+            <stop offset="40%" stop-color="{FW_GLOW}" stop-opacity="1"/>
+            <stop offset="100%" stop-color="{FW_COLOR}" stop-opacity="0"/>
+        </radialGradient>
+
+        <!-- WATER ARROW MARKER ONLY -->
+        <marker id="waterArrow" markerWidth="12" markerHeight="12" refX="10" refY="5" orient="auto">
+            <path d="M0,0 L10,5 L0,10 Z" fill="{FW_COLOR}"/>
+        </marker>
+    </defs>
+
+    <!-- PIPING SECTIONS -->
+    <path d="M60 210 H800" stroke="{HP_COLOR}" stroke-width="9" opacity="0.16" filter="url(#lineGlow)" />
+    <path d="M60 210 H800" stroke="{HP_COLOR}" stroke-width="5" stroke-linecap="round" />
+
+    <path d="M800 210 H1450" stroke="{lp_color}" stroke-width="9" opacity="0.25" filter="url(#lineGlow)" />
+    <path d="M800 210 H1450" stroke="{lp_color}" stroke-width="5" stroke-linecap="round" />
+
+    <!-- PARTICLES -->
+    <g filter="url(#hpSteamGlow)">
+        <circle r="7" fill="url(#hpSteamParticle)">
+            <animateMotion dur="{dur_inlet:.2f}s" repeatCount="indefinite" path="M60 210 H490"/>
+        </circle>
+        <circle r="5" fill="url(#hpSteamParticle)">
+            <animateMotion dur="{dur_inlet:.2f}s" begin="-1.2s" repeatCount="indefinite" path="M60 210 H490"/>
+        </circle>
+        <circle r="4" fill="url(#hpSteamParticle)">
+            <animateMotion dur="{dur_inlet:.2f}s" begin="-2.5s" repeatCount="indefinite" path="M60 210 H490"/>
+        </circle>
+
+        <circle r="7" fill="url(#hpSteamParticle)">
+            <animateMotion dur="{dur_valve:.2f}s" repeatCount="indefinite" path="M490 210 H800"/>
+        </circle>
+        <circle r="5" fill="url(#hpSteamParticle)">
+            <animateMotion dur="{dur_valve:.2f}s" begin="-1s" repeatCount="indefinite" path="M490 210 H800"/>
+        </circle>
+    </g>
+
+    <g filter="url(#lpSteamGlow)">
+        <circle r="7" fill="url(#lpSteamParticle)">
+            <animateMotion dur="{dur_outlet:.2f}s" repeatCount="indefinite" path="M800 210 H1450"/>
+        </circle>
+        <circle r="5" fill="url(#lpSteamParticle)">
+            <animateMotion dur="{dur_outlet:.2f}s" begin="-1.5s" repeatCount="indefinite" path="M800 210 H1450"/>
+        </circle>
+        <circle r="4" fill="url(#lpSteamParticle)">
+            <animateMotion dur="{dur_outlet:.2f}s" begin="-3s" repeatCount="indefinite" path="M800 210 H1450"/>
+        </circle>
+    </g>
+
+    <!-- PRESSURE CONTROL VALVE -->
+    <g transform="translate(490,210)">
+        <polygon points="-35,-30 0,0 -35,30" fill="#FFFFFF"/>
+        <polygon points="35,-30 0,0 35,30" fill="#FFFFFF"/>
+        <circle cx="0" cy="-70" r="17" fill="#FFFFFF"/>
+        
+        <g filter="url(#equipmentGlow)">
+            <polygon points="-35,-30 0,0 -35,30" fill="#FFFFFF" fill-opacity="0.9" stroke="{EQUIP_COLOR}" stroke-width="3"/>
+            <polygon points="35,-30 0,0 35,30" fill="#FFFFFF" fill-opacity="0.9" stroke="{EQUIP_COLOR}" stroke-width="3"/>
+            <line x1="0" y1="0" x2="0" y2="-53" stroke="{EQUIP_COLOR}" stroke-width="3"/>
+            <circle cx="0" cy="-70" r="17" fill="#FFFFFF" stroke="{EQUIP_COLOR}" stroke-width="3"/>
+            <circle cx="0" cy="-70" r="20" fill="none" stroke="{EQUIP_GLOW}" stroke-width="2" opacity="0">
+                <animate attributeName="r" values="18;28;18" dur="2.5s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0.7;0;0.7" dur="2.5s" repeatCount="indefinite"/>
+            </circle>
+        </g>
+    </g>
+
+    <!-- DESUPERHEATER BODY -->
+    <g transform="translate(800,210)">
+        <path d="M-105 -42 L-35 -16 L35 -16 L105 -42 L105 42 L35 16 L-35 16 L-105 42 Z" fill="#FFFFFF"/>
+        
+        <g filter="url(#equipmentGlow)">
+            <path d="M-105 -42 L-35 -16 L35 -16 L105 -42 L105 42 L35 16 L-35 16 L-105 42 Z" fill="#FFFFFF" fill-opacity="0.95" stroke="{EQUIP_COLOR}" stroke-width="3" stroke-linejoin="round"/>
+            <line x1="-35" y1="-16" x2="35" y2="-16" stroke="{EQUIP_COLOR}" stroke-width="2"/>
+            <line x1="-35" y1="16" x2="35" y2="16" stroke="{EQUIP_COLOR}" stroke-width="2"/>
+            <line x1="0" y1="-75" x2="0" y2="-5" stroke="{FW_COLOR}" stroke-width="3"/>
+            <circle cx="0" cy="-5" r="6" fill="{FW_COLOR}" filter="url(#waterGlow)"/>
+
+            <g filter="url(#waterGlow)">
+                <circle r="5" fill="url(#waterParticle)">
+                    <animateMotion dur="1.0s" repeatCount="indefinite" path="M0 -5 L85 8"/>
+                </circle>
+                <circle r="4" fill="url(#waterParticle)">
+                    <animateMotion dur="1.2s" begin="-0.4s" repeatCount="indefinite" path="M0 -5 L90 -6"/>
+                </circle>
+                <circle r="3" fill="url(#waterParticle)">
+                    <animateMotion dur="0.9s" begin="-0.2s" repeatCount="indefinite" path="M0 -5 L80 14"/>
+                </circle>
+            </g>
+        </g>
+    </g>
+
+    <!-- EQUIPMENT LABELS -->
+    <text x="490" y="265" text-anchor="middle" fill="#334155" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600">Isenthalpic Expansion</text>
+    <text x="800" y="265" text-anchor="middle" fill="#334155" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600">Desuperheater</text>
+
+    <!-- FEEDWATER PIPE -->
+    <path d="M800 65 V205" stroke="{FW_COLOR}" stroke-width="5" stroke-linecap="round"/>
+    <path d="M800 65 V205" stroke="{FW_COLOR}" stroke-width="10" stroke-linecap="round" opacity="0.15" filter="url(#lineGlow)"/>
+    <path d="M800 100 V150" stroke="{FW_COLOR}" stroke-width="2" marker-end="url(#waterArrow)"/>
+
+    <!-- FEEDWATER PARTICLES -->
+    <g filter="url(#waterGlow)">
+        <circle r="7" fill="url(#waterParticle)">
+            <animateMotion dur="{dur_fw:.2f}s" repeatCount="indefinite" path="M800 65 V205"/>
+        </circle>
+        <circle r="5" fill="url(#waterParticle)">
+            <animateMotion dur="{dur_fw:.2f}s" begin="-0.65s" repeatCount="indefinite" path="M800 65 V205"/>
+        </circle>
+        <circle r="4" fill="url(#waterParticle)">
+            <animateMotion dur="{dur_fw:.2f}s" begin="-1.3s" repeatCount="indefinite" path="M800 65 V205"/>
+        </circle>
+    </g>
+
+    <!-- PROCESS LABELS -->
+    <g font-family="Segoe UI, sans-serif" font-size="15">
+        <text x="60" y="100" font-weight="bold" fill="{HP_COLOR}">High Pressure Steam Line</text>
+        <text x="60" y="125" fill="{HP_COLOR}">Flow: {m_in:.2f} t/h</text>
+        <text x="60" y="150" fill="{HP_COLOR}">Press: {p_in:.2f} {p_unit}</text>
+        <text x="60" y="175" fill="{HP_COLOR}">Temp: {t_in:.1f} degC</text>
+
+        <text x="830" y="30" font-weight="bold" fill="{FW_COLOR}">Feedwater Spray Line</text>
+        <text x="830" y="55" fill="{FW_COLOR}">Flow: {m_fw:.2f} t/h (Target {target_m_fw:.2f} t/h)</text>
+        <text x="830" y="80" fill="{FW_COLOR}">Press: {p_fw:.2f} {p_unit}</text>
+        <text x="830" y="105" fill="{FW_COLOR}">Temp: {t_fw:.1f} degC</text>
+
+        <text x="1150" y="30" font-weight="bold" fill="{lp_color}">LP Pressure Steam Line</text>
+        <text x="1150" y="55" fill="{lp_color}">Flow: {m_out:.2f} t/h (Target {target_m_out:.2f} t/h)</text>
+        <text x="1150" y="80" fill="{lp_color}">Press: {p_out:.2f} {p_unit}</text>
+        <text x="1150" y="105" fill="{lp_color}">Temp: {t_out:.1f} degC (Target {target_t_out:.1f} degC)</text>
+        <text x="1150" y="130" fill="{lp_color}">Sat Temp: {t_sat:.1f} degC</text>
+        <text x="1150" y="155" fill="{lp_color}">Superheat Margin: {t_margin:.1f} degC</text>
+    </g>
+
+    </svg>
+    """
+    return svg
+
+
+# --- SIDEBAR CONTROLS ---
+st.sidebar.header("🕹️ Dynamic & Lead-Lag Controls")
+is_running = st.sidebar.toggle("Run Live Simulation", value=True)
+
+tau_steam = st.sidebar.slider(
+    "Steam Flow Time Constant τ_steam (s)",
+    1.0,
+    30.0,
+    2.19,
+    step=0.01,
+    help="Speed of steam flow response to step changes.",
 )
-twf_noise_level = st.sidebar.slider(
-    "Noise Level (g RMS)",
-    min_value=0.00,
-    max_value=0.10,
-    value=float(st.session_state["twf_noise_level"]),
-    step=0.005,
-    key="twf_noise_level",
-    on_change=on_input_change,
-)
 
-# --- 3. MAIN PANEL ANALYSIS & TABLE ---
-
-st.subheader("Frequency Calculations")
-
-st.markdown(
-    f"**Gear Running Speed ($f_{{gear}}$):** `{f_gear_hz:.2f} Hz` / `{f_gear_hz*60:.0f} RPM`"
-)
-st.markdown(
-    f"**Pinion Running Speed ($f_{{pinion}}$):** `{f_pinion_hz:.2f} Hz` / `{f_pinion_hz*60:.0f} RPM`"
-)
-st.markdown(f"**Gear Ratio ($i$):** `{gear_ratio:.3f}`")
-st.markdown(f"**Fundamental GMF:** `{gmf_hz:.2f} Hz` / `{gmf_hz*60:.0f} RPM`")
-
-if fn_hz > 0:
-    fn_display = fn_hz * scale_factor
-    st.markdown(
-        f"**Gear Natural Frequency ($f_n$):** `{fn_display:.1f} {unit_label}` ({fn_hz:.2f} Hz)"
-    )
-
-st.markdown("### GMF Harmonics & Sidebands")
-
-col_sb1, col_sb2 = st.columns([1, 1])
-with col_sb1:
-    sideband_source = st.radio(
-        "Sideband Reference Source:",
-        ["Gear Side", "Pinion Side", "Both Sides"],
-        key="sideband_source",
-        on_change=on_input_change,
-        horizontal=True,
-    )
-with col_sb2:
-    selected_orders = st.multiselect(
-        "Select Sideband Multipliers (k):",
-        options=[1, 2, 3, 4, 5],
-        key="selected_orders",
-        on_change=on_input_change,
-    )
-
-mod_freqs = []
-if sideband_source in ["Gear Side", "Both Sides"]:
-    mod_freqs.append(("Gear", f_gear_hz))
-if sideband_source in ["Pinion Side", "Both Sides"]:
-    mod_freqs.append(("Pinion", f_pinion_hz))
-
-min_mod_freq = (
-    min([freq for _, freq in mod_freqs]) if mod_freqs else fr_driver_hz
-)
-req_delta_f = min_mod_freq / 2.5 if min_mod_freq > 0 else 1.0
-
-fmax_hz = fmax / scale_factor
-min_fft_lines = int(np.ceil(fmax_hz / req_delta_f)) if req_delta_f > 0 else 800
-
-standard_lines = [400, 800, 1600, 3200, 6400, 12800]
-recommended_lines = next(
-    (l for l in standard_lines if l >= min_fft_lines), 12800
-)
-actual_delta_f = fmax_hz / recommended_lines if recommended_lines > 0 else 0.0
-recording_time_sec = recommended_lines / fmax_hz if fmax_hz > 0 else 0.0
-
-harmonics = [1, 2, 3]
-sb_orders = sorted(selected_orders)
-
-table_data = []
-resonance_warning = False
-
-for h in harmonics:
-    center = h * gmf_hz
-    row = {"Harmonic": f"{h}x GMF ({center:.1f} Hz)"}
-
-    if fn_hz > 0 and abs(center - fn_hz) / fn_hz <= 0.05:
-        resonance_warning = True
-
-    if not sb_orders or not mod_freqs:
-        row["Status"] = "No sidebands or source selected"
-    else:
-        for source_name, freq in mod_freqs:
-            prefix = "G" if source_name == "Gear" else "P"
-            for k in sb_orders:
-                lower = center - (k * freq)
-                upper = center + (k * freq)
-
-                if (
-                    fn_hz > 0
-                    and (
-                        abs(lower - fn_hz) / fn_hz <= 0.05
-                        or abs(upper - fn_hz) / fn_hz <= 0.05
-                    )
-                ):
-                    resonance_warning = True
-
-                row[f"{prefix} SB -{k}"] = (
-                    f"{lower:.1f}" if lower > 0 else "N/A"
-                )
-                row[f"{prefix} SB +{k}"] = f"{upper:.1f}"
-    table_data.append(row)
-
-st.dataframe(table_data, use_container_width=True)
-
-if resonance_warning:
-    st.warning(
-        f"**Potential Resonance Alert:** Gear Natural Frequency ($f_n = {fn_hz:.1f}\\text{{ Hz}}$) "
-        f"is within 5% of a GMF harmonic or primary sideband!"
-    )
-
-st.info(
-    f"**Required Spectral Resolution Guidance:**\n"
-    f"* **Target Modulating Frequency ($f_{{mod}}$):** `{min_mod_freq:.2f} Hz` ({sideband_source})\n"
-    f"* **Max Allowed Step ($\Delta f = f_{{mod}} / 2.5$):** `{req_delta_f:.2f} Hz`\n"
-    f"* **Recommended Lines ($N_{{lines}}$):** `{recommended_lines:,} Lines` at $F_{{max}} = {fmax_hz:.0f}\\text{{ Hz}}$\n"
-    f"* **Achieved Resolution:** `{actual_delta_f:.3f} Hz/line` | **Duration ($T_{{record}}$):** `{recording_time_sec:.2f} s`"
-)
-
-# --- 4. SPECTRUM PLOT ---
-
-st.subheader("Simulated Vibration Spectrum")
-
-noise_floor = 0.02
-x_1x, amp_1x, lbl_1x = [], [], []
-x_gmf, amp_gmf, lbl_gmf = [], [], []
-x_sb, amp_sb = [], []
-tick_vals = []
-
-gear_scaled = f_gear_hz * scale_factor
-if 0 < gear_scaled <= fmax and amp_1x_gear > 0:
-    tick_vals.append(gear_scaled)
-    x_1x.append(gear_scaled)
-    amp_1x.append(amp_1x_gear)
-    lbl_1x.append("1x Gear")
-
-pinion_scaled = f_pinion_hz * scale_factor
-if 0 < pinion_scaled <= fmax and amp_1x_pinion > 0:
-    tick_vals.append(pinion_scaled)
-    x_1x.append(pinion_scaled)
-    amp_1x.append(amp_1x_pinion)
-    lbl_1x.append("1x Pinion")
-
-max_harmonic_order = int(np.ceil(fmax_hz / gmf_hz)) + 1 if gmf_hz > 0 else 3
-
-if amp_gmf_1 > 0:
-    for h in range(1, max_harmonic_order + 1):
-        center_hz = h * gmf_hz
-        center_scaled = center_hz * scale_factor
-        base_amp = amp_gmf_1 / (h**0.7)
-
-        if 0 < center_scaled <= fmax:
-            tick_vals.append(center_scaled)
-            x_gmf.append(center_scaled)
-            amp_gmf.append(base_amp)
-            lbl_gmf.append(f"GMF {h}")
-
-        for source_name, freq in mod_freqs:
-            for k in sb_orders:
-                sb_amp = base_amp * (0.3 / (k**0.8))
-                lower_scaled = (center_hz - (k * freq)) * scale_factor
-                upper_scaled = (center_hz + (k * freq)) * scale_factor
-
-                if 0 < lower_scaled <= fmax:
-                    x_sb.append(lower_scaled)
-                    amp_sb.append(sb_amp)
-
-                if 0 < upper_scaled <= fmax:
-                    x_sb.append(upper_scaled)
-                    amp_sb.append(sb_amp)
-
-fig_spec = go.Figure()
-
-all_x = x_1x + x_gmf + x_sb
-all_amps = amp_1x + amp_gmf + amp_sb
-
-if fn_hz > 0 and amp_fn > 0:
-    fn_scaled = fn_hz * scale_factor
-    if 0 < fn_scaled <= fmax:
-        all_x.append(fn_scaled)
-        all_amps.append(amp_fn)
-
-for x_p, a_p in zip(all_x, all_amps):
-    fig_spec.add_trace(
-        go.Scatter(
-            x=[x_p, x_p],
-            y=[noise_floor, a_p],
-            mode="lines",
-            line=dict(color="#008080", width=2),
-            showlegend=False,
-            hoverinfo="x+y",
-        )
-    )
-
-if x_1x:
-    fig_spec.add_trace(
-        go.Scatter(
-            x=x_1x,
-            y=amp_1x,
-            mode="markers",
-            marker=dict(color="darkorange", size=9),
-            name="1x Running Speeds",
-        )
-    )
-    for x_p, a_p, txt in zip(x_1x, amp_1x, lbl_1x):
-        fig_spec.add_annotation(
-            x=x_p,
-            y=a_p + 0.05,
-            text=txt,
-            showarrow=False,
-            textangle=-90,
-            xanchor="center",
-            yanchor="bottom",
-            font=dict(color="darkorange", size=11),
-        )
-
-if x_gmf:
-    fig_spec.add_trace(
-        go.Scatter(
-            x=x_gmf,
-            y=amp_gmf,
-            mode="markers",
-            marker=dict(color="crimson", size=9),
-            name="GMF Harmonics",
-        )
-    )
-    for x_p, a_p, txt in zip(x_gmf, amp_gmf, lbl_gmf):
-        fig_spec.add_annotation(
-            x=x_p,
-            y=a_p + 0.05,
-            text=txt,
-            showarrow=False,
-            textangle=-90,
-            xanchor="center",
-            yanchor="bottom",
-            font=dict(color="crimson", size=11),
-        )
-
-if fn_hz > 0 and amp_fn > 0:
-    fn_scaled = fn_hz * scale_factor
-    if 0 < fn_scaled <= fmax:
-        fig_spec.add_vrect(
-            x0=fn_scaled * 0.95,
-            x1=fn_scaled * 1.05,
-            fillcolor="purple",
-            opacity=0.15,
-            layer="below",
-            line_dash="dot",
-            line_color="purple",
-        )
-        fig_spec.add_trace(
-            go.Scatter(
-                x=[fn_scaled],
-                y=[amp_fn],
-                mode="markers",
-                marker=dict(
-                    color="gold",
-                    size=12,
-                    symbol="diamond",
-                    line=dict(color="purple", width=2),
-                ),
-                name="Natural Frequency (f_n)",
-            )
-        )
-        fig_spec.add_annotation(
-            x=fn_scaled,
-            y=amp_fn + 0.05,
-            text=f"f_n ({fn_scaled:.1f})",
-            showarrow=False,
-            textangle=-90,
-            xanchor="center",
-            yanchor="bottom",
-            font=dict(color="purple", size=11),
-        )
-        tick_vals.append(fn_scaled)
-
-clean_ticks = sorted(list(set([t for t in tick_vals if t > 0])))
-max_y = max(all_amps) + 0.5 if all_amps else 1.65
-
-fig_spec.update_layout(
-    xaxis_title=f"Frequency ({unit_label})",
-    yaxis_title="Amplitude (g / peak)",
-    xaxis=dict(
-        range=[min(clean_ticks) * 0.8 if clean_ticks else 1.0, fmax],
-        tickmode="array",
-        tickvals=clean_ticks,
-        tickformat=".1f",
-        zeroline=False,
+tau_spray = st.sidebar.slider(
+    "Feedwater Flow Time Constant τ_spray (s)",
+    1.0,
+    30.0,
+    3.46,
+    step=0.01,
+    help=(
+        "Speed of spray water valve response. Set τ_spray > τ_steam to see"
+        " temperature overshoot!"
     ),
-    yaxis=dict(range=[0, max(1.65, max_y)]),
-    template="plotly_white",
-    height=450,
-    margin=dict(l=40, r=20, t=60, b=40),
 )
 
-st.plotly_chart(fig_spec, use_container_width=True)
+tau_thermal = st.sidebar.slider(
+    "Thermal Mixing/Sensor Lag τ_thermal (s)",
+    0.1,
+    10.0,
+    0.73,
+    step=0.01,
+    help="Thermal inertia/mixing lag inside the pipe line.",
+)
 
-# --- 5. TIME WAVEFORM PLOT ---
+dt = st.sidebar.slider("Step Delay Δt (s)", 0.05, 1.0, 0.2, step=0.01)
 
-st.subheader("Simulated Time Waveform")
+st.sidebar.header("1. Operating Configuration")
+Pressure_Unit_Type = st.sidebar.selectbox(
+    "Pressure Unit Type",
+    [
+        "Bar Gauge (barG)",
+        "Bar Absolute (barA)",
+        "Megapascals Gauge (MPaG)",
+        "Megapascals Absolute (MPaA)",
+    ],
+)
 
-t_max = twf_revolutions / fr_driver_hz if fr_driver_hz > 0 else 0.1
-fs = max(10000.0, 10.0 * fmax_hz)
-t = np.linspace(0, t_max, int(fs * t_max), endpoint=False)
+High_Pressure_Inlet_Steam_Pressure = st.sidebar.number_input(
+    "Inlet Pressure", value=50.0
+)
+High_Pressure_Inlet_Steam_Temperature_Degrees_Celsius = (
+    st.sidebar.number_input("Inlet Temp (°C)", value=419.0)
+)
 
-signal = np.zeros_like(t)
+Outlet_Temperature_Calculation_Mode = st.sidebar.radio(
+    "Calculation Mode",
+    [
+        "INPUT - Specify Target Outlet Temperature",
+        "CALC - Calculate Outlet Temperature from Spray Flow",
+    ],
+)
+is_calc_mode = (
+    Outlet_Temperature_Calculation_Mode
+    == "CALC - Calculate Outlet Temperature from Spray Flow"
+)
 
-if amp_1x_gear > 0 and (0 < f_gear_hz * scale_factor <= fmax):
-    signal += amp_1x_gear * np.sin(2 * np.pi * f_gear_hz * t)
-
-if amp_1x_pinion > 0 and (0 < f_pinion_hz * scale_factor <= fmax):
-    signal += amp_1x_pinion * np.sin(2 * np.pi * f_pinion_hz * t + np.pi / 4)
-
-if amp_gmf_1 > 0:
-    for h in range(1, max_harmonic_order + 1):
-        center_hz = h * gmf_hz
-        if not (0 < center_hz * scale_factor <= fmax):
-            continue
-
-        base_amp = amp_gmf_1 / (h**0.7)
-        mod_envelope = np.ones_like(t)
-
-        for source_name, freq in mod_freqs:
-            for k in sb_orders:
-                lower_hz = center_hz - (k * freq)
-                upper_hz = center_hz + (k * freq)
-
-                if (0 < lower_hz * scale_factor <= fmax) or (
-                    0 < upper_hz * scale_factor <= fmax
-                ):
-                    depth = (0.3 / (k**0.8)) * 2.0
-                    mod_envelope += depth * np.cos(2 * np.pi * k * freq * t)
-
-        signal += base_amp * mod_envelope * np.sin(2 * np.pi * center_hz * t)
-
-if fn_hz > 0 and amp_fn > 0 and (0 < fn_hz * scale_factor <= fmax):
-    signal += amp_fn * np.sin(2 * np.pi * fn_hz * t)
-
-if twf_noise_level > 0.0:
-    np.random.seed(42)
-    signal += np.random.normal(0, twf_noise_level, size=len(t))
-
-fig_twf = go.Figure()
-fig_twf.add_trace(
-    go.Scatter(
-        x=t * 1000.0,
-        y=signal,
-        mode="lines",
-        line=dict(color="#008080", width=1),
-        name="Vibration Waveform",
+Desuperheater_Outlet_Steam_Pressure = st.sidebar.number_input(
+    "Outlet Pressure", value=4.6
+)
+Desuperheater_Outlet_Steam_Target_Temperature_Degrees_Celsius = (
+    st.sidebar.number_input(
+        "Target Outlet Temp (°C)", value=160.0, disabled=is_calc_mode
     )
 )
 
-fig_twf.update_layout(
-    xaxis_title="Time (ms)",
-    yaxis_title="Acceleration (g)",
-    template="plotly_white",
-    height=400,
-    margin=dict(l=40, r=20, t=40, b=40),
-    xaxis=dict(zeroline=False),
+Spray_Feedwater_Inlet_Pressure = st.sidebar.number_input(
+    "Feedwater Pressure", value=70.0
+)
+Spray_Feedwater_Inlet_Temperature_Degrees_Celsius = st.sidebar.number_input(
+    "Feedwater Temp (°C)", value=90.0
 )
 
-st.plotly_chart(fig_twf, use_container_width=True)
+Specified_Spray_Feedwater_Mass_Flow_Rate_Tons_Per_Hour = (
+    st.sidebar.number_input(
+        "Specified Spray Flow (t/h)", value=2.35, disabled=not is_calc_mode
+    )
+)
+
+Mass_Flow_Rate_Basis = st.sidebar.selectbox(
+    "Basis", ["Inlet Steam Flow Rate", "Outlet Target Steam Flow Rate"]
+)
+
+Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour = st.sidebar.number_input(
+    "Specified Steam Flow (t/h)", value=10.0
+)
+
+# --- STEADY-STATE TARGET CALCULATION ---
+ATMOSPHERIC_PRESSURE_BAR = 1.01325
+ATMOSPHERIC_PRESSURE_MEGAPASCALS = 0.101325
+
+if Pressure_Unit_Type == "Bar Gauge (barG)":
+    p_in_mpaa = (
+        High_Pressure_Inlet_Steam_Pressure + ATMOSPHERIC_PRESSURE_BAR
+    ) / 10.0
+    p_out_mpaa = (
+        Desuperheater_Outlet_Steam_Pressure + ATMOSPHERIC_PRESSURE_BAR
+    ) / 10.0
+    p_fw_mpaa = (
+        Spray_Feedwater_Inlet_Pressure + ATMOSPHERIC_PRESSURE_BAR
+    ) / 10.0
+elif Pressure_Unit_Type == "Bar Absolute (barA)":
+    p_in_mpaa = High_Pressure_Inlet_Steam_Pressure / 10.0
+    p_out_mpaa = Desuperheater_Outlet_Steam_Pressure / 10.0
+    p_fw_mpaa = Spray_Feedwater_Inlet_Pressure / 10.0
+elif Pressure_Unit_Type == "Megapascals Gauge (MPaG)":
+    p_in_mpaa = (
+        High_Pressure_Inlet_Steam_Pressure + ATMOSPHERIC_PRESSURE_MEGAPASCALS
+    )
+    p_out_mpaa = (
+        Desuperheater_Outlet_Steam_Pressure + ATMOSPHERIC_PRESSURE_MEGAPASCALS
+    )
+    p_fw_mpaa = (
+        Spray_Feedwater_Inlet_Pressure + ATMOSPHERIC_PRESSURE_MEGAPASCALS
+    )
+else:
+    p_in_mpaa = High_Pressure_Inlet_Steam_Pressure
+    p_out_mpaa = Desuperheater_Outlet_Steam_Pressure
+    p_fw_mpaa = Spray_Feedwater_Inlet_Pressure
+
+# Enthalpies via IAPWS97
+enthalpy_steam_inlet = IAPWS97(
+    P=p_in_mpaa,
+    T=High_Pressure_Inlet_Steam_Temperature_Degrees_Celsius + 273.15,
+).h
+enthalpy_feedwater_inlet = IAPWS97(
+    P=p_fw_mpaa,
+    T=Spray_Feedwater_Inlet_Temperature_Degrees_Celsius + 273.15,
+).h
+
+if is_calc_mode:
+    target_fw_flow = Specified_Spray_Feedwater_Mass_Flow_Rate_Tons_Per_Hour
+    if Mass_Flow_Rate_Basis == "Inlet Steam Flow Rate":
+        target_inlet_flow = Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
+        target_outlet_flow = target_inlet_flow + target_fw_flow
+    else:
+        target_outlet_flow = Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
+        target_inlet_flow = target_outlet_flow - target_fw_flow
+
+    enthalpy_steam_outlet = (
+        (target_inlet_flow * enthalpy_steam_inlet)
+        + (target_fw_flow * enthalpy_feedwater_inlet)
+    ) / target_outlet_flow
+    target_temp_outlet = (
+        IAPWS97(P=p_out_mpaa, h=enthalpy_steam_outlet).T - 273.15
+    )
+else:
+    target_temp_outlet = (
+        Desuperheater_Outlet_Steam_Target_Temperature_Degrees_Celsius
+    )
+    enthalpy_steam_outlet = IAPWS97(
+        P=p_out_mpaa, T=target_temp_outlet + 273.15
+    ).h
+
+    if Mass_Flow_Rate_Basis == "Inlet Steam Flow Rate":
+        target_inlet_flow = Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
+        target_fw_flow = (
+            target_inlet_flow
+            * (enthalpy_steam_outlet - enthalpy_steam_inlet)
+            / (enthalpy_feedwater_inlet - enthalpy_steam_outlet)
+        )
+        target_outlet_flow = target_inlet_flow + target_fw_flow
+    else:
+        target_outlet_flow = Specified_Steam_Mass_Flow_Rate_Tons_Per_Hour
+        target_inlet_flow = (
+            target_outlet_flow
+            * (enthalpy_steam_outlet - enthalpy_feedwater_inlet)
+            / (enthalpy_steam_inlet - enthalpy_feedwater_inlet)
+        )
+        target_fw_flow = target_outlet_flow - target_inlet_flow
+
+saturation_temp = IAPWS97(P=p_out_mpaa, x=0).T - 273.15
+
+
+# --- INITIALIZE / RESET SESSION STATE AT STEADY STATE ---
+def reset_to_steady_state():
+    st.session_state.time_history = [0.0]
+    st.session_state.temp_history = [target_temp_outlet]
+    st.session_state.outlet_flow_history = [target_outlet_flow]
+    st.session_state.spray_flow_history = [target_fw_flow]
+    st.session_state.inlet_flow_history = [target_inlet_flow]
+    st.session_state.sim_time = 0.0
+
+
+if "time_history" not in st.session_state:
+    reset_to_steady_state()
+
+if st.sidebar.button("Reset Dynamic Trends"):
+    reset_to_steady_state()
+
+# --- NUMERICAL INTEGRATION WITH LEAD-LAG ENTHALPY BALANCE ---
+if is_running:
+    st.session_state.sim_time += dt
+
+    curr_inlet_flow = st.session_state.inlet_flow_history[-1]
+    curr_spray_flow = st.session_state.spray_flow_history[-1]
+    curr_temp = st.session_state.temp_history[-1]
+
+    # 1. Independent first-order lag updates for flows
+    new_inlet_flow = curr_inlet_flow + (dt / tau_steam) * (
+        target_inlet_flow - curr_inlet_flow
+    )
+    new_spray_flow = curr_spray_flow + (dt / tau_spray) * (
+        target_fw_flow - curr_spray_flow
+    )
+    new_outlet_flow = new_inlet_flow + new_spray_flow
+
+    # 2. Instantaneous Enthalpy Balance from dynamic transient flow rates
+    if new_outlet_flow > 0:
+        dynamic_outlet_enthalpy = (
+            (new_inlet_flow * enthalpy_steam_inlet)
+            + (new_spray_flow * enthalpy_feedwater_inlet)
+        ) / new_outlet_flow
+        instantaneous_temp = (
+            IAPWS97(P=p_out_mpaa, h=dynamic_outlet_enthalpy).T - 273.15
+        )
+    else:
+        instantaneous_temp = curr_temp
+
+    # 3. Apply thermal lag to temperature reading
+    new_temp = curr_temp + (dt / tau_thermal) * (
+        instantaneous_temp - curr_temp
+    )
+
+    # Append to rolling history buffers
+    st.session_state.time_history.append(st.session_state.sim_time)
+    st.session_state.temp_history.append(new_temp)
+    st.session_state.inlet_flow_history.append(new_inlet_flow)
+    st.session_state.spray_flow_history.append(new_spray_flow)
+    st.session_state.outlet_flow_history.append(new_outlet_flow)
+
+    if len(st.session_state.time_history) > 300:
+        st.session_state.time_history.pop(0)
+        st.session_state.temp_history.pop(0)
+        st.session_state.inlet_flow_history.pop(0)
+        st.session_state.spray_flow_history.pop(0)
+        st.session_state.outlet_flow_history.pop(0)
+
+# Render Animated Letdown Station P&ID SVG via st.components.v1.html for reliable iframe execution
+current_outlet_temp = st.session_state.temp_history[-1]
+current_margin = current_outlet_temp - saturation_temp
+
+svg_code = build_animated_process_svg(
+    p_in=High_Pressure_Inlet_Steam_Pressure,
+    t_in=High_Pressure_Inlet_Steam_Temperature_Degrees_Celsius,
+    m_in=st.session_state.inlet_flow_history[-1],
+    p_fw=Spray_Feedwater_Inlet_Pressure,
+    t_fw=Spray_Feedwater_Inlet_Temperature_Degrees_Celsius,
+    m_fw=st.session_state.spray_flow_history[-1],
+    target_m_fw=target_fw_flow,
+    p_out=Desuperheater_Outlet_Steam_Pressure,
+    t_out=current_outlet_temp,
+    target_t_out=target_temp_outlet,
+    m_out=st.session_state.outlet_flow_history[-1],
+    target_m_out=target_outlet_flow,
+    t_sat=saturation_temp,
+    t_margin=current_margin,
+    p_unit=Pressure_Unit_Type.split("(")[-1].replace(")", ""),
+)
+
+# Using components.html forces clean rendering of embedded SVG animations
+components.html(svg_code, height=360)
+
+# Lead-Lag Ratio Indicator Banner
+lead_lag_ratio = tau_spray / tau_steam
+if lead_lag_ratio > 1.2:
+    st.warning(
+        f"⚠️ Water Lags Steam (τ_spray/τ_steam = {lead_lag_ratio:.2f}):"
+        " Expect transient temperature OVERSHOOT (upshoot) during flow"
+        " increases!"
+    )
+elif lead_lag_ratio < 0.8:
+    st.info(
+        f"ℹ️ Water Leads Steam (τ_spray/τ_steam = {lead_lag_ratio:.2f}):"
+        " Expect transient temperature UNDERSHOOT (dip) during flow increases."
+    )
+
+# --- RENDER DYNAMIC PLOTS ---
+fig = make_subplots(
+    rows=3,
+    cols=1,
+    shared_xaxes=True,
+    vertical_spacing=0.08,
+    subplot_titles=(
+        "Live Temperature Transient Response (°C)",
+        "Live Outlet Steam Mass Flow Rate (t/h)",
+        "Live Spray Feedwater Mass Flow Rate (t/h)",
+    ),
+)
+
+fig.add_trace(
+    go.Scatter(
+        x=st.session_state.time_history,
+        y=st.session_state.temp_history,
+        mode="lines",
+        name="Outlet Temp (°C)",
+        line=dict(color="#008080", width=2.5),
+    ),
+    row=1,
+    col=1,
+)
+
+fig.add_trace(
+    go.Scatter(
+        x=st.session_state.time_history,
+        y=[saturation_temp] * len(st.session_state.time_history),
+        mode="lines",
+        name="Saturation Limit (°C)",
+        line=dict(color="#E63946", dash="dash"),
+    ),
+    row=1,
+    col=1,
+)
+
+fig.add_trace(
+    go.Scatter(
+        x=st.session_state.time_history,
+        y=st.session_state.outlet_flow_history,
+        mode="lines",
+        name="Outlet Steam Flow (t/h)",
+        line=dict(color="#4169E1", width=2.5),
+    ),
+    row=2,
+    col=1,
+)
+
+fig.add_trace(
+    go.Scatter(
+        x=st.session_state.time_history,
+        y=st.session_state.spray_flow_history,
+        mode="lines",
+        name="Spray Water Flow (t/h)",
+        line=dict(color="#E67E22", width=2.5),
+    ),
+    row=3,
+    col=1,
+)
+
+fig.update_layout(
+    height=680,
+    template="plotly_white",
+    font=dict(family="Segoe UI, Aptos, Arial", size=12),
+    margin=dict(l=20, r=20, t=40, b=20),
+)
+
+fig.update_xaxes(title_text="Simulation Time (s)", row=3, col=1)
+st.plotly_chart(fig, use_container_width=True)
+
+# --- STREAMLIT RE-RUN LOOP ---
+if is_running:
+    time.sleep(dt)
+    st.rerun()
