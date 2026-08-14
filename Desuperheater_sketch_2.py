@@ -6,8 +6,26 @@ st.set_page_config(page_title="Gear Mesh Analysis", layout="wide")
 st.title("Gear Mesh & Frequency Spectrum Analysis")
 
 # --- 1. PRESET DEFINITIONS & STATE MANAGEMENT ---
+# User Custom is populated with Scenario 3 settings and set as the default
 PRESETS = {
-    "User Custom": None,
+    "User Custom": {
+        "n_gear": 57,
+        "n_pinion": 19,
+        "fn_input": 0.0,
+        "fn_unit": "Hz",
+        "driver_speed_input": 1500.0,
+        "unit": "RPM",
+        "orientation": "Speed Increaser (Driver = Gear)",
+        "amp_1x_gear": 0.20,
+        "amp_1x_pinion": 0.10,
+        "amp_gmf_1": 1.50,
+        "amp_fn": 0.00,
+        "sideband_source": "Gear Side",
+        "selected_orders": [1, 2],
+        "twf_revolutions": 6.0,
+        "twf_noise_level": 0.000,
+        "optimize_option": "1x GMF (+ Sidebands)",
+    },
     "Scenario 1: Unbalance / Misalignment": {
         "n_gear": 57,
         "n_pinion": 19,
@@ -64,15 +82,15 @@ PRESETS = {
     },
 }
 
-# Set default initial values to Scenario 3 (Broken Tooth)
-defaults = PRESETS["Scenario 3: Broken Tooth (Speed Increaser)"]
+# Set default initial values to User Custom
+defaults = PRESETS["User Custom"]
 
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
 if "preset_select" not in st.session_state:
-    st.session_state["preset_select"] = "Scenario 3: Broken Tooth (Speed Increaser)"
+    st.session_state["preset_select"] = "User Custom"
 
 
 def on_preset_change():
