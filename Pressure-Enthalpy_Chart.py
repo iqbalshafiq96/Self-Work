@@ -710,7 +710,7 @@ try:
         ):
             sh_kw_diff = prof_B["dis_sh_kw"] - prof_A["dis_sh_kw"]
             r1_m4.metric(
-                "Discharge SH (kW)",
+                "Discharge Superheat (kW)",
                 f"{prof_B['dis_sh_kw']:.1f} kW",
                 delta=f"{sh_kw_diff:+.1f} kW",
                 delta_color="inverse",
