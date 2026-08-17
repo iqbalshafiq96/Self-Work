@@ -28,6 +28,7 @@ PRESETS = {
         "amp_fn": 0.00,
         "sideband_source": "Gear Side",
         "selected_orders": [1, 2],
+        "twf_ref_shaft": "Gear (1x)",
         "twf_revolutions": 6.0,
         "twf_noise_level": 0.000,
         "optimize_option": "1x GMF (+ Sidebands)",
@@ -47,6 +48,7 @@ PRESETS = {
         "amp_fn": 0.00,
         "sideband_source": "Gear Side",
         "selected_orders": [1],
+        "twf_ref_shaft": "Gear (1x)",
         "twf_revolutions": 5.0,
         "twf_noise_level": 0.010,
         "optimize_option": "Manual Slider",
@@ -66,6 +68,7 @@ PRESETS = {
         "amp_fn": 2.00,
         "sideband_source": "Gear Side",
         "selected_orders": [1, 2],
+        "twf_ref_shaft": "Gear (1x)",
         "twf_revolutions": 5.0,
         "twf_noise_level": 0.020,
         "optimize_option": "Manual Slider",
@@ -85,6 +88,7 @@ PRESETS = {
         "amp_fn": 0.00,
         "sideband_source": "Gear Side",
         "selected_orders": [1, 2],
+        "twf_ref_shaft": "Gear (1x)",
         "twf_revolutions": 6.0,
         "twf_noise_level": 0.000,
         "optimize_option": "1x GMF (+ Sidebands)",
@@ -236,6 +240,9 @@ for idx, stage in enumerate(stage_gears):
 fr_driven_hz = current_input_speed
 gmf_hz = stage_results[0]["GMF (Hz)"]  # Primary GMF for Stage 1
 
+f_gear_hz = stage_results[0]["Input Speed (Hz)"] if is_reducer else stage_results[0]["Output Speed (Hz)"]
+f_pinion_hz = stage_results[0]["Output Speed (Hz)"] if is_reducer else stage_results[0]["Input Speed (Hz)"]
+
 st.sidebar.metric(
     label="Final Driven Speed",
     value=f"{fr_driven_hz * 60.0:.1f} RPM",
@@ -376,6 +383,12 @@ else:
 
 # Time Waveform Controls
 st.sidebar.header("Time Waveform Controls")
+twf_ref_shaft = st.sidebar.selectbox(
+    "Reference Shaft for Revolutions",
+    ["Gear (1x)", "Pinion (1x)", "Driver Shaft"],
+    key="twf_ref_shaft",
+    on_change=on_input_change,
+)
 twf_revolutions = st.sidebar.slider(
     "Plot Duration (Shaft Revolutions)",
     min_value=1.0,
@@ -446,9 +459,6 @@ with col_sb2:
         key="selected_orders",
         on_change=on_input_change,
     )
-
-f_gear_hz = stage_results[0]["Input Speed (Hz)"] if is_reducer else stage_results[0]["Output Speed (Hz)"]
-f_pinion_hz = stage_results[0]["Output Speed (Hz)"] if is_reducer else stage_results[0]["Input Speed (Hz)"]
 
 mod_freqs = []
 if sideband_source in ["Gear Side", "Both Sides"]:
@@ -706,7 +716,15 @@ st.plotly_chart(fig_spec, use_container_width=True)
 
 st.subheader("Simulated Time Waveform")
 
-t_max = twf_revolutions / fr_driver_hz if fr_driver_hz > 0 else 0.1
+# Select reference shaft speed for revolution time calculation
+if twf_ref_shaft == "Gear (1x)":
+    ref_freq_hz = f_gear_hz
+elif twf_ref_shaft == "Pinion (1x)":
+    ref_freq_hz = f_pinion_hz
+else:
+    ref_freq_hz = fr_driver_hz
+
+t_max = twf_revolutions / ref_freq_hz if ref_freq_hz > 0 else 0.1
 fs = max(10000.0, 10.0 * fmax_hz)
 t = np.linspace(0, t_max, int(fs * t_max), endpoint=False)
 
