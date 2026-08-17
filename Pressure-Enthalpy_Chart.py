@@ -628,20 +628,22 @@ try:
     st.markdown("### Thermodynamic Performance")
 
     if analysis_mode == "Single Profile":
-        c1, c2, c3, c4, c5, c6, c7, c8 = st.columns(8)
-        c1.metric("Isentropic Efficiency", f"{prof_A['eta_isen']:.1f} %")
-        c2.metric("Suction Superheat", f"{prof_A['s1_sh']:.1f} K")
-        c3.metric("Discharge Superheat", f"{prof_A['s2_sh']:.1f} K")
-        c4.metric(
+        # Row 1: 6 KPIs
+        r1_c1, r1_c2, r1_c3, r1_c4, r1_c5, r1_c6 = st.columns(6)
+        r1_c1.metric("Isentropic Efficiency", f"{prof_A['eta_isen']:.1f} %")
+        r1_c2.metric("Suction Superheat", f"{prof_A['s1_sh']:.1f} K")
+        r1_c3.metric("Discharge Superheat", f"{prof_A['s2_sh']:.1f} K")
+        r1_c4.metric(
             f"Discharge Superheat ({energy_unit})",
             f"{prof_A['dis_sh_energy']:.1f} {energy_unit}",
         )
-        c5.metric(
+        r1_c5.metric(
             f"Compressor Work ({energy_unit})",
             f"{prof_A['w_comp_energy']:.1f} {energy_unit}",
         )
-        c6.metric("Compression Ratio", f"{prof_A['cr']:.2f}")
+        r1_c6.metric("Compression Ratio", f"{prof_A['cr']:.2f}")
 
+        # Row 2: Remaining 2 KPIs
         duty_str_A = (
             f"{prof_A['evap_duty_kw']:.1f} kW"
             if prof_A["evap_duty_kw"] is not None
@@ -652,8 +654,10 @@ try:
             if prof_A["m_flow_kghr"] is not None
             else "N/A"
         )
-        c7.metric("Evaporator Duty", duty_str_A)
-        c8.metric("Refrig. Flowrate", flow_str_A)
+
+        r2_c1, r2_c2, _, _, _, _ = st.columns(6)
+        r2_c1.metric("Evaporator Duty", duty_str_A)
+        r2_c2.metric("Refrig. Flowrate", flow_str_A)
 
         st.markdown("### State Points Summary (Profile A)")
         sc1, sc2, sc3, sc4 = st.columns(4)
@@ -719,7 +723,6 @@ try:
             "Displaying **Profile B** baseline values; deltas in brackets show"
             f" shift relative to **Profile A** (Units: **{energy_unit}**)."
         )
-        m1, m2, m3, m4, m5, m6, m7, m8 = st.columns(8)
 
         # Differences (Profile B - Profile A)
         eta_diff = prof_B["eta_isen"] - prof_A["eta_isen"]
@@ -729,61 +732,67 @@ try:
         w_comp_diff = prof_B["w_comp_energy"] - prof_A["w_comp_energy"]
         cr_diff = prof_B["cr"] - prof_A["cr"]
 
-        # 1. Isentropic Efficiency (Higher is Green -> normal)
-        m1.metric(
+        # --- Row 1 (6 KPIs) ---
+        r1_m1, r1_m2, r1_m3, r1_m4, r1_m5, r1_m6 = st.columns(6)
+
+        # 1. Isentropic Efficiency
+        r1_m1.metric(
             "Isentropic Efficiency",
             f"{prof_B['eta_isen']:.1f} %",
             delta=f"{eta_diff:+.1f} %",
             delta_color="normal",
         )
 
-        # 2. Suction Superheat (Higher is Red -> inverse)
-        m2.metric(
+        # 2. Suction Superheat
+        r1_m2.metric(
             "Suction Superheat",
             f"{prof_B['s1_sh']:.1f} K",
             delta=f"{suc_sh_diff:+.1f} K",
             delta_color="inverse",
         )
 
-        # 3. Discharge Superheat (Higher is Red -> inverse)
-        m3.metric(
+        # 3. Discharge Superheat
+        r1_m3.metric(
             "Discharge Superheat",
             f"{prof_B['s2_sh']:.1f} K",
             delta=f"{dis_sh_diff:+.1f} K",
             delta_color="inverse",
         )
 
-        # 4. Discharge Superheat Energy (Higher is Red -> inverse)
-        m4.metric(
+        # 4. Discharge Superheat Energy
+        r1_m4.metric(
             f"Discharge Superheat ({energy_unit})",
             f"{prof_B['dis_sh_energy']:.1f} {energy_unit}",
             delta=f"{dis_sh_energy_diff:+.1f} {energy_unit}",
             delta_color="inverse",
         )
 
-        # 5. Compressor Work/Power (Higher is Red -> inverse)
-        m5.metric(
+        # 5. Compressor Work/Power
+        r1_m5.metric(
             f"Compressor Work ({energy_unit})",
             f"{prof_B['w_comp_energy']:.1f} {energy_unit}",
             delta=f"{w_comp_diff:+.1f} {energy_unit}",
             delta_color="inverse",
         )
 
-        # 6. Compression Ratio (Neutral color)
-        m6.metric(
+        # 6. Compression Ratio
+        r1_m6.metric(
             "Compression Ratio",
             f"{prof_B['cr']:.2f}",
             delta=f"{cr_diff:+.2f}",
             delta_color="off",
         )
 
-        # 7 & 8. Evaporator Duty & Flowrate Comparisons
+        # --- Row 2 (Remaining 2 KPIs in a 6-column layout) ---
+        r2_m1, r2_m2, _, _, _, _ = st.columns(6)
+
+        # 7. Evaporator Duty
         if (
             prof_B["evap_duty_kw"] is not None
             and prof_A["evap_duty_kw"] is not None
         ):
             duty_diff = prof_B["evap_duty_kw"] - prof_A["evap_duty_kw"]
-            m7.metric(
+            r2_m1.metric(
                 "Evaporator Duty",
                 f"{prof_B['evap_duty_kw']:.1f} kW",
                 delta=f"{duty_diff:+.1f} kW",
@@ -795,14 +804,15 @@ try:
                 if prof_B["evap_duty_kw"] is not None
                 else "N/A"
             )
-            m7.metric("Evaporator Duty", val_b, delta=None)
+            r2_m1.metric("Evaporator Duty", val_b, delta=None)
 
+        # 8. Refrig. Flowrate
         if (
             prof_B["m_flow_kghr"] is not None
             and prof_A["m_flow_kghr"] is not None
         ):
             flow_diff = prof_B["m_flow_kghr"] - prof_A["m_flow_kghr"]
-            m8.metric(
+            r2_m2.metric(
                 "Refrig. Flowrate",
                 f"{prof_B['m_flow_kghr']:.1f} kg/hr",
                 delta=f"{flow_diff:+.1f} kg/hr",
@@ -814,7 +824,7 @@ try:
                 if prof_B["m_flow_kghr"] is not None
                 else "N/A"
             )
-            m8.metric("Refrig. Flowrate", val_b_flow, delta=None)
+            r2_m2.metric("Refrig. Flowrate", val_b_flow, delta=None)
 
 except Exception as e:
     st.error(
