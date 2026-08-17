@@ -114,6 +114,9 @@ def calculate_cycle_points(
     t_cond_in,
     p_unit,
     fluid,
+    duty_mode="Not Specified",
+    duty_kw_val=0.0,
+    flowrate_kghr_val=0.0,
 ):
     p_suction = convert_to_bara(p_suc_in, p_unit)
     p_discharge = convert_to_bara(p_dis_in, p_unit)
@@ -138,6 +141,18 @@ def calculate_cycle_points(
     q_in = s1_h - s4_h
     w_in = s2_h - s1_h
     cop = q_in / w_in if w_in != 0 else 0
+
+    # Duty & Flowrate Calculation
+    evap_duty_kw = None
+    m_flow_kghr = None
+
+    if duty_mode == "Specify kW":
+        evap_duty_kw = duty_kw_val
+        if q_in > 0:
+            m_flow_kghr = (evap_duty_kw * 3600.0) / q_in
+    elif duty_mode == "Specify Refrigeration Flowrate":
+        m_flow_kghr = flowrate_kghr_val
+        evap_duty_kw = (m_flow_kghr * q_in) / 3600.0
 
     # Isentropic Efficiency calculation using S2 Cp/Cv
     t1_k = t_suc_in + 273.15
@@ -192,6 +207,8 @@ def calculate_cycle_points(
         "dis_sh_energy": dis_sh_energy,
         "w_comp_energy": w_comp_energy,
         "cr": cr,
+        "evap_duty_kw": evap_duty_kw,
+        "m_flow_kghr": m_flow_kghr,
     }
 
 
@@ -202,8 +219,7 @@ st.caption(
     " @iqbalshafiq96@gmail.com"
 )
 st.caption(
-    "Interactive Pressure-Enthalpy ($P-h$) Diagram & Thermodynamic"
-    " Calculations"
+    "Interactive Pressure-Enthalpy ($P-h$) Diagram & Thermodynamic Calculations"
 )
 
 # --- Sidebar Inputs ---
@@ -213,10 +229,7 @@ with st.sidebar:
         "Select Operating Mode",
         ["Single Profile", "Compare Profiles"],
         index=1,
-        help=(
-            "Choose whether to analyze one profile or overlay two profiles for"
-            " comparison."
-        ),
+        help="Choose whether to analyze one profile or overlay two profiles for comparison.",
     )
 
     show_callouts = st.checkbox(
@@ -239,6 +252,12 @@ with st.sidebar:
 
     st.markdown("---")
 
+    duty_options = [
+        "Not Specified",
+        "Specify kW",
+        "Specify Refrigeration Flowrate",
+    ]
+
     if analysis_mode == "Single Profile":
         st.subheader("Process Parameters")
         p_suc_A = st.number_input(
@@ -248,10 +267,7 @@ with st.sidebar:
             "Suction Temp (°C)", value=15.60, step=0.1, key="t_suc_A"
         )
         p_dis_A = st.number_input(
-            f"Discharge Pressure ({p_unit})",
-            value=19.95,
-            step=0.1,
-            key="p_dis_A",
+            f"Discharge Pressure ({p_unit})", value=19.95, step=0.1, key="p_dis_A"
         )
         t_dis_A = st.number_input(
             "Discharge Temp (°C)", value=52.44, step=0.1, key="t_dis_A"
@@ -259,23 +275,33 @@ with st.sidebar:
         t_cond_A = st.number_input(
             "Condenser Outlet Temp (°C)", value=44.04, step=0.1, key="t_cond_A"
         )
+
+        st.markdown("**Evaporator Duty Specification**")
+        duty_mode_A = st.selectbox(
+            "Evaporator Duty Mode", duty_options, index=0, key="duty_mode_A"
+        )
+        duty_kw_A = 0.0
+        flowrate_kghr_A = 0.0
+        if duty_mode_A == "Specify kW":
+            duty_kw_A = st.number_input(
+                "Evaporator Duty (kW)", value=500.0, step=10.0, key="duty_kw_A"
+            )
+        elif duty_mode_A == "Specify Refrigeration Flowrate":
+            flowrate_kghr_A = st.number_input(
+                "Flowrate (kg/hr)", value=1500.0, step=50.0, key="flowrate_kghr_A"
+            )
+
     else:
         tab_a, tab_b = st.tabs(["Profile A (Primary)", "Profile B (Compare)"])
         with tab_a:
             p_suc_A = st.number_input(
-                f"Suction Press ({p_unit})",
-                value=7.41,
-                step=0.1,
-                key="p_suc_A_m",
+                f"Suction Press ({p_unit})", value=7.41, step=0.1, key="p_suc_A_m"
             )
             t_suc_A = st.number_input(
                 "Suction Temp (°C)", value=15.60, step=0.1, key="t_suc_A_m"
             )
             p_dis_A = st.number_input(
-                f"Discharge Press ({p_unit})",
-                value=19.95,
-                step=0.1,
-                key="p_dis_A_m",
+                f"Discharge Press ({p_unit})", value=19.95, step=0.1, key="p_dis_A_m"
             )
             t_dis_A = st.number_input(
                 "Discharge Temp (°C)", value=52.44, step=0.1, key="t_dis_A_m"
@@ -284,21 +310,30 @@ with st.sidebar:
                 "Condenser Temp (°C)", value=44.04, step=0.1, key="t_cond_A_m"
             )
 
+            st.markdown("**Evaporator Duty Specification**")
+            duty_mode_A = st.selectbox(
+                "Evaporator Duty Mode", duty_options, index=0, key="duty_mode_A_m"
+            )
+            duty_kw_A = 0.0
+            flowrate_kghr_A = 0.0
+            if duty_mode_A == "Specify kW":
+                duty_kw_A = st.number_input(
+                    "Evaporator Duty (kW)", value=500.0, step=10.0, key="duty_kw_A_m"
+                )
+            elif duty_mode_A == "Specify Refrigeration Flowrate":
+                flowrate_kghr_A = st.number_input(
+                    "Flowrate (kg/hr)", value=1500.0, step=50.0, key="flowrate_kghr_A_m"
+                )
+
         with tab_b:
             p_suc_B = st.number_input(
-                f"Suction Press ({p_unit})",
-                value=6.50,
-                step=0.1,
-                key="p_suc_B",
+                f"Suction Press ({p_unit})", value=6.50, step=0.1, key="p_suc_B"
             )
             t_suc_B = st.number_input(
                 "Suction Temp (°C)", value=12.00, step=0.1, key="t_suc_B"
             )
             p_dis_B = st.number_input(
-                f"Discharge Press ({p_unit})",
-                value=21.50,
-                step=0.1,
-                key="p_dis_B",
+                f"Discharge Press ({p_unit})", value=21.50, step=0.1, key="p_dis_B"
             )
             t_dis_B = st.number_input(
                 "Discharge Temp (°C)", value=60.00, step=0.1, key="t_dis_B"
@@ -306,6 +341,21 @@ with st.sidebar:
             t_cond_B = st.number_input(
                 "Condenser Temp (°C)", value=46.00, step=0.1, key="t_cond_B"
             )
+
+            st.markdown("**Evaporator Duty Specification**")
+            duty_mode_B = st.selectbox(
+                "Evaporator Duty Mode", duty_options, index=0, key="duty_mode_B"
+            )
+            duty_kw_B = 0.0
+            flowrate_kghr_B = 0.0
+            if duty_mode_B == "Specify kW":
+                duty_kw_B = st.number_input(
+                    "Evaporator Duty (kW)", value=500.0, step=10.0, key="duty_kw_B"
+                )
+            elif duty_mode_B == "Specify Refrigeration Flowrate":
+                flowrate_kghr_B = st.number_input(
+                    "Flowrate (kg/hr)", value=1500.0, step=50.0, key="flowrate_kghr_B"
+                )
 
 # --- Computations ---
 try:
@@ -320,6 +370,9 @@ try:
         t_cond_in=t_cond_A,
         p_unit=p_unit,
         fluid=fluid,
+        duty_mode=duty_mode_A,
+        duty_kw_val=duty_kw_A,
+        flowrate_kghr_val=flowrate_kghr_A,
     )
 
     # Calculate Profile B if in comparison mode
@@ -333,6 +386,9 @@ try:
             t_cond_in=t_cond_B,
             p_unit=p_unit,
             fluid=fluid,
+            duty_mode=duty_mode_B,
+            duty_kw_val=duty_kw_B,
+            flowrate_kghr_val=flowrate_kghr_B,
         )
 
     sat_liq_h, sat_vap_h, sat_p = get_saturation_curve(fluid)
@@ -572,7 +628,7 @@ try:
     st.markdown("### Thermodynamic Performance")
 
     if analysis_mode == "Single Profile":
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        c1, c2, c3, c4, c5, c6, c7, c8 = st.columns(8)
         c1.metric("Isentropic Efficiency", f"{prof_A['eta_isen']:.1f} %")
         c2.metric("Suction Superheat", f"{prof_A['s1_sh']:.1f} K")
         c3.metric("Discharge Superheat", f"{prof_A['s2_sh']:.1f} K")
@@ -585,6 +641,19 @@ try:
             f"{prof_A['w_comp_energy']:.1f} {energy_unit}",
         )
         c6.metric("Compression Ratio", f"{prof_A['cr']:.2f}")
+
+        duty_str_A = (
+            f"{prof_A['evap_duty_kw']:.1f} kW"
+            if prof_A["evap_duty_kw"] is not None
+            else "N/A"
+        )
+        flow_str_A = (
+            f"{prof_A['m_flow_kghr']:.1f} kg/hr"
+            if prof_A["m_flow_kghr"] is not None
+            else "N/A"
+        )
+        c7.metric("Evaporator Duty", duty_str_A)
+        c8.metric("Refrig. Flowrate", flow_str_A)
 
         st.markdown("### State Points Summary (Profile A)")
         sc1, sc2, sc3, sc4 = st.columns(4)
@@ -650,7 +719,7 @@ try:
             "Displaying **Profile B** baseline values; deltas in brackets show"
             f" shift relative to **Profile A** (Units: **{energy_unit}**)."
         )
-        m1, m2, m3, m4, m5, m6 = st.columns(6)
+        m1, m2, m3, m4, m5, m6, m7, m8 = st.columns(8)
 
         # Differences (Profile B - Profile A)
         eta_diff = prof_B["eta_isen"] - prof_A["eta_isen"]
@@ -707,6 +776,45 @@ try:
             delta=f"{cr_diff:+.2f}",
             delta_color="off",
         )
+
+        # 7 & 8. Evaporator Duty & Flowrate Comparisons
+        if (
+            prof_B["evap_duty_kw"] is not None
+            and prof_A["evap_duty_kw"] is not None
+        ):
+            duty_diff = prof_B["evap_duty_kw"] - prof_A["evap_duty_kw"]
+            m7.metric(
+                "Evaporator Duty",
+                f"{prof_B['evap_duty_kw']:.1f} kW",
+                delta=f"{duty_diff:+.1f} kW",
+                delta_color="normal",
+            )
+        else:
+            val_b = (
+                f"{prof_B['evap_duty_kw']:.1f} kW"
+                if prof_B["evap_duty_kw"] is not None
+                else "N/A"
+            )
+            m7.metric("Evaporator Duty", val_b, delta=None)
+
+        if (
+            prof_B["m_flow_kghr"] is not None
+            and prof_A["m_flow_kghr"] is not None
+        ):
+            flow_diff = prof_B["m_flow_kghr"] - prof_A["m_flow_kghr"]
+            m8.metric(
+                "Refrig. Flowrate",
+                f"{prof_B['m_flow_kghr']:.1f} kg/hr",
+                delta=f"{flow_diff:+.1f} kg/hr",
+                delta_color="inverse",
+            )
+        else:
+            val_b_flow = (
+                f"{prof_B['m_flow_kghr']:.1f} kg/hr"
+                if prof_B["m_flow_kghr"] is not None
+                else "N/A"
+            )
+            m8.metric("Refrig. Flowrate", val_b_flow, delta=None)
 
 except Exception as e:
     st.error(
