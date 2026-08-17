@@ -112,8 +112,6 @@ def calculate_cycle_points(
     p_dis_in,
     t_dis_in,
     t_cond_in,
-    m_dot,
-    enable_mdot,
     p_unit,
     fluid,
 ):
@@ -155,18 +153,12 @@ def calculate_cycle_points(
     else:
         eta_isen = 0.0
 
-    # Discharge Superheat Heat Load
+    # Discharge Superheat Heat Load (kJ/kg)
     h_s2_sat_vap = (
         CP.PropsSI("H", "P", p_discharge * 1e5, "Q", 1, fluid) / 1000.0
     )
-
-    # Compute energy metric according to mass flow enable toggle
-    if enable_mdot:
-        dis_sh_energy = m_dot * (s2_h - h_s2_sat_vap)
-        w_comp_energy = m_dot * w_in
-    else:
-        dis_sh_energy = s2_h - h_s2_sat_vap
-        w_comp_energy = w_in
+    dis_sh_energy = s2_h - h_s2_sat_vap
+    w_comp_energy = w_in
 
     # Compression Ratio
     cr = p_discharge / p_suction
@@ -220,7 +212,7 @@ with st.sidebar:
     analysis_mode = st.radio(
         "Select Operating Mode",
         ["Single Profile", "Compare Profiles"],
-        index=1,  # Set default to "Compare Profiles"
+        index=1,
         help=(
             "Choose whether to analyze one profile or overlay two profiles for"
             " comparison."
@@ -243,20 +235,7 @@ with st.sidebar:
         "Pressure Unit", ["barg", "bara", "kpag", "kpaa"], index=1
     )
 
-    # Toggle Mass Flow Rate (Disabled by default)
-    enable_mdot = st.checkbox("Enable Mass Flow Rate", value=False)
-    if enable_mdot:
-        m_dot = st.number_input(
-            "Mass Flow Rate (kg/s)", value=1.0, step=0.1, key="m_dot"
-        )
-        energy_unit = "kW"
-    else:
-        m_dot = 1.0  # Default specific mass basis
-        energy_unit = "kJ/kg"
-        st.info(
-            "Mass flow rate disabled. Energy metrics will be displayed in"
-            " **kJ/kg**."
-        )
+    energy_unit = "kJ/kg"
 
     st.markdown("---")
 
@@ -339,8 +318,6 @@ try:
         p_dis_in=p_dis_A,
         t_dis_in=t_dis_A,
         t_cond_in=t_cond_A,
-        m_dot=m_dot,
-        enable_mdot=enable_mdot,
         p_unit=p_unit,
         fluid=fluid,
     )
@@ -354,8 +331,6 @@ try:
             p_dis_in=p_dis_B,
             t_dis_in=t_dis_B,
             t_cond_in=t_cond_B,
-            m_dot=m_dot,
-            enable_mdot=enable_mdot,
             p_unit=p_unit,
             fluid=fluid,
         )
