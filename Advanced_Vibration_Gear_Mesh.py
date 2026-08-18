@@ -712,11 +712,11 @@ fig_spec.update_layout(
 
 st.plotly_chart(fig_spec, use_container_width=True)
 
-# --- 5. TIME WAVEFORM PLOT (SYNTHESIS INTEGRATED FROM CODE A) ---
+# --- 5. TIME WAVEFORM PLOT ---
 
 st.subheader("Simulated Time Waveform")
 
-# Determine Reference Shaft Speed for TWF Time Base
+# Select reference shaft speed for revolution time calculation
 if twf_ref_shaft == "Gear (1x)":
     ref_freq_hz = f_gear_hz
 elif twf_ref_shaft == "Pinion (1x)":
@@ -730,14 +730,12 @@ t = np.linspace(0, t_max, int(fs * t_max), endpoint=False)
 
 signal = np.zeros_like(t)
 
-# 1x Shaft Fundamental Components
 if amp_1x_gear > 0 and (0 < f_gear_hz * scale_factor <= fmax):
     signal += amp_1x_gear * np.sin(2 * np.pi * f_gear_hz * t)
 
 if amp_1x_pinion > 0 and (0 < f_pinion_hz * scale_factor <= fmax):
     signal += amp_1x_pinion * np.sin(2 * np.pi * f_pinion_hz * t + np.pi / 4)
 
-# GMF Harmonics and Sideband Amplitude Modulation Synthesis
 if amp_gmf_1 > 0:
     for h in range(1, max_harmonic_order + 1):
         center_hz = h * gmf_hz
@@ -760,11 +758,9 @@ if amp_gmf_1 > 0:
 
         signal += base_amp * mod_envelope * np.sin(2 * np.pi * center_hz * t)
 
-# Gear Natural Frequency Structural Response
 if fn_hz > 0 and amp_fn > 0 and (0 < fn_hz * scale_factor <= fmax):
     signal += amp_fn * np.sin(2 * np.pi * fn_hz * t)
 
-# Gaussian Noise Synthesis
 if twf_noise_level > 0.0:
     np.random.seed(42)
     signal += np.random.normal(0, twf_noise_level, size=len(t))
