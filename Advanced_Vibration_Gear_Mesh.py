@@ -22,8 +22,8 @@ PRESETS = {
         "driver_speed_input": 1500.0,
         "unit": "RPM",
         "orientation": "Speed Increaser (Driver = Gear)",
-        "amp_1x_gear": 0.20,
-        "amp_1x_pinion": 0.10,
+        "amp_1x_gear_1": 0.20,
+        "amp_1x_pinion_1": 0.10,
         "amp_gmf_1": 1.50,
         "amp_fn": 0.00,
         "sideband_source": "Gear Side",
@@ -42,8 +42,8 @@ PRESETS = {
         "driver_speed_input": 1800.0,
         "unit": "RPM",
         "orientation": "Speed Increaser (Driver = Gear)",
-        "amp_1x_gear": 0.80,
-        "amp_1x_pinion": 0.20,
+        "amp_1x_gear_1": 0.80,
+        "amp_1x_pinion_1": 0.20,
         "amp_gmf_1": 0.30,
         "amp_fn": 0.00,
         "sideband_source": "Gear Side",
@@ -62,8 +62,8 @@ PRESETS = {
         "driver_speed_input": 1500.0,
         "unit": "RPM",
         "orientation": "Speed Reducer (Driver = Pinion)",
-        "amp_1x_gear": 0.10,
-        "amp_1x_pinion": 0.10,
+        "amp_1x_gear_1": 0.10,
+        "amp_1x_pinion_1": 0.10,
         "amp_gmf_1": 1.50,
         "amp_fn": 2.00,
         "sideband_source": "Gear Side",
@@ -82,8 +82,8 @@ PRESETS = {
         "driver_speed_input": 1500.0,
         "unit": "RPM",
         "orientation": "Speed Increaser (Driver = Gear)",
-        "amp_1x_gear": 0.20,
-        "amp_1x_pinion": 0.10,
+        "amp_1x_gear_1": 0.20,
+        "amp_1x_pinion_1": 0.10,
         "amp_gmf_1": 1.50,
         "amp_fn": 0.00,
         "sideband_source": "Gear Side",
@@ -221,12 +221,16 @@ for idx, stage in enumerate(stage_gears):
         f_out = current_input_speed / ratio
         gmf = f_in * stage["n_pinion"]
         overall_ratio *= ratio
+        f_pinion_stage = f_in
+        f_gear_stage = f_out
     else:
         # Gear drives Pinion (Speed Increaser)
         f_in = current_input_speed
         f_out = current_input_speed * ratio
         gmf = f_in * stage["n_gear"]
         overall_ratio *= ratio
+        f_gear_stage = f_in
+        f_pinion_stage = f_out
 
     stage_results.append({
         "Stage": idx + 1,
@@ -234,21 +238,16 @@ for idx, stage in enumerate(stage_gears):
         "Output Speed (Hz)": f_out,
         "Ratio": ratio,
         "GMF (Hz)": gmf,
+        "Gear Speed (Hz)": f_gear_stage,
+        "Pinion Speed (Hz)": f_pinion_stage,
     })
     current_input_speed = f_out
 
 fr_driven_hz = current_input_speed
 gmf_hz = stage_results[0]["GMF (Hz)"]  # Primary GMF for Stage 1
 
-# Correct Mapping for Stage 1 Gear and Pinion Speeds
-if is_reducer:
-    # Pinion is Driver (Input), Gear is Driven (Output)
-    f_pinion_hz = stage_results[0]["Input Speed (Hz)"]
-    f_gear_hz = stage_results[0]["Output Speed (Hz)"]
-else:
-    # Gear is Driver (Input), Pinion is Driven (Output)
-    f_gear_hz = stage_results[0]["Input Speed (Hz)"]
-    f_pinion_hz = stage_results[0]["Output Speed (Hz)"]
+f_gear_hz = stage_results[0]["Gear Speed (Hz)"]
+f_pinion_hz = stage_results[0]["Pinion Speed (Hz)"]
 
 st.sidebar.metric(
     label="Final Driven Speed",
@@ -270,17 +269,42 @@ st.sidebar.selectbox(
     help="Selecting a scenario loads pre-configured parameters.",
 )
 
+# Dynamic 1x Speeds for all active stages
+amps_1x = {}
+for idx in range(1, num_stages + 1):
+    st.sidebar.markdown(f"**Stage {idx} 1x Amplitudes**")
+    col_g, col_p = st.sidebar.columns(2)
+
+    default_g = 0.20 if idx == 1 else 0.00
+    default_p = 0.10 if idx == 1 else 0.00
+
+    with col_g:
+        amp_g = st.number_input(
+            f"1x Gear Stg {idx} (g)",
+            min_value=0.00,
+            max_value=5.00,
+            value=float(st.session_state.get(f"amp_1x_gear_{idx}", default_g)),
+            step=0.05,
+            key=f"amp_1x_gear_{idx}",
+            on_change=on_input_change,
+        )
+    with col_p:
+        amp_p = st.number_input(
+            f"1x Pinion Stg {idx} (g)",
+            min_value=0.00,
+            max_value=5.00,
+            value=float(
+                st.session_state.get(f"amp_1x_pinion_{idx}", default_p)
+            ),
+            step=0.05,
+            key=f"amp_1x_pinion_{idx}",
+            on_change=on_input_change,
+        )
+    amps_1x[idx] = {"gear": amp_g, "pinion": amp_p}
+
+st.sidebar.markdown("**Base Components & Resonance**")
 col_amp1, col_amp2 = st.sidebar.columns(2)
 with col_amp1:
-    amp_1x_gear = st.number_input(
-        "1x Gear Amp (g)",
-        min_value=0.00,
-        max_value=5.00,
-        value=float(st.session_state["amp_1x_gear"]),
-        step=0.05,
-        key="amp_1x_gear",
-        on_change=on_input_change,
-    )
     amp_gmf_1 = st.number_input(
         "GMF 1x Base Amp (g)",
         min_value=0.00,
@@ -292,15 +316,6 @@ with col_amp1:
     )
 
 with col_amp2:
-    amp_1x_pinion = st.number_input(
-        "1x Pinion Amp (g)",
-        min_value=0.00,
-        max_value=5.00,
-        value=float(st.session_state["amp_1x_pinion"]),
-        step=0.05,
-        key="amp_1x_pinion",
-        on_change=on_input_change,
-    )
     amp_fn = st.number_input(
         "Gear Fn Amp (g)",
         min_value=0.00,
@@ -427,7 +442,6 @@ st.markdown(
     f"**Final Driven Speed:** `{fr_driven_hz:.2f} Hz` / `{fr_driven_hz * 60:.0f} RPM`"
 )
 
-# Display stage-by-stage calculations
 stage_summary = []
 for res in stage_results:
     stage_summary.append({
@@ -551,19 +565,31 @@ x_gmf, amp_gmf, lbl_gmf = [], [], []
 x_sb, amp_sb = [], []
 tick_vals = []
 
-gear_scaled = f_gear_hz * scale_factor
-if 0 < gear_scaled <= fmax and amp_1x_gear > 0:
-    tick_vals.append(gear_scaled)
-    x_1x.append(gear_scaled)
-    amp_1x.append(amp_1x_gear)
-    lbl_1x.append("1x Gear")
+# Process dynamic 1x components for all stages
+for idx in range(1, num_stages + 1):
+    res_stg = stage_results[idx - 1]
 
-pinion_scaled = f_pinion_hz * scale_factor
-if 0 < pinion_scaled <= fmax and amp_1x_pinion > 0:
-    tick_vals.append(pinion_scaled)
-    x_1x.append(pinion_scaled)
-    amp_1x.append(amp_1x_pinion)
-    lbl_1x.append("1x Pinion")
+    # Gear 1x
+    g_freq_scaled = res_stg["Gear Speed (Hz)"] * scale_factor
+    g_amp = amps_1x[idx]["gear"]
+    if 0 < g_freq_scaled <= fmax and g_amp > 0:
+        tick_vals.append(g_freq_scaled)
+        x_1x.append(g_freq_scaled)
+        amp_1x.append(g_amp)
+        lbl_1x.append(
+            f"1x Gear Stg {idx}" if num_stages > 1 else "1x Gear"
+        )
+
+    # Pinion 1x
+    p_freq_scaled = res_stg["Pinion Speed (Hz)"] * scale_factor
+    p_amp = amps_1x[idx]["pinion"]
+    if 0 < p_freq_scaled <= fmax and p_amp > 0:
+        tick_vals.append(p_freq_scaled)
+        x_1x.append(p_freq_scaled)
+        amp_1x.append(p_amp)
+        lbl_1x.append(
+            f"1x Pinion Stg {idx}" if num_stages > 1 else "1x Pinion"
+        )
 
 max_harmonic_order = int(np.ceil(fmax_hz / gmf_hz)) + 1 if gmf_hz > 0 else 3
 
@@ -737,11 +763,18 @@ t = np.linspace(0, t_max, int(fs * t_max), endpoint=False)
 
 signal = np.zeros_like(t)
 
-if amp_1x_gear > 0 and (0 < f_gear_hz * scale_factor <= fmax):
-    signal += amp_1x_gear * np.sin(2 * np.pi * f_gear_hz * t)
+# Add 1x components across all stages into time waveform
+for idx in range(1, num_stages + 1):
+    res_stg = stage_results[idx - 1]
+    g_freq = res_stg["Gear Speed (Hz)"]
+    g_amp = amps_1x[idx]["gear"]
+    if g_amp > 0 and (0 < g_freq * scale_factor <= fmax):
+        signal += g_amp * np.sin(2 * np.pi * g_freq * t)
 
-if amp_1x_pinion > 0 and (0 < f_pinion_hz * scale_factor <= fmax):
-    signal += amp_1x_pinion * np.sin(2 * np.pi * f_pinion_hz * t + np.pi / 4)
+    p_freq = res_stg["Pinion Speed (Hz)"]
+    p_amp = amps_1x[idx]["pinion"]
+    if p_amp > 0 and (0 < p_freq * scale_factor <= fmax):
+        signal += p_amp * np.sin(2 * np.pi * p_freq * t + np.pi / 4)
 
 if amp_gmf_1 > 0:
     for h in range(1, max_harmonic_order + 1):
