@@ -98,6 +98,27 @@ PRESETS = {
         "twf_noise_level": 0.000,
         "optimize_option": "1x GMF (+ Sidebands)",
     },
+    "Scenario 4: Gear Assembly Phase Frequency": {
+        "num_stages": 1,
+        "n_gear_1": 57,
+        "n_pinion_1": 18,
+        "fn_input": 0.0,
+        "fn_unit": "Hz",
+        "driver_speed_input": 1500.0,
+        "unit": "RPM",
+        "orientation": "Speed Increaser (Driver = Gear)",
+        "amp_1x_gear_1": 0.20,
+        "amp_1x_pinion_1": 0.10,
+        "amp_gmf_1": 1.50,
+        "amp_fap": 1.25,
+        "amp_fn": 0.00,
+        "sideband_source": "Gear Side",
+        "selected_orders": [1, 2],
+        "twf_ref_shaft": "Gear (1x)",
+        "twf_revolutions": 6.0,
+        "twf_noise_level": 0.000,
+        "optimize_option": "1x GMF (+ Sidebands)",
+    },
 }
 
 defaults = PRESETS["User Custom"]
