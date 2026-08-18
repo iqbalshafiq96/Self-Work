@@ -25,6 +25,8 @@ PRESETS = {
         "orientation": "Speed Increaser (Driver = Gear)",
         "amp_1x_gear_1": 0.20,
         "amp_1x_pinion_1": 0.10,
+        "phase_gear_1": 45.0,    # Default phase in degrees
+        "phase_pinion_1": 90.0,  # Default phase in degrees
         "amp_gmf_1": 1.50,
         "amp_fap": 0.00,
         "amp_fn": 0.00,
@@ -46,6 +48,8 @@ PRESETS = {
         "orientation": "Speed Increaser (Driver = Gear)",
         "amp_1x_gear_1": 0.80,
         "amp_1x_pinion_1": 0.20,
+        "phase_gear_1": 0.0,
+        "phase_pinion_1": 0.0,
         "amp_gmf_1": 0.30,
         "amp_fap": 0.00,
         "amp_fn": 0.00,
@@ -67,6 +71,8 @@ PRESETS = {
         "orientation": "Speed Reducer (Driver = Pinion)",
         "amp_1x_gear_1": 0.10,
         "amp_1x_pinion_1": 0.10,
+        "phase_gear_1": 0.0,
+        "phase_pinion_1": 0.0,
         "amp_gmf_1": 1.50,
         "amp_fap": 0.00,
         "amp_fn": 2.00,
@@ -88,6 +94,8 @@ PRESETS = {
         "orientation": "Speed Increaser (Driver = Gear)",
         "amp_1x_gear_1": 0.20,
         "amp_1x_pinion_1": 0.10,
+        "phase_gear_1": 45.0,
+        "phase_pinion_1": 90.0,
         "amp_gmf_1": 1.50,
         "amp_fap": 0.00,
         "amp_fn": 0.00,
@@ -109,6 +117,8 @@ PRESETS = {
         "orientation": "Speed Increaser (Driver = Gear)",
         "amp_1x_gear_1": 0.20,
         "amp_1x_pinion_1": 0.10,
+        "phase_gear_1": 0.0,
+        "phase_pinion_1": 0.0,
         "amp_gmf_1": 1.50,
         "amp_fap": 1.25,
         "amp_fn": 0.00,
@@ -242,7 +252,6 @@ overall_ratio = 1.0
 for idx, stage in enumerate(stage_gears):
     ratio = stage["n_gear"] / stage["n_pinion"]
     if is_reducer:
-        # Pinion drives Gear (Speed Reducer)
         f_in = current_input_speed
         f_out = current_input_speed / ratio
         gmf = f_in * stage["n_pinion"]
@@ -250,7 +259,6 @@ for idx, stage in enumerate(stage_gears):
         f_pinion_stage = f_in
         f_gear_stage = f_out
     else:
-        # Gear drives Pinion (Speed Increaser)
         f_in = current_input_speed
         f_out = current_input_speed * ratio
         gmf = f_in * stage["n_gear"]
@@ -274,8 +282,7 @@ for idx, stage in enumerate(stage_gears):
     current_input_speed = f_out
 
 fr_driven_hz = current_input_speed
-gmf_hz = stage_results[0]["GMF (Hz)"]  # Primary GMF for Stage 1
-
+gmf_hz = stage_results[0]["GMF (Hz)"]
 f_gear_hz = stage_results[0]["Gear Speed (Hz)"]
 f_pinion_hz = stage_results[0]["Pinion Speed (Hz)"]
 
@@ -299,38 +306,64 @@ st.sidebar.selectbox(
     help="Selecting a scenario loads pre-configured parameters.",
 )
 
-# Dynamic 1x Speeds for all active stages
+# Dynamic 1x Speeds & Phase Angles for all active stages
 amps_1x = {}
+phases_1x = {}
 for idx in range(1, num_stages + 1):
-    st.sidebar.markdown(f"**Stage {idx} 1x Amplitudes**")
-    col_g, col_p = st.sidebar.columns(2)
+    st.sidebar.markdown(f"**Stage {idx} 1x Amplitudes & Phases**")
+    
+    col_g_amp, col_p_amp = st.sidebar.columns(2)
+    default_g_amp = 0.20 if idx == 1 else 0.00
+    default_p_amp = 0.10 if idx == 1 else 0.00
 
-    default_g = 0.20 if idx == 1 else 0.00
-    default_p = 0.10 if idx == 1 else 0.00
-
-    with col_g:
+    with col_g_amp:
         amp_g = st.number_input(
             f"1x Gear Stg {idx} (g)",
             min_value=0.00,
             max_value=5.00,
-            value=float(st.session_state.get(f"amp_1x_gear_{idx}", default_g)),
+            value=float(st.session_state.get(f"amp_1x_gear_{idx}", default_g_amp)),
             step=0.05,
             key=f"amp_1x_gear_{idx}",
             on_change=on_input_change,
         )
-    with col_p:
+    with col_p_amp:
         amp_p = st.number_input(
             f"1x Pinion Stg {idx} (g)",
             min_value=0.00,
             max_value=5.00,
-            value=float(
-                st.session_state.get(f"amp_1x_pinion_{idx}", default_p)
-            ),
+            value=float(st.session_state.get(f"amp_1x_pinion_{idx}", default_p_amp)),
             step=0.05,
             key=f"amp_1x_pinion_{idx}",
             on_change=on_input_change,
         )
+        
+    col_g_ph, col_p_ph = st.sidebar.columns(2)
+    default_g_phase = 45.0 if idx == 1 else 0.0
+    default_p_phase = 90.0 if idx == 1 else 0.0
+
+    with col_g_ph:
+        ph_g = st.number_input(
+            f"Gear Stg {idx} Phase (°)",
+            min_value=0.0,
+            max_value=360.0,
+            value=float(st.session_state.get(f"phase_gear_{idx}", default_g_phase)),
+            step=15.0,
+            key=f"phase_gear_{idx}",
+            on_change=on_input_change,
+        )
+    with col_p_ph:
+        ph_p = st.number_input(
+            f"Pinion Stg {idx} Phase (°)",
+            min_value=0.0,
+            max_value=360.0,
+            value=float(st.session_state.get(f"phase_pinion_{idx}", default_p_phase)),
+            step=15.0,
+            key=f"phase_pinion_{idx}",
+            on_change=on_input_change,
+        )
+
     amps_1x[idx] = {"gear": amp_g, "pinion": amp_p}
+    phases_1x[idx] = {"gear": np.radians(ph_g), "pinion": np.radians(ph_p)}
 
 st.sidebar.markdown("**Base Components & Resonance**")
 col_amp1, col_amp2, col_amp3 = st.sidebar.columns(3)
@@ -618,7 +651,6 @@ x_fap, amp_fap_list, lbl_fap = [], [], []
 x_sb, amp_sb = [], []
 tick_vals = []
 
-# Process dynamic 1x components and f_ap for all stages
 for idx in range(1, num_stages + 1):
     res_stg = stage_results[idx - 1]
 
@@ -846,18 +878,23 @@ t = np.linspace(0, t_max, int(fs * t_max), endpoint=False)
 
 signal = np.zeros_like(t)
 
-# Add 1x components across all stages into time waveform
+# Add 1x components across all stages with independent phases into time waveform
 for idx in range(1, num_stages + 1):
     res_stg = stage_results[idx - 1]
+    
+    # Gear 1x with Gear Phase
     g_freq = res_stg["Gear Speed (Hz)"]
     g_amp = amps_1x[idx]["gear"]
+    g_phase = phases_1x[idx]["gear"]
     if g_amp > 0 and (0 < g_freq * scale_factor <= fmax):
-        signal += g_amp * np.sin(2 * np.pi * g_freq * t)
+        signal += g_amp * np.sin(2 * np.pi * g_freq * t + g_phase)
 
+    # Pinion 1x with Pinion Phase
     p_freq = res_stg["Pinion Speed (Hz)"]
     p_amp = amps_1x[idx]["pinion"]
+    p_phase = phases_1x[idx]["pinion"]
     if p_amp > 0 and (0 < p_freq * scale_factor <= fmax):
-        signal += p_amp * np.sin(2 * np.pi * p_freq * t + np.pi / 4)
+        signal += p_amp * np.sin(2 * np.pi * p_freq * t + p_phase)
 
     # Assembly Phase Frequency component (f_ap)
     fap_freq = res_stg["f_ap (Hz)"]
