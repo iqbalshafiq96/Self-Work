@@ -26,6 +26,7 @@ PRESETS = {
         "amp_1x_gear_1": 0.20,
         "amp_1x_pinion_1": 0.10,
         "amp_gmf_1": 1.50,
+        "amp_fap": 0.00,
         "amp_fn": 0.00,
         "sideband_source": "Gear Side",
         "selected_orders": [1, 2],
@@ -46,6 +47,7 @@ PRESETS = {
         "amp_1x_gear_1": 0.80,
         "amp_1x_pinion_1": 0.20,
         "amp_gmf_1": 0.30,
+        "amp_fap": 0.00,
         "amp_fn": 0.00,
         "sideband_source": "Gear Side",
         "selected_orders": [1],
@@ -66,6 +68,7 @@ PRESETS = {
         "amp_1x_gear_1": 0.10,
         "amp_1x_pinion_1": 0.10,
         "amp_gmf_1": 1.50,
+        "amp_fap": 0.00,
         "amp_fn": 2.00,
         "sideband_source": "Gear Side",
         "selected_orders": [1, 2],
@@ -86,6 +89,7 @@ PRESETS = {
         "amp_1x_gear_1": 0.20,
         "amp_1x_pinion_1": 0.10,
         "amp_gmf_1": 1.50,
+        "amp_fap": 0.00,
         "amp_fn": 0.00,
         "sideband_source": "Gear Side",
         "selected_orders": [1, 2],
@@ -233,12 +237,16 @@ for idx, stage in enumerate(stage_gears):
         f_gear_stage = f_in
         f_pinion_stage = f_out
 
+    gcd_val = math.gcd(stage["n_gear"], stage["n_pinion"])
+    f_ap = gmf / gcd_val
+
     stage_results.append({
         "Stage": idx + 1,
         "Input Speed (Hz)": f_in,
         "Output Speed (Hz)": f_out,
         "Ratio": ratio,
         "GMF (Hz)": gmf,
+        "f_ap (Hz)": f_ap,
         "Gear Speed (Hz)": f_gear_stage,
         "Pinion Speed (Hz)": f_pinion_stage,
     })
@@ -304,7 +312,7 @@ for idx in range(1, num_stages + 1):
     amps_1x[idx] = {"gear": amp_g, "pinion": amp_p}
 
 st.sidebar.markdown("**Base Components & Resonance**")
-col_amp1, col_amp2 = st.sidebar.columns(2)
+col_amp1, col_amp2, col_amp3 = st.sidebar.columns(3)
 with col_amp1:
     amp_gmf_1 = st.number_input(
         "GMF 1x Base Amp (g)",
@@ -317,6 +325,18 @@ with col_amp1:
     )
 
 with col_amp2:
+    amp_fap = st.number_input(
+        "Gear f_ap Amp (g)",
+        min_value=0.00,
+        max_value=5.00,
+        value=float(st.session_state.get("amp_fap", 0.00)),
+        step=0.05,
+        key="amp_fap",
+        on_change=on_input_change,
+        help="Assembly Phase Frequency amplitude.",
+    )
+
+with col_amp3:
     amp_fn = st.number_input(
         "Gear Fn Amp (g)",
         min_value=0.00,
@@ -449,7 +469,7 @@ for idx, res in enumerate(stage_results):
     n_p = stage_gears[idx]["n_pinion"]
     gcd_val = math.gcd(n_g, n_p)
     hunting_status = "Yes (1)" if gcd_val == 1 else f"No ({gcd_val})"
-    f_ap_hz = res["GMF (Hz)"] / gcd_val
+    f_ap_hz = res["f_ap (Hz)"]
 
     stage_summary.append({
         "Stage": f"Stage {res['Stage']}",
@@ -573,10 +593,11 @@ st.subheader("Simulated Vibration Spectrum")
 noise_floor = 0.02
 x_1x, amp_1x, lbl_1x = [], [], []
 x_gmf, amp_gmf, lbl_gmf = [], [], []
+x_fap, amp_fap_list, lbl_fap = [], [], []
 x_sb, amp_sb = [], []
 tick_vals = []
 
-# Process dynamic 1x components for all stages
+# Process dynamic 1x components and f_ap for all stages
 for idx in range(1, num_stages + 1):
     res_stg = stage_results[idx - 1]
 
@@ -601,6 +622,14 @@ for idx in range(1, num_stages + 1):
         lbl_1x.append(
             f"1x Pinion Stg {idx}" if num_stages > 1 else "1x Pinion"
         )
+
+    # Assembly Phase Frequency (f_ap)
+    fap_freq_scaled = res_stg["f_ap (Hz)"] * scale_factor
+    if 0 < fap_freq_scaled <= fmax and amp_fap > 0:
+        tick_vals.append(fap_freq_scaled)
+        x_fap.append(fap_freq_scaled)
+        amp_fap_list.append(amp_fap)
+        lbl_fap.append(f"f_ap Stg {idx}" if num_stages > 1 else "f_ap")
 
 max_harmonic_order = int(np.ceil(fmax_hz / gmf_hz)) + 1 if gmf_hz > 0 else 3
 
@@ -632,8 +661,8 @@ if amp_gmf_1 > 0:
 
 fig_spec = go.Figure()
 
-all_x = x_1x + x_gmf + x_sb
-all_amps = amp_1x + amp_gmf + amp_sb
+all_x = x_1x + x_gmf + x_fap + x_sb
+all_amps = amp_1x + amp_gmf + amp_fap_list + amp_sb
 
 if fn_hz > 0 and amp_fn > 0:
     fn_scaled = fn_hz * scale_factor
@@ -695,6 +724,28 @@ if x_gmf:
             xanchor="center",
             yanchor="bottom",
             font=dict(color="crimson", size=11),
+        )
+
+if x_fap:
+    fig_spec.add_trace(
+        go.Scatter(
+            x=x_fap,
+            y=amp_fap_list,
+            mode="markers",
+            marker=dict(color="mediumseagreen", size=9, symbol="square"),
+            name="Assembly Phase (f_ap)",
+        )
+    )
+    for x_p, a_p, txt in zip(x_fap, amp_fap_list, lbl_fap):
+        fig_spec.add_annotation(
+            x=x_p,
+            y=a_p + 0.05,
+            text=txt,
+            showarrow=False,
+            textangle=-90,
+            xanchor="center",
+            yanchor="bottom",
+            font=dict(color="mediumseagreen", size=11),
         )
 
 if fn_hz > 0 and amp_fn > 0:
@@ -786,6 +837,11 @@ for idx in range(1, num_stages + 1):
     p_amp = amps_1x[idx]["pinion"]
     if p_amp > 0 and (0 < p_freq * scale_factor <= fmax):
         signal += p_amp * np.sin(2 * np.pi * p_freq * t + np.pi / 4)
+
+    # Assembly Phase Frequency component (f_ap)
+    fap_freq = res_stg["f_ap (Hz)"]
+    if amp_fap > 0 and (0 < fap_freq * scale_factor <= fmax):
+        signal += amp_fap * np.sin(2 * np.pi * fap_freq * t)
 
 if amp_gmf_1 > 0:
     for h in range(1, max_harmonic_order + 1):
