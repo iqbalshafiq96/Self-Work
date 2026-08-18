@@ -2,15 +2,21 @@ import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 
-st.set_page_config(page_title="Gear Mesh Analysis", layout="wide")
-st.title("Gear Mesh & Frequency Spectrum Analysis")
+st.set_page_config(page_title="Multi-Stage Gear Mesh Analysis", layout="wide")
+st.title("Multi-Stage Gear Mesh & Frequency Spectrum Analysis")
 
 # --- 1. PRESET DEFINITIONS & STATE MANAGEMENT ---
-# User Custom is populated with Scenario 3 settings and set as the default
 PRESETS = {
     "User Custom": {
-        "n_gear": 57,
-        "n_pinion": 19,
+        "num_stages": 1,
+        "n_gear_1": 57,
+        "n_pinion_1": 19,
+        "n_gear_2": 60,
+        "n_pinion_2": 20,
+        "n_gear_3": 50,
+        "n_pinion_3": 25,
+        "n_gear_4": 40,
+        "n_pinion_4": 20,
         "fn_input": 0.0,
         "fn_unit": "Hz",
         "driver_speed_input": 1500.0,
@@ -22,13 +28,15 @@ PRESETS = {
         "amp_fn": 0.00,
         "sideband_source": "Gear Side",
         "selected_orders": [1, 2],
+        "twf_ref_shaft": "Gear (1x)",
         "twf_revolutions": 6.0,
         "twf_noise_level": 0.000,
         "optimize_option": "1x GMF (+ Sidebands)",
     },
     "Scenario 1: Unbalance / Misalignment": {
-        "n_gear": 57,
-        "n_pinion": 19,
+        "num_stages": 1,
+        "n_gear_1": 57,
+        "n_pinion_1": 19,
         "fn_input": 0.0,
         "fn_unit": "Hz",
         "driver_speed_input": 1800.0,
@@ -40,13 +48,15 @@ PRESETS = {
         "amp_fn": 0.00,
         "sideband_source": "Gear Side",
         "selected_orders": [1],
+        "twf_ref_shaft": "Gear (1x)",
         "twf_revolutions": 5.0,
         "twf_noise_level": 0.010,
         "optimize_option": "Manual Slider",
     },
     "Scenario 2: Resonant Gear Excitation": {
-        "n_gear": 57,
-        "n_pinion": 19,
+        "num_stages": 1,
+        "n_gear_1": 57,
+        "n_pinion_1": 19,
         "fn_input": 475.0,
         "fn_unit": "Hz",
         "driver_speed_input": 1500.0,
@@ -58,13 +68,15 @@ PRESETS = {
         "amp_fn": 2.00,
         "sideband_source": "Gear Side",
         "selected_orders": [1, 2],
+        "twf_ref_shaft": "Gear (1x)",
         "twf_revolutions": 5.0,
         "twf_noise_level": 0.020,
         "optimize_option": "Manual Slider",
     },
     "Scenario 3: Broken Tooth (Speed Increaser)": {
-        "n_gear": 57,
-        "n_pinion": 19,
+        "num_stages": 1,
+        "n_gear_1": 57,
+        "n_pinion_1": 19,
         "fn_input": 0.0,
         "fn_unit": "Hz",
         "driver_speed_input": 1500.0,
@@ -76,15 +88,14 @@ PRESETS = {
         "amp_fn": 0.00,
         "sideband_source": "Gear Side",
         "selected_orders": [1, 2],
+        "twf_ref_shaft": "Gear (1x)",
         "twf_revolutions": 6.0,
         "twf_noise_level": 0.000,
         "optimize_option": "1x GMF (+ Sidebands)",
     },
 }
 
-# Set default initial values to User Custom
 defaults = PRESETS["User Custom"]
-
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
@@ -94,7 +105,6 @@ if "preset_select" not in st.session_state:
 
 
 def on_preset_change():
-    """Callback when user changes preset dropdown"""
     selected = st.session_state["preset_select"]
     if selected in PRESETS and PRESETS[selected] is not None:
         p = PRESETS[selected]
@@ -103,30 +113,44 @@ def on_preset_change():
 
 
 def on_input_change():
-    """Callback when any individual input changes: reverts dropdown to 'User Custom'"""
     st.session_state["preset_select"] = "User Custom"
 
 
 # --- 2. SIDEBAR CONTROLS ---
 
-st.sidebar.header("Gear Geometry")
+st.sidebar.header("Gearbox Configuration")
 
-n_gear = st.sidebar.number_input(
-    "Gear Teeth Count (N_gear)",
-    min_value=1,
-    value=st.session_state["n_gear"],
-    step=1,
-    key="n_gear",
+num_stages = st.sidebar.selectbox(
+    "Number of Gear Stages",
+    options=[1, 2, 3, 4],
+    index=st.session_state["num_stages"] - 1,
+    key="num_stages",
     on_change=on_input_change,
 )
-n_pinion = st.sidebar.number_input(
-    "Pinion Teeth Count (N_pinion)",
-    min_value=1,
-    value=st.session_state["n_pinion"],
-    step=1,
-    key="n_pinion",
-    on_change=on_input_change,
-)
+
+stage_gears = []
+for idx in range(1, num_stages + 1):
+    st.sidebar.markdown(f"**Stage {idx} Geometry**")
+    col_g, col_p = st.sidebar.columns(2)
+    with col_g:
+        n_g = st.number_input(
+            f"Stage {idx} Gear Teeth",
+            min_value=1,
+            value=int(st.session_state.get(f"n_gear_{idx}", 50)),
+            step=1,
+            key=f"n_gear_{idx}",
+            on_change=on_input_change,
+        )
+    with col_p:
+        n_p = st.number_input(
+            f"Stage {idx} Pinion Teeth",
+            min_value=1,
+            value=int(st.session_state.get(f"n_pinion_{idx}", 20)),
+            step=1,
+            key=f"n_pinion_{idx}",
+            on_change=on_input_change,
+        )
+    stage_gears.append({"n_gear": n_g, "n_pinion": n_p})
 
 col_fn1, col_fn2 = st.sidebar.columns([2, 1])
 with col_fn1:
@@ -181,34 +205,61 @@ orientation = st.sidebar.selectbox(
     on_change=on_input_change,
 )
 
-# Core Speed Computations
-fr_driver_hz = (
-    driver_speed_input if unit == "Hz" else driver_speed_input / 60.0
-)
-gear_ratio = n_gear / n_pinion
+# Core Multi-Stage Speed Computations
+fr_driver_hz = driver_speed_input if unit == "Hz" else driver_speed_input / 60.0
+is_reducer = "Reducer" in orientation
 
-if "Reducer" in orientation:
-    f_pinion_hz = fr_driver_hz
-    f_gear_hz = fr_driver_hz / gear_ratio
-    gmf_hz = f_pinion_hz * n_pinion
+stage_results = []
+current_input_speed = fr_driver_hz
+overall_ratio = 1.0
+
+for idx, stage in enumerate(stage_gears):
+    ratio = stage["n_gear"] / stage["n_pinion"]
+    if is_reducer:
+        # Pinion drives Gear (Speed Reducer)
+        f_in = current_input_speed
+        f_out = current_input_speed / ratio
+        gmf = f_in * stage["n_pinion"]
+        overall_ratio *= ratio
+    else:
+        # Gear drives Pinion (Speed Increaser)
+        f_in = current_input_speed
+        f_out = current_input_speed * ratio
+        gmf = f_in * stage["n_gear"]
+        overall_ratio *= ratio
+
+    stage_results.append({
+        "Stage": idx + 1,
+        "Input Speed (Hz)": f_in,
+        "Output Speed (Hz)": f_out,
+        "Ratio": ratio,
+        "GMF (Hz)": gmf,
+    })
+    current_input_speed = f_out
+
+fr_driven_hz = current_input_speed
+gmf_hz = stage_results[0]["GMF (Hz)"]  # Primary GMF for Stage 1
+
+# Correct Mapping for Stage 1 Gear and Pinion Speeds
+if is_reducer:
+    # Pinion is Driver (Input), Gear is Driven (Output)
+    f_pinion_hz = stage_results[0]["Input Speed (Hz)"]
+    f_gear_hz = stage_results[0]["Output Speed (Hz)"]
 else:
-    f_gear_hz = fr_driver_hz
-    f_pinion_hz = fr_driver_hz * gear_ratio
-    gmf_hz = f_gear_hz * n_gear
-
-fr_driven_hz = f_gear_hz if "Reducer" in orientation else f_pinion_hz
+    # Gear is Driver (Input), Pinion is Driven (Output)
+    f_gear_hz = stage_results[0]["Input Speed (Hz)"]
+    f_pinion_hz = stage_results[0]["Output Speed (Hz)"]
 
 st.sidebar.metric(
-    label="Calculated Driven Speed",
+    label="Final Driven Speed",
     value=f"{fr_driven_hz * 60.0:.1f} RPM",
     delta=f"{fr_driven_hz:.2f} Hz",
     delta_color="off",
 )
 
-# Divider line separating Operating Parameters and Spectrum Simulation
 st.sidebar.markdown("---")
 
-# Spectrum Simulation Controls Header & Preset
+# Spectrum Simulation Controls
 st.sidebar.header("Spectrum Simulation Controls")
 
 st.sidebar.selectbox(
@@ -216,7 +267,7 @@ st.sidebar.selectbox(
     options=list(PRESETS.keys()),
     key="preset_select",
     on_change=on_preset_change,
-    help="Selecting a scenario loads pre-configured parameters. Modifying any parameter switches mode to 'User Custom'.",
+    help="Selecting a scenario loads pre-configured parameters.",
 )
 
 col_amp1, col_amp2 = st.sidebar.columns(2)
@@ -297,7 +348,7 @@ if optimize_option != "Manual Slider":
     fmax = float(calc_fmax_hz * scale_factor)
     st.sidebar.info(
         f"**Fmax Auto-Optimized:** `{fmax:.1f} {unit_label}`\n\n"
-        f"*(Targeting `{optimize_option[:2]}` at `{gmf_hz * int(optimize_option[0]):.1f} Hz`)*"
+        f"*(Targeting Stage 1 `{optimize_option[:2]}` at `{gmf_hz * int(optimize_option[0]):.1f} Hz`)*"
     )
 else:
     if spectrum_unit == "Hz":
@@ -327,9 +378,8 @@ else:
             step=1000.0,
         )
     else:
-        default_fmax = (
-            float(np.ceil(3.5 * n_pinion)) if n_pinion > 0 else 100.0
-        )
+        n_p1 = stage_gears[0]["n_pinion"]
+        default_fmax = float(np.ceil(3.5 * n_p1)) if n_p1 > 0 else 100.0
         fmax = st.sidebar.slider(
             "Spectrum Fmax (Orders)",
             min_value=5.0,
@@ -340,6 +390,12 @@ else:
 
 # Time Waveform Controls
 st.sidebar.header("Time Waveform Controls")
+twf_ref_shaft = st.sidebar.selectbox(
+    "Reference Shaft for Revolutions",
+    ["Gear (1x)", "Pinion (1x)", "Driver Shaft"],
+    key="twf_ref_shaft",
+    on_change=on_input_change,
+)
 twf_revolutions = st.sidebar.slider(
     "Plot Duration (Shaft Revolutions)",
     min_value=1.0,
@@ -359,18 +415,32 @@ twf_noise_level = st.sidebar.slider(
     on_change=on_input_change,
 )
 
-# --- 3. MAIN PANEL ANALYSIS & TABLE ---
+# --- 3. MAIN PANEL ANALYSIS & MULTI-STAGE TABLE ---
 
 st.subheader("Frequency Calculations")
 
+st.markdown(f"**Overall Gearbox Ratio:** `{overall_ratio:.3f}`")
 st.markdown(
-    f"**Gear Running Speed ($f_{{gear}}$):** `{f_gear_hz:.2f} Hz` / `{f_gear_hz*60:.0f} RPM`"
+    f"**Input Driver Speed:** `{fr_driver_hz:.2f} Hz` / `{fr_driver_hz * 60:.0f} RPM`"
 )
 st.markdown(
-    f"**Pinion Running Speed ($f_{{pinion}}$):** `{f_pinion_hz:.2f} Hz` / `{f_pinion_hz*60:.0f} RPM`"
+    f"**Final Driven Speed:** `{fr_driven_hz:.2f} Hz` / `{fr_driven_hz * 60:.0f} RPM`"
 )
-st.markdown(f"**Gear Ratio ($i$):** `{gear_ratio:.3f}`")
-st.markdown(f"**Fundamental GMF:** `{gmf_hz:.2f} Hz` / `{gmf_hz*60:.0f} RPM`")
+
+# Display stage-by-stage calculations
+stage_summary = []
+for res in stage_results:
+    stage_summary.append({
+        "Stage": f"Stage {res['Stage']}",
+        "Input Speed (RPM)": f"{res['Input Speed (Hz)'] * 60:.1f}",
+        "Output Speed (RPM)": f"{res['Output Speed (Hz)'] * 60:.1f}",
+        "Stage Ratio": f"{res['Ratio']:.3f}",
+        "GMF (Hz)": f"{res['GMF (Hz)']:.2f}",
+        "GMF (CPM/RPM)": f"{res['GMF (Hz)'] * 60:.0f}",
+    })
+
+st.markdown("### Stage Breakdown")
+st.table(stage_summary)
 
 if fn_hz > 0:
     fn_display = fn_hz * scale_factor
@@ -378,7 +448,7 @@ if fn_hz > 0:
         f"**Gear Natural Frequency ($f_n$):** `{fn_display:.1f} {unit_label}` ({fn_hz:.2f} Hz)"
     )
 
-st.markdown("### GMF Harmonics & Sidebands")
+st.markdown("### GMF Harmonics & Sidebands (Stage 1 Reference)")
 
 col_sb1, col_sb2 = st.columns([1, 1])
 with col_sb1:
@@ -653,7 +723,15 @@ st.plotly_chart(fig_spec, use_container_width=True)
 
 st.subheader("Simulated Time Waveform")
 
-t_max = twf_revolutions / fr_driver_hz if fr_driver_hz > 0 else 0.1
+# Select reference shaft speed for revolution time calculation
+if twf_ref_shaft == "Gear (1x)":
+    ref_freq_hz = f_gear_hz
+elif twf_ref_shaft == "Pinion (1x)":
+    ref_freq_hz = f_pinion_hz
+else:
+    ref_freq_hz = fr_driver_hz
+
+t_max = twf_revolutions / ref_freq_hz if ref_freq_hz > 0 else 0.1
 fs = max(10000.0, 10.0 * fmax_hz)
 t = np.linspace(0, t_max, int(fs * t_max), endpoint=False)
 
