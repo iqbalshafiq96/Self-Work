@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
@@ -443,9 +444,19 @@ st.markdown(
 )
 
 stage_summary = []
-for res in stage_results:
+for idx, res in enumerate(stage_results):
+    n_g = stage_gears[idx]["n_gear"]
+    n_p = stage_gears[idx]["n_pinion"]
+    gcd_val = math.gcd(n_g, n_p)
+    hunting_status = "Yes (1)" if gcd_val == 1 else f"No ({gcd_val})"
+    f_ap_hz = res["GMF (Hz)"] / gcd_val
+
     stage_summary.append({
         "Stage": f"Stage {res['Stage']}",
+        "Teeth (Gear / Pinion)": f"{n_g} / {n_p}",
+        "GCD": gcd_val,
+        "Hunting Tooth?": hunting_status,
+        "Assembly Phase Freq (f_ap)": f"{f_ap_hz:.2f} Hz",
         "Input Speed (RPM)": f"{res['Input Speed (Hz)'] * 60:.1f}",
         "Output Speed (RPM)": f"{res['Output Speed (Hz)'] * 60:.1f}",
         "Stage Ratio": f"{res['Ratio']:.3f}",
