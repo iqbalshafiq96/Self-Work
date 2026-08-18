@@ -6,7 +6,7 @@ import streamlit as st
 st.set_page_config(page_title="Multi-Stage Gear Mesh Analysis", layout="wide")
 st.title("Multi-Stage Gear Mesh & Frequency Spectrum Analysis")
 st.caption(
-    "Developed by Iqbal SHERPA 20260807. Contact me for further information"
+    "Developed by Iqbal SHERPA 20260818. Contact me for further information"
     " @iqbalshafiq96@gmail.com"
 )
 # --- 1. PRESET DEFINITIONS & STATE MANAGEMENT ---
