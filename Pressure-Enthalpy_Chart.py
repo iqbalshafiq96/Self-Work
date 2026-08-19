@@ -106,6 +106,17 @@ def get_point_props(p_bara, t_degc, fluid):
     return h_kj, cp_kj, cv_kj, t_sat_c
 
 
+def calc_tsat_ui(p_val, unit, fl):
+    """Calculates saturation temperature in °C directly for the sidebar UI."""
+    try:
+        p_bara = convert_to_bara(p_val, unit)
+        p_pa = p_bara * 1e5
+        t_sat_k = CP.PropsSI("T", "P", p_pa, "Q", 0, fl)
+        return f"({t_sat_k - 273.15:.2f} °C)"
+    except Exception:
+        return "(N/A)"
+
+
 def calculate_cycle_points(
     p_suc_in,
     t_suc_in,
@@ -271,15 +282,23 @@ with st.sidebar:
         p_suc_A = st.number_input(
             f"Suction Pressure ({p_unit})", value=7.41, step=0.1, key="p_suc_A"
         )
+        t_sat_suc_A_str = calc_tsat_ui(p_suc_A, p_unit, fluid)
+
         t_suc_A = st.number_input(
             "Suction Temp (°C)", value=15.60, step=0.1, key="t_suc_A"
         )
+        st.caption(f"Sat Temp: {t_sat_suc_A_str}")
+
         p_dis_A = st.number_input(
             f"Discharge Pressure ({p_unit})", value=19.95, step=0.1, key="p_dis_A"
         )
+        t_sat_dis_A_str = calc_tsat_ui(p_dis_A, p_unit, fluid)
+
         t_dis_A = st.number_input(
             "Discharge Temp (°C)", value=52.44, step=0.1, key="t_dis_A"
         )
+        st.caption(f"Sat Temp: {t_sat_dis_A_str}")
+
         t_cond_A = st.number_input(
             "Condenser Outlet Temp (°C)", value=44.04, step=0.1, key="t_cond_A"
         )
@@ -305,15 +324,23 @@ with st.sidebar:
             p_suc_A = st.number_input(
                 f"Suction Press ({p_unit})", value=7.41, step=0.1, key="p_suc_A_m"
             )
+            t_sat_suc_A_str = calc_tsat_ui(p_suc_A, p_unit, fluid)
+
             t_suc_A = st.number_input(
                 "Suction Temp (°C)", value=15.60, step=0.1, key="t_suc_A_m"
             )
+            st.caption(f"Sat Temp: {t_sat_suc_A_str}")
+
             p_dis_A = st.number_input(
                 f"Discharge Press ({p_unit})", value=19.95, step=0.1, key="p_dis_A_m"
             )
+            t_sat_dis_A_str = calc_tsat_ui(p_dis_A, p_unit, fluid)
+
             t_dis_A = st.number_input(
                 "Discharge Temp (°C)", value=52.44, step=0.1, key="t_dis_A_m"
             )
+            st.caption(f"Sat Temp: {t_sat_dis_A_str}")
+
             t_cond_A = st.number_input(
                 "Condenser Temp (°C)", value=44.04, step=0.1, key="t_cond_A_m"
             )
@@ -337,15 +364,23 @@ with st.sidebar:
             p_suc_B = st.number_input(
                 f"Suction Press ({p_unit})", value=6.50, step=0.1, key="p_suc_B"
             )
+            t_sat_suc_B_str = calc_tsat_ui(p_suc_B, p_unit, fluid)
+
             t_suc_B = st.number_input(
                 "Suction Temp (°C)", value=12.00, step=0.1, key="t_suc_B"
             )
+            st.caption(f"Sat Temp: {t_sat_suc_B_str}")
+
             p_dis_B = st.number_input(
                 f"Discharge Press ({p_unit})", value=21.50, step=0.1, key="p_dis_B"
             )
+            t_sat_dis_B_str = calc_tsat_ui(p_dis_B, p_unit, fluid)
+
             t_dis_B = st.number_input(
                 "Discharge Temp (°C)", value=60.00, step=0.1, key="t_dis_B"
             )
+            st.caption(f"Sat Temp: {t_sat_dis_B_str}")
+
             t_cond_B = st.number_input(
                 "Condenser Temp (°C)", value=46.00, step=0.1, key="t_cond_B"
             )
