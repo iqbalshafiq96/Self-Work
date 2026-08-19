@@ -195,7 +195,7 @@ def calculate_cycle_points(
         m_flow_kghr = flowrate_kghr_val
         evap_duty_kw = (m_flow_kghr * q_in) / 3600.0
 
-    # Isentropic Efficiency calculation using S2 Cp/Cv
+    # Isentropic Efficiency calculation using S2 Cp/Cv (Maintained in calculations for future use)
     t1_k = t_suc_in + 273.15
     t2_k = t_dis_in + 273.15
     k_s2 = s2_cp / s2_cv
@@ -740,18 +740,6 @@ try:
             else f"Comp Work ({energy_unit})"
         )
 
-        r1_c1, r1_c2, r1_c3, r1_c4, r1_c5, r1_c6 = st.columns(6)
-        r1_c1.metric("Isentropic Efficiency", f"{prof_A['eta_isen']:.1f} %")
-        r1_c2.metric("Suction Superheat", f"{prof_A['s1_sh']:.1f} K")
-        r1_c3.metric("Discharge Superheat", f"{prof_A['s2_sh']:.1f} K")
-        r1_c4.metric(
-            dis_sh_lbl, f"{prof_A['dis_sh_energy']:.1f} {energy_unit}"
-        )
-        r1_c5.metric(
-            w_comp_lbl, f"{prof_A['w_comp_energy']:.1f} {energy_unit}"
-        )
-        r1_c6.metric("Compression Ratio", f"{prof_A['cr']:.2f}")
-
         duty_str_A = (
             f"{prof_A['evap_duty_kw']:.1f} kW"
             if prof_A["evap_duty_kw"] is not None
@@ -763,39 +751,40 @@ try:
             else "N/A"
         )
 
-        r2_c1, r2_c2, _, _, _, _ = st.columns(6)
-        r2_c1.metric("Evaporator Duty", duty_str_A)
-        r2_c2.metric("Refrig. Flowrate", flow_str_A)
+        c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
+        c1.metric("Suction Superheat", f"{prof_A['s1_sh']:.1f} K")
+        c2.metric("Discharge Superheat", f"{prof_A['s2_sh']:.1f} K")
+        c3.metric(
+            dis_sh_lbl, f"{prof_A['dis_sh_energy']:.1f} {energy_unit}"
+        )
+        c4.metric(
+            w_comp_lbl, f"{prof_A['w_comp_energy']:.1f} {energy_unit}"
+        )
+        c5.metric("Compression Ratio", f"{prof_A['cr']:.2f}")
+        c6.metric("Evaporator Duty", duty_str_A)
+        c7.metric("Refrig. Flowrate", flow_str_A)
 
     else:
         st.markdown("#### Profile Comparison Metrics")
         st.caption(
-            "Displaying **Profile B** baseline values; deltas in brackets show"
-            " shift relative to **Profile A**."
+            "Displaying **Profile B** baseline values; deltas show shift relative to **Profile A**."
         )
 
-        eta_diff = prof_B["eta_isen"] - prof_A["eta_isen"]
         suc_sh_diff = prof_B["s1_sh"] - prof_A["s1_sh"]
         dis_sh_diff = prof_B["s2_sh"] - prof_A["s2_sh"]
         dis_sh_energy_diff = prof_B["dis_sh_energy"] - prof_A["dis_sh_energy"]
         w_comp_diff = prof_B["w_comp_energy"] - prof_A["w_comp_energy"]
         cr_diff = prof_B["cr"] - prof_A["cr"]
 
-        r1_m1, r1_m2, r1_m3, r1_m4, r1_m5, r1_m6 = st.columns(6)
+        m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
 
-        r1_m1.metric(
-            "Isentropic Efficiency",
-            f"{prof_B['eta_isen']:.1f} %",
-            delta=f"{eta_diff:+.1f} %",
-            delta_color="normal",
-        )
-        r1_m2.metric(
+        m1.metric(
             "Suction Superheat",
             f"{prof_B['s1_sh']:.1f} K",
             delta=f"{suc_sh_diff:+.1f} K",
             delta_color="inverse",
         )
-        r1_m3.metric(
+        m2.metric(
             "Discharge Superheat",
             f"{prof_B['s2_sh']:.1f} K",
             delta=f"{dis_sh_diff:+.1f} K",
@@ -808,14 +797,14 @@ try:
             and prof_A["dis_sh_kw"] is not None
         ):
             sh_kw_diff = prof_B["dis_sh_kw"] - prof_A["dis_sh_kw"]
-            r1_m4.metric(
+            m3.metric(
                 "Discharge Superheat (kW)",
                 f"{prof_B['dis_sh_kw']:.1f} kW",
                 delta=f"{sh_kw_diff:+.1f} kW",
                 delta_color="inverse",
             )
         else:
-            r1_m4.metric(
+            m3.metric(
                 f"Discharge SH ({energy_unit})",
                 f"{prof_B['dis_sh_energy']:.1f} {energy_unit}",
                 delta=f"{dis_sh_energy_diff:+.1f} {energy_unit}",
@@ -828,14 +817,14 @@ try:
             and prof_A["w_comp_kw"] is not None
         ):
             w_kw_diff = prof_B["w_comp_kw"] - prof_A["w_comp_kw"]
-            r1_m5.metric(
+            m4.metric(
                 "Compressor Work (kW)",
                 f"{prof_B['w_comp_kw']:.1f} kW",
                 delta=f"{w_kw_diff:+.1f} kW",
                 delta_color="inverse",
             )
         else:
-            r1_m5.metric(
+            m4.metric(
                 f"Compressor Work ({energy_unit})",
                 f"{prof_B['w_comp_energy']:.1f} {energy_unit}",
                 delta=f"{w_comp_diff:+.1f} {energy_unit}",
@@ -843,15 +832,12 @@ try:
             )
 
         # Compression Ratio
-        r1_m6.metric(
+        m5.metric(
             "Compression Ratio",
             f"{prof_B['cr']:.2f}",
             delta=f"{cr_diff:+.2f}",
             delta_color="off",
         )
-
-        # Row 2 Metrics
-        r2_m1, r2_m2, _, _, _, _ = st.columns(6)
 
         # Evaporator Duty
         if (
@@ -859,7 +845,7 @@ try:
             and prof_A["evap_duty_kw"] is not None
         ):
             duty_diff = prof_B["evap_duty_kw"] - prof_A["evap_duty_kw"]
-            r2_m1.metric(
+            m6.metric(
                 "Evaporator Duty",
                 f"{prof_B['evap_duty_kw']:.1f} kW",
                 delta=f"{duty_diff:+.1f} kW",
@@ -871,7 +857,7 @@ try:
                 if prof_B["evap_duty_kw"] is not None
                 else "N/A"
             )
-            r2_m1.metric("Evaporator Duty", val_b, delta=None)
+            m6.metric("Evaporator Duty", val_b, delta=None)
 
         # Refrigerant Flowrate
         if (
@@ -879,7 +865,7 @@ try:
             and prof_A["m_flow_kghr"] is not None
         ):
             flow_diff = prof_B["m_flow_kghr"] - prof_A["m_flow_kghr"]
-            r2_m2.metric(
+            m7.metric(
                 "Refrig. Flowrate",
                 f"{prof_B['m_flow_kghr']:.1f} kg/hr",
                 delta=f"{flow_diff:+.1f} kg/hr",
@@ -891,7 +877,7 @@ try:
                 if prof_B["m_flow_kghr"] is not None
                 else "N/A"
             )
-            r2_m2.metric("Refrig. Flowrate", val_b_flow, delta=None)
+            m7.metric("Refrig. Flowrate", val_b_flow, delta=None)
 
 except Exception as e:
     st.error(
