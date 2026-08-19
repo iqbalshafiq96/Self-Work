@@ -672,25 +672,35 @@ try:
     fig.update_layout(
         title=dict(
             text=f"P-h Diagram ({refrigerant_choice}) - Mode: {analysis_mode}",
-            font=dict(size=16),
+            font=dict(size=16, color="#111827"),
+            x=0.01,
+            xanchor="left",
         ),
         xaxis=dict(
             title="Enthalpy (kJ/kg)",
             range=[max(0, min(all_h) - 100), max(all_h) + 160],
             showgrid=True,
             gridcolor="#E5E7EB",
+            zeroline=False,
         ),
         yaxis=dict(
             title="Pressure (bara)",
             range=[0, max(all_p) + 8.0],
             showgrid=True,
             gridcolor="#E5E7EB",
+            zeroline=False,
         ),
         plot_bgcolor="#FAFAFA",
-        paper_bgcolor="#FFFFFF",
-        legend=dict(orientation="h", y=1.05, x=1, xanchor="right"),
+        paper_bgcolor="#FAFAFA",
+        legend=dict(
+            orientation="h",
+            y=1.05,
+            x=1,
+            xanchor="right",
+            bgcolor="rgba(0,0,0,0)",
+        ),
         height=620,
-        margin=dict(l=60, r=40, t=60, b=50),
+        margin=dict(l=50, r=30, t=50, b=40),
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -772,7 +782,7 @@ try:
             delta_color="inverse",
         )
 
-        # 4. Discharge Superheat (kW if available, else kJ/kg)
+        # Discharge Superheat (kW if available, else kJ/kg)
         if (
             prof_B["dis_sh_kw"] is not None
             and prof_A["dis_sh_kw"] is not None
@@ -792,7 +802,7 @@ try:
                 delta_color="inverse",
             )
 
-        # 5. Compressor Work (kW if available, else kJ/kg)
+        # Compressor Work (kW if available, else kJ/kg)
         if (
             prof_B["w_comp_kw"] is not None
             and prof_A["w_comp_kw"] is not None
@@ -812,7 +822,7 @@ try:
                 delta_color="inverse",
             )
 
-        # 6. Compression Ratio
+        # Compression Ratio
         r1_m6.metric(
             "Compression Ratio",
             f"{prof_B['cr']:.2f}",
@@ -820,10 +830,10 @@ try:
             delta_color="off",
         )
 
-        # --- Row 2 (Remaining 2 KPIs) ---
+        # Row 2 Metrics
         r2_m1, r2_m2, _, _, _, _ = st.columns(6)
 
-        # 7. Evaporator Duty
+        # Evaporator Duty
         if (
             prof_B["evap_duty_kw"] is not None
             and prof_A["evap_duty_kw"] is not None
@@ -843,7 +853,7 @@ try:
             )
             r2_m1.metric("Evaporator Duty", val_b, delta=None)
 
-        # 8. Refrigerant Flowrate
+        # Refrigerant Flowrate
         if (
             prof_B["m_flow_kghr"] is not None
             and prof_A["m_flow_kghr"] is not None
