@@ -8,7 +8,7 @@ st.set_page_config(
     page_title="Refrigeration Cycle Analyzer", page_icon="❄️", layout="wide"
 )
 
-# Custom CSS for Light Theme Metric Cards
+# Custom CSS for Light Theme Metric Cards & Subtitles
 st.markdown(
     """
 <style>
@@ -41,6 +41,13 @@ st.markdown(
         font-size: 11px;
         color: #4B5563;
         margin-top: 4px;
+    }
+    .tsat-subtitle {
+        font-size: 12px;
+        color: #6B7280;
+        margin-top: -12px;
+        margin-bottom: 8px;
+        font-weight: 400;
     }
 </style>
 """,
@@ -107,14 +114,14 @@ def get_point_props(p_bara, t_degc, fluid):
 
 
 def calc_tsat_ui(p_val, unit, fl):
-    """Calculates saturation temperature in °C directly for input label titles."""
+    """Calculates saturation temperature in °C directly for input subtitles."""
     try:
         p_bara = convert_to_bara(p_val, unit)
         p_pa = p_bara * 1e5
         t_sat_k = CP.PropsSI("T", "P", p_pa, "Q", 0, fl)
-        return f"({t_sat_k - 273.15:.2f} °C)"
+        return f"Sat Temp: {t_sat_k - 273.15:.2f} °C"
     except Exception:
-        return "(N/A)"
+        return "Sat Temp: N/A"
 
 
 def calculate_cycle_points(
@@ -282,19 +289,27 @@ with st.sidebar:
         p_suc_A = st.number_input(
             f"Suction Pressure ({p_unit})", value=7.41, step=0.1, key="p_suc_A"
         )
-        t_sat_suc_A_str = calc_tsat_ui(p_suc_A, p_unit, fluid)
 
         t_suc_A = st.number_input(
-            f"Suction Temp (°C) [Sat: {t_sat_suc_A_str}]", value=15.60, step=0.1, key="t_suc_A"
+            "Suction Temp (°C)", value=15.60, step=0.1, key="t_suc_A"
+        )
+        t_sat_suc_A_str = calc_tsat_ui(p_suc_A, p_unit, fluid)
+        st.markdown(
+            f'<div class="tsat-subtitle">{t_sat_suc_A_str}</div>',
+            unsafe_allow_html=True,
         )
 
         p_dis_A = st.number_input(
             f"Discharge Pressure ({p_unit})", value=19.95, step=0.1, key="p_dis_A"
         )
-        t_sat_dis_A_str = calc_tsat_ui(p_dis_A, p_unit, fluid)
 
         t_dis_A = st.number_input(
-            f"Discharge Temp (°C) [Sat: {t_sat_dis_A_str}]", value=52.44, step=0.1, key="t_dis_A"
+            "Discharge Temp (°C)", value=52.44, step=0.1, key="t_dis_A"
+        )
+        t_sat_dis_A_str = calc_tsat_ui(p_dis_A, p_unit, fluid)
+        st.markdown(
+            f'<div class="tsat-subtitle">{t_sat_dis_A_str}</div>',
+            unsafe_allow_html=True,
         )
 
         t_cond_A = st.number_input(
@@ -322,19 +337,27 @@ with st.sidebar:
             p_suc_A = st.number_input(
                 f"Suction Press ({p_unit})", value=7.41, step=0.1, key="p_suc_A_m"
             )
-            t_sat_suc_A_str = calc_tsat_ui(p_suc_A, p_unit, fluid)
 
             t_suc_A = st.number_input(
-                f"Suction Temp (°C) [Sat: {t_sat_suc_A_str}]", value=15.60, step=0.1, key="t_suc_A_m"
+                "Suction Temp (°C)", value=15.60, step=0.1, key="t_suc_A_m"
+            )
+            t_sat_suc_A_str = calc_tsat_ui(p_suc_A, p_unit, fluid)
+            st.markdown(
+                f'<div class="tsat-subtitle">{t_sat_suc_A_str}</div>',
+                unsafe_allow_html=True,
             )
 
             p_dis_A = st.number_input(
                 f"Discharge Press ({p_unit})", value=19.95, step=0.1, key="p_dis_A_m"
             )
-            t_sat_dis_A_str = calc_tsat_ui(p_dis_A, p_unit, fluid)
 
             t_dis_A = st.number_input(
-                f"Discharge Temp (°C) [Sat: {t_sat_dis_A_str}]", value=52.44, step=0.1, key="t_dis_A_m"
+                "Discharge Temp (°C)", value=52.44, step=0.1, key="t_dis_A_m"
+            )
+            t_sat_dis_A_str = calc_tsat_ui(p_dis_A, p_unit, fluid)
+            st.markdown(
+                f'<div class="tsat-subtitle">{t_sat_dis_A_str}</div>',
+                unsafe_allow_html=True,
             )
 
             t_cond_A = st.number_input(
@@ -360,19 +383,27 @@ with st.sidebar:
             p_suc_B = st.number_input(
                 f"Suction Press ({p_unit})", value=6.50, step=0.1, key="p_suc_B"
             )
-            t_sat_suc_B_str = calc_tsat_ui(p_suc_B, p_unit, fluid)
 
             t_suc_B = st.number_input(
-                f"Suction Temp (°C) [Sat: {t_sat_suc_B_str}]", value=12.00, step=0.1, key="t_suc_B"
+                "Suction Temp (°C)", value=12.00, step=0.1, key="t_suc_B"
+            )
+            t_sat_suc_B_str = calc_tsat_ui(p_suc_B, p_unit, fluid)
+            st.markdown(
+                f'<div class="tsat-subtitle">{t_sat_suc_B_str}</div>',
+                unsafe_allow_html=True,
             )
 
             p_dis_B = st.number_input(
                 f"Discharge Press ({p_unit})", value=21.50, step=0.1, key="p_dis_B"
             )
-            t_sat_dis_B_str = calc_tsat_ui(p_dis_B, p_unit, fluid)
 
             t_dis_B = st.number_input(
-                f"Discharge Temp (°C) [Sat: {t_sat_dis_B_str}]", value=60.00, step=0.1, key="t_dis_B"
+                "Discharge Temp (°C)", value=60.00, step=0.1, key="t_dis_B"
+            )
+            t_sat_dis_B_str = calc_tsat_ui(p_dis_B, p_unit, fluid)
+            st.markdown(
+                f'<div class="tsat-subtitle">{t_sat_dis_B_str}</div>',
+                unsafe_allow_html=True,
             )
 
             t_cond_B = st.number_input(
