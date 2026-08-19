@@ -65,6 +65,20 @@ st.markdown(
 
 P_ATM_BAR = 1.01325  # Atmospheric pressure in bar
 
+# Mapping user-friendly names to CoolProp fluid backend names
+REFRIGERANT_MAP = {
+    "Ammonia (R717)": "Ammonia",
+    "R134a": "R134a",
+    "R22": "R22",
+    "R404A": "R404A",
+    "R407C": "R407C",
+    "R410A": "R410A",
+    "R507A": "R507A",
+    "R290 (Propane)": "Propane",
+    "R600a (Isobutane)": "Isobutane",
+    "R1234yf": "R1234yf",
+}
+
 
 # --- Helper Functions ---
 def convert_to_bara(pressure_val, unit):
@@ -275,10 +289,15 @@ with st.sidebar:
 
     st.markdown("---")
     st.header("2. Fluid & Units")
-    refrigerant_choice = st.selectbox(
-        "Refrigerant", ["Ammonia", "R134a"], index=0
+
+    refrigerant_label = st.selectbox(
+        "Refrigerant",
+        list(REFRIGERANT_MAP.keys()),
+        index=0,
+        help="Select working fluid for cycle calculation.",
     )
-    fluid = refrigerant_choice
+    fluid = REFRIGERANT_MAP[refrigerant_label]
+
     p_unit = st.selectbox(
         "Pressure Unit", ["barg", "bara", "kpag", "kpaa"], index=1
     )
@@ -436,6 +455,7 @@ with st.sidebar:
 
 # --- Computations ---
 try:
+    # Set IIR reference state for standard enthalpy calculations
     CP.set_reference_state(fluid, "IIR")
 
     # Calculate Profile A
@@ -671,7 +691,7 @@ try:
 
     fig.update_layout(
         title=dict(
-            text=f"P-h Diagram ({refrigerant_choice}) - Mode: {analysis_mode}",
+            text=f"P-h Diagram ({refrigerant_label}) - Mode: {analysis_mode}",
             font=dict(size=16, color="#111827"),
             x=0.01,
             xanchor="left",
