@@ -16,7 +16,6 @@ st.title("Steam Methane Reforming (SMR) Neural Network Modeling")
 # =====================================================================
 # 1. GITHUB DATA LOADING & PREPROCESSING (AUTOMATIC NORMALIZATION)
 # =====================================================================
-# Convert GitHub blob URL to Raw URL so pandas can read it directly
 GITHUB_CSV_URL = (
     "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/SMR_Data.csv"
 )
@@ -100,12 +99,12 @@ test_ratio = st.sidebar.slider(
 
 
 # =====================================================================
-# 3. PYVIS NETWORK DIAGRAM VISUALIZER (STRICT HORIZONTAL FLOW)
+# 3. PYVIS NETWORK DIAGRAM VISUALIZER (STRICT HORIZONTAL & EQUAL VERTICAL FLOW)
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     max_neurons = max(in_dim, h1, h2, out_dim)
     dynamic_height = max(500, min(max_neurons * 60, 1000))
-    y_gap = max(40, min(90, 600 // max_neurons))
+    total_height = max(300, dynamic_height - 150)
 
     net = Network(
         height=f"{dynamic_height}px",
@@ -139,21 +138,27 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     x_input = -600
     x_h1 = -200
     x_h2 = 200
-    x_output = 600
+    x_output = 600 if h2 > 0 else x_h1 + 400
 
     input_nodes = [f"L0_N{i}" for i in range(in_dim)]
     h1_nodes = [f"L1_N{i}" for i in range(h1)]
     h2_nodes = [f"L2_N{i}" for i in range(h2)] if h2 > 0 else []
     output_nodes = [f"L3_N{i}" for i in range(out_dim)]
 
-    # 1. Input Layer (Retains labels)
+    # Helper function for equal vertical distribution across full canvas height
+    def get_equal_y(index, total_count):
+        if total_count == 1:
+            return 0
+        return -total_height / 2 + (index / (total_count - 1)) * total_height
+
+    # 1. Input Layer (Equal Vertical Spacing)
     for i, nid in enumerate(input_nodes):
         label_text = (
             f"Input\n{input_names[i]}"
             if i < len(input_names)
             else f"Input\nN{i+1}"
         )
-        y_pos = (i - (in_dim - 1) / 2) * y_gap
+        y_pos = get_equal_y(i, in_dim)
         net.add_node(
             nid,
             label=label_text,
@@ -163,9 +168,9 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
             shape="circle",
         )
 
-    # 2. Hidden Layer 1 (No labels)
+    # 2. Hidden Layer 1 (Equal Vertical Spacing)
     for i, nid in enumerate(h1_nodes):
-        y_pos = (i - (h1 - 1) / 2) * y_gap
+        y_pos = get_equal_y(i, h1)
         net.add_node(
             nid,
             label=" ",
@@ -175,9 +180,9 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
             shape="circle",
         )
 
-    # 3. Hidden Layer 2 (Optional, No labels)
+    # 3. Hidden Layer 2 (Optional, Equal Vertical Spacing)
     for i, nid in enumerate(h2_nodes):
-        y_pos = (i - (h2 - 1) / 2) * y_gap
+        y_pos = get_equal_y(i, h2)
         net.add_node(
             nid,
             label=" ",
@@ -187,20 +192,18 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
             shape="circle",
         )
 
-    # 4. Output Layer (Retains labels)
+    # 4. Output Layer (Equal Vertical Spacing)
     for i, nid in enumerate(output_nodes):
         label_text = (
             f"Output\n{output_names[i]}"
             if i < len(output_names)
             else f"Output\nN{i+1}"
         )
-        y_pos = (i - (out_dim - 1) / 2) * y_gap
-        # Adjust X position if Layer 2 is bypassed
-        x_out_pos = x_output if h2 > 0 else x_h2 + 400
+        y_pos = get_equal_y(i, out_dim)
         net.add_node(
             nid,
             label=label_text,
-            x=x_out_pos,
+            x=x_output,
             y=y_pos,
             color={"background": "#7E5109", "border": "#F39C12"},
             shape="circle",
