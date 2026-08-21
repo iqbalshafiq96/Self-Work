@@ -17,7 +17,7 @@ st.title("Steam Methane Reforming (SMR) Neural Network Modeling")
 # 1. GITHUB DATA LOADING & PREPROCESSING (AUTOMATIC NORMALIZATION)
 # =====================================================================
 # Replace URL with your actual Raw GitHub CSV URL
-GITHUB_CSV_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/SMR_Data.csv"
+GITHUB_CSV_URL = "https://github.com/iqbalshafiq96/Self-Work/blob/main/SMR_Data.csv"
 
 @st.cache_data
 def load_and_preprocess_smr_data(url_or_path):
