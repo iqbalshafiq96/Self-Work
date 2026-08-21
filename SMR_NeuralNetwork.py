@@ -475,6 +475,8 @@ if "net" not in st.session_state:
     st.session_state.net = None
 if "loss_history" not in st.session_state:
     st.session_state.loss_history = []
+if "active_tab" not in st.session_state:
+    st.session_state.active_tab = "Batch Training Phase"
 
 num_samples = len(X_norm)
 split_idx = int(num_samples * (1 - test_ratio))
@@ -506,21 +508,31 @@ if st.button("Initialize / Reset Model Architecture"):
 
 
 # =====================================================================
-# 5. WORKFLOW TABS
+# 5. WORKFLOW TABS (STATE-PERSISTED)
 # =====================================================================
 st.divider()
-tab_corr, tab1, tab2, tab3 = st.tabs(
-    [
-        "Data Correlation Matrix",
-        "Batch Training Phase",
-        "Online Adaptation Phase",
-        "Model Testing & Verification",
-    ]
+
+# Tab Navigation persistent via Session State
+tab_options = [
+    "Data Correlation Matrix",
+    "Batch Training Phase",
+    "Online Adaptation Phase",
+    "Model Testing & Verification",
+]
+
+# Custom Styled Radio acting as persistent Tabs
+selected_tab = st.radio(
+    "Workflow Navigation",
+    options=tab_options,
+    index=tab_options.index(st.session_state.active_tab),
+    horizontal=True,
+    label_visibility="collapsed",
+    key="active_tab",
 )
 
 
 # --- TAB 0: CORRELATION MATRIX ---
-with tab_corr:
+if selected_tab == "Data Correlation Matrix":
     st.write("### SMR Data Feature Correlation Matrix")
 
     plt.rcParams["font.sans-serif"] = [
@@ -557,7 +569,7 @@ with tab_corr:
 
 
 # --- TAB 1: BATCH TRAINING ---
-with tab1:
+elif selected_tab == "Batch Training Phase":
     st.markdown(
         "Train the model parameters using normalized SMR training inputs (`X_train`, `Y_train`)."
     )
@@ -598,7 +610,7 @@ with tab1:
 
 
 # --- TAB 2: ONLINE ADAPTATION ---
-with tab2:
+elif selected_tab == "Online Adaptation Phase":
     st.markdown(
         "Update model weights step-by-step for incoming streaming process data."
     )
@@ -642,7 +654,7 @@ with tab2:
 
 
 # --- TAB 3: MODEL TESTING & 4-OUTPUT VERIFICATION ---
-with tab3:
+elif selected_tab == "Model Testing & Verification":
     st.markdown(
         "Evaluate actual vs. predicted performance across all **4 Output Variables** (Inverted back to engineering units)."
     )
