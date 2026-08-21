@@ -305,7 +305,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         var checkExist = setInterval(function() {
             if (typeof network !== 'undefined') {
                 clearInterval(checkExist);
-                
+
                 var zoomSlider = document.getElementById("zoomSlider");
                 var zoomValLabel = document.getElementById("zoomValue");
                 var resetBtn = document.getElementById("resetZoomBtn");
@@ -343,7 +343,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                 var particles = [];
                 var edgeList = edges.get();
                 var nodeList = nodes.get();
-                
+
                 var particleCount = Math.min(edgeList.length, 35);
                 for (var i = 0; i < particleCount; i++) {
                     var edge = edgeList[i % edgeList.length];
@@ -361,21 +361,36 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
 
                 network.on("afterDrawing", function(ctx) {
                     globalPhase += 0.04;
-                    var pulseIntensity = 0.5 + 0.5 * Math.sin(globalPhase);
-                    
+
                     nodeList.forEach(function(node) {
-                        if (node.id.startsWith('L1_') || node.id.startsWith('L2_')) {
-                            var pos = network.getPositions([node.id])[node.id];
-                            var box = network.getBoundingBox(node.id);
-                            
-                            if (pos && box) {
-                                var actualRadius = (box.right - box.left) / 2;
+                        var pos = network.getPositions([node.id])[node.id];
+                        var box = network.getBoundingBox(node.id);
+
+                        if (pos && box) {
+                            var actualRadius = (box.right - box.left) / 2;
+                            var beamColor = "";
+                            var localPhase = globalPhase;
+
+                            if (node.id.startsWith('L0_')) {
+                                // Input Nodes: Soft slate/cyan resonant pulse (slightly phase shifted)
+                                localPhase += 0.5;
+                                beamColor = 'rgba(93, 109, 126, ';
+                            } else if (node.id.startsWith('L1_')) {
+                                // Hidden Layer 1: Vivid Blue pulse
+                                beamColor = 'rgba(52, 152, 219, ';
+                            } else if (node.id.startsWith('L2_')) {
+                                // Hidden Layer 2: Emerald Green pulse
+                                beamColor = 'rgba(26, 188, 156, ';
+                            } else if (node.id.startsWith('L3_')) {
+                                // Output Nodes: Warm Amber/Gold pulse
+                                localPhase += 1.0;
+                                beamColor = 'rgba(243, 156, 18, ';
+                            }
+
+                            if (beamColor !== "") {
+                                var pulseIntensity = 0.5 + 0.5 * Math.sin(localPhase);
                                 var strokeWidth = 1.5 + (pulseIntensity * 2.5);
                                 var alpha = 0.5 + (pulseIntensity * 0.5);
-                                
-                                var beamColor = node.id.startsWith('L1_') 
-                                    ? 'rgba(52, 152, 219, '  
-                                    : 'rgba(26, 188, 156, '; 
 
                                 ctx.beginPath();
                                 ctx.arc(pos.x, pos.y, actualRadius, 0, 2 * Math.PI, false);
@@ -384,7 +399,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                                 ctx.shadowColor = beamColor + '1.0)';
                                 ctx.shadowBlur = 6 * pulseIntensity;
                                 ctx.stroke();
-                                ctx.shadowBlur = 0; 
+                                ctx.shadowBlur = 0;
                             }
                         }
                     });
@@ -392,7 +407,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                     particles.forEach(function(p) {
                         var fromPos = network.getPositions([p.from])[p.from];
                         var toPos = network.getPositions([p.to])[p.to];
-                        
+
                         if (fromPos && toPos) {
                             p.progress += p.speed;
                             p.sparklePhase += p.sparkleSpeed;
@@ -403,18 +418,18 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                                 p.from = randEdge.from;
                                 p.to = randEdge.to;
                             }
-                            
+
                             var currX = fromPos.x + (toPos.x - fromPos.x) * p.progress;
                             var currY = fromPos.y + (toPos.y - fromPos.y) * p.progress;
-                            
+
                             var sparkle = 0.4 + 0.6 * Math.sin(p.sparklePhase);
                             var opacity = (0.3 + 0.7 * sparkle).toFixed(2);
-                            
+
                             ctx.beginPath();
                             ctx.arc(currX, currY, 3, 0, 2 * Math.PI, false);
                             ctx.fillStyle = 'rgba(255, 215, 0, ' + (opacity * 0.3) + ')';
                             ctx.fill();
-                            
+
                             ctx.beginPath();
                             ctx.arc(currX, currY, 1.5, 0, 2 * Math.PI, false);
                             ctx.fillStyle = 'rgba(255, 223, 0, ' + opacity + ')';
@@ -422,7 +437,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                         }
                     });
                 });
-                
+
                 function animate() {
                     network.redraw();
                     requestAnimationFrame(animate);
