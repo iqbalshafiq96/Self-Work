@@ -4,21 +4,20 @@ import torch.nn as nn
 import torch.optim as optim
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import r2_score
+import graphviz
 
 st.set_page_config(page_title="Neural Net Configurator", layout="wide")
-st.title("Neural Network: Training, Adaptation & Testing")
+st.title("Neural Network: Interactive Architecture & Testing")
 
 # =====================================================================
 # 1. SIDEBAR CONFIGURATION
 # =====================================================================
 st.sidebar.header("1. Network Architecture")
-num_inputs = st.sidebar.number_input("Number of Inputs", min_value=1, max_value=20, value=4)
-hidden1_size = st.sidebar.slider("Layer 1 Neurons", 1, 50, 10)
+num_inputs = st.sidebar.number_input("Number of Inputs", min_value=1, max_value=10, value=4)
+hidden1_size = st.sidebar.slider("Layer 1 Neurons", 1, 20, 8)
 activation1 = st.sidebar.selectbox("Layer 1 Activation (Transfer Fcn)", ["Tanh (tansig)", "Sigmoid (logsig)", "ReLU"])
-hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 50, 5)
-num_outputs = st.sidebar.number_input("Number of Outputs", min_value=1, max_value=10, value=1)
+hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 20, 4) # 0 means skip
+num_outputs = st.sidebar.number_input("Number of Outputs", min_value=1, max_value=5, value=1)
 
 st.sidebar.header("2. Optimization & Data Options")
 lr = st.sidebar.number_input("Learning Rate", min_value=0.0001, max_value=1.0, value=0.01, step=0.001)
@@ -27,8 +26,70 @@ test_ratio = st.sidebar.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 
 # =====================================================================
-# 2. DYNAMIC PYTORCH MODEL CLASS
+# 2. DYNAMIC NETWORK VISUALIZER (GRAPHVIZ)
 # =====================================================================
+def draw_neural_network(in_dim, h1, h2, out_dim, act_fn):
+    dot = graphviz.Digraph(comment="Neural Network Architecture")
+    dot.attr(rankdir="LR", size="8,5", dpi="150")
+    dot.attr("node", shape="circle", style="filled", color="#2E86C1", fontcolor="white", fontname="Segoe UI")
+
+    # Input Layer Nodes
+    with dot.subgraph(name="cluster_input") as c:
+        c.attr(color="white", label="Input Layer")
+        for i in range(in_dim):
+            c.node(f"I_{i}", f"X{i+1}", fillcolor="#34495E")
+
+    # Hidden Layer 1 Nodes
+    with dot.subgraph(name="cluster_h1") as c:
+        c.attr(color="white", label=f"Hidden Layer 1\n({act_fn})")
+        for i in range(h1):
+            c.node(f"H1_{i}", f"H1_{i+1}", fillcolor="#2980B9")
+
+    # Connect Input -> Hidden 1
+    for i in range(in_dim):
+        for j in range(h1):
+            dot.edge(f"I_{i}", f"H1_{j}", color="#BDC3C7", arrowhead="none")
+
+    prev_layer_prefix = "H1"
+    prev_layer_count = h1
+
+    # Optional Hidden Layer 2 Nodes
+    if h2 > 0:
+        with dot.subgraph(name="cluster_h2") as c:
+            c.attr(color="white", label=f"Hidden Layer 2\n({act_fn})")
+            for i in range(h2):
+                c.node(f"H2_{i}", f"H2_{i+1}", fillcolor="#16A085")
+
+        # Connect Hidden 1 -> Hidden 2
+        for i in range(h1):
+            for j in range(h2):
+                dot.edge(f"H1_{i}", f"H2_{j}", color="#BDC3C7", arrowhead="none")
+
+        prev_layer_prefix = "H2"
+        prev_layer_count = h2
+
+    # Output Layer Nodes
+    with dot.subgraph(name="cluster_output") as c:
+        c.attr(color="white", label="Output Layer\n(Linear)")
+        for i in range(out_dim):
+            c.node(f"O_{i}", f"Y{i+1}", fillcolor="#D35400")
+
+    # Connect Last Hidden Layer -> Output
+    for i in range(prev_layer_count):
+        for j in range(out_dim):
+            dot.edge(f"{prev_layer_prefix}_{i}", f"O_{j}", color="#BDC3C7", arrowhead="none")
+
+    return dot
+
+
+# =====================================================================
+# 3. ARCHITECTURE VISUALIZATION & MODEL CLASS
+# =====================================================================
+st.subheader("Network Diagram & Visual Representation")
+net_graph = draw_neural_network(num_inputs, hidden1_size, hidden2_size, num_outputs, activation1)
+st.graphviz_chart(net_graph, use_container_width=True)
+
+
 class ConfigurableNet(nn.Module):
     def __init__(self, in_dim, h1, h2, act_fn_name, out_dim):
         super().__init__()
@@ -61,33 +122,31 @@ if "loss_history" not in st.session_state:
 
 
 # =====================================================================
-# 3. DATA CREATION & TRAIN/TEST SPLIT
+# 4. DATA CREATION & TRAIN/TEST SPLIT (PURE PYTORCH)
 # =====================================================================
 st.subheader("Dataset Configuration & Partitioning")
 num_samples = st.slider("Total Dataset Size", 50, 1000, 200)
 
 # Generate synthetic dataset
+torch.manual_seed(42)
 X_raw = torch.randn(num_samples, num_inputs)
-# Create a target with a deterministic pattern + noise
 T_raw = torch.sin(X_raw[:, :1]) * 2.0 + torch.randn(num_samples, num_outputs) * 0.2
 
-# MATLAB equivalent to divideFcn (dividerand)
-X_train_np, X_test_np, T_train_np, T_test_np = train_test_split(
-    X_raw.numpy(), T_raw.numpy(), test_size=test_ratio, random_state=42
-)
+# Partition dataset using PyTorch indices
+split_idx = int(num_samples * (1 - test_ratio))
+indices = torch.randperm(num_samples)
 
-# Convert back to PyTorch Tensors
-X_train = torch.tensor(X_train_np, dtype=torch.float32)
-T_train = torch.tensor(T_train_np, dtype=torch.float32)
-X_test = torch.tensor(X_test_np, dtype=torch.float32)
-T_test = torch.tensor(T_test_np, dtype=torch.float32)
+train_idx = indices[:split_idx]
+test_idx = indices[split_idx:]
+
+X_train, T_train = X_raw[train_idx], T_raw[train_idx]
+X_test, T_test = X_raw[test_idx], T_raw[test_idx]
 
 col1, col2, col3 = st.columns(3)
 col1.metric("Total Samples", num_samples)
 col2.metric("Training Samples", X_train.shape[0])
 col3.metric("Testing Samples", X_test.shape[0])
 
-# Initialize Model Button
 if st.button("Initialize / Reset Model Architecture"):
     st.session_state.net = ConfigurableNet(num_inputs, hidden1_size, hidden2_size, activation1, num_outputs)
     st.session_state.loss_history = []
@@ -95,7 +154,7 @@ if st.button("Initialize / Reset Model Architecture"):
 
 
 # =====================================================================
-# 4. TRAINING, ADAPTATION & TESTING TABS
+# 5. TRAINING, ADAPTATION & TESTING TABS
 # =====================================================================
 st.divider()
 tab1, tab2, tab3 = st.tabs(["Batch Training Phase", "Online Adaptation Phase", "Model Testing Phase"])
@@ -122,7 +181,7 @@ with tab1:
             progress_bar = st.progress(0)
             chart_place = st.empty()
             
-            net.train() # Set model to training mode
+            net.train()
             for epoch in range(int(epochs)):
                 optimizer.zero_grad()
                 output = net(X_train)
@@ -184,27 +243,26 @@ with tab3:
         else:
             net = st.session_state.net
             
-            # --- EVALUATION PHASE ---
-            net.eval() # 1. Set model to evaluation mode
+            net.eval()
             criterion = nn.MSELoss()
             
-            with torch.no_grad(): # 2. Disable gradient calculations for speed and safety
+            with torch.no_grad():
                 test_predictions = net(X_test)
                 test_loss = criterion(test_predictions, T_test).item()
                 
-                # Convert predictions to numpy for analysis
                 y_true = T_test.numpy().flatten()
                 y_pred = test_predictions.numpy().flatten()
                 
-                # Calculate R-Squared Score
-                r2 = r2_score(y_true, y_pred)
+                # Pure PyTorch / NumPy calculation for R2 Score
+                target_mean = np.mean(y_true)
+                ss_tot = np.sum((y_true - target_mean) ** 2)
+                ss_res = np.sum((y_true - y_pred) ** 2)
+                r2 = 1 - (ss_res / (ss_tot + 1e-8))
             
-            # Display Evaluation Metrics
             mcol1, mcol2 = st.columns(2)
             mcol1.metric("Test MSE Loss", f"{test_loss:.6f}")
             mcol2.metric("R² Score (Accuracy)", f"{r2:.4f}")
             
-            # Comparison Dataframe
             results_df = pd.DataFrame({
                 "Actual Target (T_test)": y_true,
                 "Predicted Value (y_pred)": y_pred,
@@ -214,6 +272,5 @@ with tab3:
             st.write("### Prediction vs Actual Values (Test Data)")
             st.dataframe(results_df.head(10))
             
-            # Visual Comparison Chart
             st.write("### Actual vs. Predicted Curve")
             st.line_chart(results_df[["Actual Target (T_test)", "Predicted Value (y_pred)"]])
