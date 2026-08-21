@@ -16,25 +16,30 @@ st.title("Steam Methane Reforming (SMR) Neural Network Modeling")
 # =====================================================================
 # 1. GITHUB DATA LOADING & PREPROCESSING (AUTOMATIC NORMALIZATION)
 # =====================================================================
+# Convert GitHub blob URL to Raw URL so pandas can read it directly
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/SMR_Data.csv"
 
 
 @st.cache_data
 def load_and_preprocess_smr_data(url_or_path):
+    # Fallback to local path if GitHub URL fails or during local dev
     try:
         df = pd.read_csv(url_or_path)
     except Exception:
         df = pd.read_csv("SMR_Data.csv")
 
+    # Extract 3 Inputs and 4 Outputs
     input_cols = df.columns[:3]
     output_cols = df.columns[3:7]
 
     X_raw = df[input_cols].values
     Y_raw = df[output_cols].values
 
+    # Z-Score Standardize Inputs
     scaler_X = StandardScaler()
     X_scaled = scaler_X.fit_transform(X_raw)
 
+    # Standardize Outputs
     scaler_Y = StandardScaler()
     Y_scaled = scaler_Y.fit_transform(Y_raw)
 
@@ -67,7 +72,7 @@ num_inputs = st.sidebar.number_input(
     "Number of Inputs", min_value=1, max_value=10, value=len(input_names)
 )
 hidden1_size = st.sidebar.slider("Layer 1 Neurons", 1, 50, 12)
-hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 50, 6)
+hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 50, 6)  # 0 means skip
 num_outputs = st.sidebar.number_input(
     "Number of Outputs", min_value=1, max_value=10, value=len(output_names)
 )
@@ -93,12 +98,12 @@ test_ratio = st.sidebar.slider(
 
 
 # =====================================================================
-# 3. PYVIS NETWORK DIAGRAM VISUALIZER (CLEAN SYNAPSE VIEW)
+# 3. PYVIS NETWORK DIAGRAM VISUALIZER (STRICT HORIZONTAL FLOW)
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     max_neurons = max(in_dim, h1, h2, out_dim)
-    dynamic_height = max(550, min(max_neurons * 65, 1100))
-    y_gap = max(70, min(110, 700 // max_neurons))
+    dynamic_height = max(500, min(max_neurons * 60, 1000))
+    y_gap = max(40, min(90, 600 // max_neurons))
 
     net = Network(
         height=f"{dynamic_height}px",
@@ -108,37 +113,38 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         directed=True,
     )
 
+    # Disable physics forces so fixed x, y coordinates stick strictly
     net.set_options(
         """
     {
       "nodes": {
         "borderWidth": 2,
-        "size": 36,
-        "font": { "size": 15, "face": "Source Sans Pro", "color": "#FFFFFF", "bold": true }
+        "size": 38,
+        "font": { "size": 16, "face": "Source Sans Pro", "color": "#FFFFFF", "bold": true }
       },
       "edges": {
-        "color": { "color": "rgba(200, 200, 200, 0.3)", "highlight": "#3498DB" },
+        "color": { "color": "rgba(200, 200, 200, 0.35)", "highlight": "#3498DB" },
         "smooth": { "type": "continuous" },
-        "arrows": { "to": { "enabled": true, "scaleFactor": 0.4 } }
+        "arrows": { "to": { "enabled": true, "scaleFactor": 0.5 } }
       },
-      "interaction": { "zoomView": true, "dragView": true, "hover": true },
+      "interaction": { "zoomView": true, "dragView": true },
       "physics": { "enabled": false }
     }
     """
     )
 
-    # Wide horizontal positioning to avoid text overlap
-    x_input = -800
-    x_h1 = -250
-    x_h2 = 250
-    x_output = 800
+    # Fixed horizontal X coordinates (Left to Right)
+    x_input = -600
+    x_h1 = -200
+    x_h2 = 200
+    x_output = 600
 
     input_nodes = [f"L0_N{i}" for i in range(in_dim)]
     h1_nodes = [f"L1_N{i}" for i in range(h1)]
     h2_nodes = [f"L2_N{i}" for i in range(h2)] if h2 > 0 else []
     output_nodes = [f"L3_N{i}" for i in range(out_dim)]
 
-    # 1. Input Layer (Full Labels)
+    # 1. Input Layer
     for i, nid in enumerate(input_nodes):
         label_text = (
             f"Input\n{input_names[i]}"
@@ -149,42 +155,37 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         net.add_node(
             nid,
             label=label_text,
-            title=f"Input {i+1}",
             x=x_input,
             y=y_pos,
             color={"background": "#2C3E50", "border": "#5D6D7E"},
             shape="circle",
         )
 
-    # 2. Hidden Layer 1 (No Inner Label - Synapse Look)
+    # 2. Hidden Layer 1
     for i, nid in enumerate(h1_nodes):
         y_pos = (i - (h1 - 1) / 2) * y_gap
         net.add_node(
             nid,
-            label="",
-            title=f"Hidden 1 Node {i+1} ({act_fn})",
+            label=f"H1 [{act_fn}]\nN{i+1}",
             x=x_h1,
             y=y_pos,
-            size=22,
             color={"background": "#1B4F72", "border": "#3498DB"},
             shape="circle",
         )
 
-    # 3. Hidden Layer 2 (No Inner Label - Synapse Look)
+    # 3. Hidden Layer 2 (Optional)
     for i, nid in enumerate(h2_nodes):
         y_pos = (i - (h2 - 1) / 2) * y_gap
         net.add_node(
             nid,
-            label="",
-            title=f"Hidden 2 Node {i+1} ({act_fn})",
+            label=f"H2 [{act_fn}]\nN{i+1}",
             x=x_h2,
             y=y_pos,
-            size=22,
             color={"background": "#0E6251", "border": "#1ABC9C"},
             shape="circle",
         )
 
-    # 4. Output Layer (Full Labels)
+    # 4. Output Layer
     for i, nid in enumerate(output_nodes):
         label_text = (
             f"Output\n{output_names[i]}"
@@ -192,18 +193,18 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
             else f"Output\nN{i+1}"
         )
         y_pos = (i - (out_dim - 1) / 2) * y_gap
-        x_out_pos = x_output if h2 > 0 else x_h1 + 550
+        # Adjust X position if Layer 2 is bypassed
+        x_out_pos = x_output if h2 > 0 else x_h2 + 400
         net.add_node(
             nid,
             label=label_text,
-            title=f"Output {i+1}",
             x=x_out_pos,
             y=y_pos,
             color={"background": "#7E5109", "border": "#F39C12"},
             shape="circle",
         )
 
-    # Connections
+    # Edge Connections
     for src in input_nodes:
         for dst in h1_nodes:
             net.add_edge(src, dst)
@@ -418,6 +419,7 @@ with tab3:
                 test_preds_norm = net(X_test).numpy()
                 Y_test_norm = Y_test.numpy()
 
+                # Denormalize outputs back to real SMR engineering units
                 Y_test_actual = scaler_Y.inverse_transform(Y_test_norm)
                 Y_test_pred = scaler_Y.inverse_transform(test_preds_norm)
 
@@ -435,6 +437,7 @@ with tab3:
                     )
                     st.line_chart(chart_data)
 
+                    # Compute R² score
                     y_t = Y_test_actual[:, idx]
                     y_p = Y_test_pred[:, idx]
                     r2 = 1 - (
