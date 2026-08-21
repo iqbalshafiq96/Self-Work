@@ -8,3 +8,4 @@ CoolProp
 graphviz
 schemdraw
 pillow
+torch
