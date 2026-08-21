@@ -25,60 +25,51 @@ global_activation = st.sidebar.selectbox(
     ["Tanh (tansig)", "Sigmoid (logsig)", "ReLU"]
 )
 
-# --- Visual Customization Options ---
-st.sidebar.header("2. Visual Customization")
-node_size = st.sidebar.slider("Node Size", min_value=5, max_value=40, value=18)
-remove_fill = st.sidebar.checkbox("Remove Fill Color (Transparent Nodes)", value=False)
-node_color = st.sidebar.color_picker("Node Fill Color (If Enabled)", "#2C3E50") if not remove_fill else None
-border_color = st.sidebar.color_picker("Node Border Color", "#3498DB")
-
-st.sidebar.header("3. Optimization & Data Options")
+st.sidebar.header("2. Optimization & Data Options")
 lr = st.sidebar.number_input("Learning Rate", min_value=0.0001, max_value=1.0, value=0.01, step=0.001)
 optimizer_choice = st.sidebar.selectbox("Optimizer", ["SGD", "Adam"])
 test_ratio = st.sidebar.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 
 # =====================================================================
-# 2. PYVIS INTERACTIVE PHYSICS GRAPH VISUALIZER
+# 2. PYVIS INTERACTIVE PHYSICS GRAPH VISUALIZER (TRANSPARENT BACKGROUND)
 # =====================================================================
-def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, node_sz, is_transparent, fill_c, border_c, max_display=4):
-    net = Network(height="280px", width="100%", bgcolor="#0E1117", font_color="white", directed=True)
-    
-    # Define fill color depending on checkbox
-    fill_color_value = "rgba(0,0,0,0)" if is_transparent else fill_c
+def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, max_display=4):
+    # Set bgcolor to None so it doesn't render a solid background
+    net = Network(height="280px", width="100%", bgcolor="rgba(0,0,0,0)", font_color="white", directed=True)
     
     # Physics settings for smooth node layout & interaction
-    net.set_options(f"""
-    {{
-      "nodes": {{
+    net.set_options("""
+    {
+      "nodes": {
         "borderWidth": 2,
-        "size": {node_sz},
-        "font": {{ "size": 11, "face": "Segoe UI" }}
-      }},
-      "edges": {{
-        "color": {{ "color": "rgba(200, 200, 200, 0.2)", "highlight": "#3498DB" }},
+        "size": 18,
+        "font": { "size": 11, "face": "Segoe UI" }
+      },
+      "edges": {
+        "color": { "color": "rgba(200, 200, 200, 0.4)", "highlight": "#3498DB" },
         "smooth": false,
-        "arrows": {{ "to": {{ "enabled": true, "scaleFactor": 0.3 }} }}
-      }},
-      "physics": {{
-        "barnesHut": {{ "gravitationalConstant": -1200, "springLength": 50, "springConstant": 0.04 }},
+        "arrows": { "to": { "enabled": true, "scaleFactor": 0.3 } }
+      },
+      "physics": {
+        "barnesHut": { "gravitationalConstant": -1200, "springLength": 50, "springConstant": 0.04 },
         "minVelocity": 0.75
-      }}
-    }}
+      }
+    }
     """)
 
     layers = [
-        ("Input", in_dim, -250),
-        (f"Hidden 1 [{act_fn}]", h1, -80),
+        ("Input", in_dim, "#2C3E50", "#5D6D7E", -250),
+        (f"Hidden 1 [{act_fn}]", h1, "#1B4F72", "#3498DB", -80),
     ]
     if h2 > 0:
-        layers.append((f"Hidden 2 [{act_fn}]", h2, 80))
-    layers.append(("Output", out_dim, 250))
+        layers.append((f"Hidden 2 [{act_fn}]", h2, "#0E6251", "#1ABC9C", 80))
+    layers.append(("Output", out_dim, "#7E5109", "#F39C12", 250))
 
     layer_node_ids = []
 
     # 1. Add Nodes
-    for l_idx, (label, count, x_pos) in enumerate(layers):
+    for l_idx, (label, count, fill_color, border_color, x_pos) in enumerate(layers):
         current_layer_ids = []
         display_count = min(count, max_display)
         
@@ -92,7 +83,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, node_sz, is_transparen
                 label=node_label, 
                 x=x_pos, 
                 y=y_pos, 
-                color={"background": fill_color_value, "border": border_c},
+                color={"background": fill_color, "border": border_color},
                 shape="circle"
             )
             current_layer_ids.append(node_id)
@@ -105,7 +96,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, node_sz, is_transparen
                 label=f"+{count - max_display} more", 
                 x=x_pos, 
                 y=((max_display) - (max_display - 1) / 2) * 50,
-                color={"background": fill_color_value, "border": border_c},
+                color={"background": "#34495E", "border": "#7F8C8D"},
                 shape="ellipse"
             )
             current_layer_ids.append(dots_id)
@@ -118,8 +109,9 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, node_sz, is_transparen
             for dst in layer_node_ids[i+1]:
                 net.add_edge(src, dst)
 
-    # Save to static HTML string & display inside Streamlit component
+    # Save to HTML and strip canvas container background CSS
     html_content = net.generate_html()
+    html_content = html_content.replace("background-color: #0E1117;", "background-color: transparent;")
     components.html(html_content, height=290)
 
 
@@ -127,17 +119,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, node_sz, is_transparen
 # 3. ARCHITECTURE VISUALIZATION & MODEL CLASS
 # =====================================================================
 st.subheader("Interactive Physics Network Diagram")
-render_pyvis_network(
-    num_inputs, 
-    hidden1_size, 
-    hidden2_size, 
-    num_outputs, 
-    global_activation,
-    node_size,
-    remove_fill,
-    node_color,
-    border_color
-)
+render_pyvis_network(num_inputs, hidden1_size, hidden2_size, num_outputs, global_activation)
 
 
 class ConfigurableNet(nn.Module):
