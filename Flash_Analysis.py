@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 from thermo import Mixture
 
 # Page Config
@@ -111,8 +112,12 @@ try:
         fig, ax = plt.subplots(figsize=(6, 5))
         ax.axis("off")
 
-        # Draw Vessel Body
-        vessel = plt.Rectangle((0.35, 0.25), 0.3, 0.5, facecolor="#e2e8f0", edgecolor="#334155", lw=3, boxstyle="round,pad=0.05")
+        # Draw Vessel Body using FancyBboxPatch for rounded corners
+        vessel = patches.FancyBboxPatch(
+            (0.35, 0.25), 0.3, 0.5, 
+            boxstyle="round,pad=0.02,rounding_size=0.05",
+            facecolor="#e2e8f0", edgecolor="#334155", lw=3
+        )
         ax.add_patch(vessel)
         
         # Feed Arrow
