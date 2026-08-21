@@ -100,7 +100,7 @@ test_ratio = st.sidebar.slider(
 
 
 # =====================================================================
-# 3. PYVIS NETWORK DIAGRAM VISUALIZER WITH GOLD SPARKLING PULSES
+# 3. PYVIS NETWORK DIAGRAM WITH RESONATING NODES & GOLD SPARKLING PULSES
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     max_neurons = max(in_dim, h1, h2, out_dim)
@@ -227,8 +227,8 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
 
     html_content = net.generate_html()
 
-    # Gold sparkling micro-particle animation along connection lines
-    gold_sparkle_script = """
+    # Synchronized node resonance + particle animation script
+    resonating_animation_script = """
     <script type="text/javascript">
     document.addEventListener("DOMContentLoaded", function() {
         var checkExist = setInterval(function() {
@@ -237,6 +237,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                 
                 var particles = [];
                 var edgeList = edges.get();
+                var nodeList = nodes.get();
                 
                 var particleCount = Math.min(edgeList.length, 35);
                 for (var i = 0; i < particleCount; i++) {
@@ -251,7 +252,43 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                     });
                 }
 
+                var globalPhase = 0;
+
                 network.on("afterDrawing", function(ctx) {
+                    globalPhase += 0.04; // Frequency of simultaneous resonance pulse
+                    var pulseIntensity = 0.5 + 0.5 * Math.sin(globalPhase);
+                    
+                    // 1. Draw Synchronized Resonating Glow Halos on All Nodes
+                    nodeList.forEach(function(node) {
+                        var pos = network.getPositions([node.id])[node.id];
+                        if (pos) {
+                            var baseRadius = 30; // Matches circle shape size
+                            var glowRadius = baseRadius + (pulseIntensity * 12);
+                            var glowAlpha = 0.15 + (pulseIntensity * 0.25);
+                            
+                            // Determine halo color by layer prefix
+                            var haloColor = 'rgba(52, 152, 219, '; // Default cyan
+                            if (node.id.startsWith('L0_')) haloColor = 'rgba(52, 152, 219, ';
+                            else if (node.id.startsWith('L1_')) haloColor = 'rgba(41, 128, 185, ';
+                            else if (node.id.startsWith('L2_')) haloColor = 'rgba(26, 188, 156, ';
+                            else if (node.id.startsWith('L3_')) haloColor = 'rgba(243, 156, 18, ';
+
+                            // Outer ambient pulsating halo
+                            ctx.beginPath();
+                            ctx.arc(pos.x, pos.y, glowRadius, 0, 2 * Math.PI, false);
+                            ctx.fillStyle = haloColor + glowAlpha + ')';
+                            ctx.fill();
+
+                            // Inner high-density core resonance ring
+                            ctx.beginPath();
+                            ctx.arc(pos.x, pos.y, baseRadius + 2, 0, 2 * Math.PI, false);
+                            ctx.strokeStyle = haloColor + (glowAlpha * 1.5) + ')';
+                            ctx.lineWidth = 2 + (pulseIntensity * 2);
+                            ctx.stroke();
+                        }
+                    });
+
+                    // 2. Draw Sparkling Gold Micro-particles Moving Along Synapses
                     particles.forEach(function(p) {
                         var fromPos = network.getPositions([p.from])[p.from];
                         var toPos = network.getPositions([p.to])[p.to];
@@ -267,21 +304,17 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                                 p.to = randEdge.to;
                             }
                             
-                            // Position along the exact vector line between nodes
                             var currX = fromPos.x + (toPos.x - fromPos.x) * p.progress;
                             var currY = fromPos.y + (toPos.y - fromPos.y) * p.progress;
                             
-                            // Sparkle flickering multiplier
                             var sparkle = 0.4 + 0.6 * Math.sin(p.sparklePhase);
                             var opacity = (0.3 + 0.7 * sparkle).toFixed(2);
                             
-                            // Warm Gold Ambient Glow
                             ctx.beginPath();
                             ctx.arc(currX, currY, 3, 0, 2 * Math.PI, false);
                             ctx.fillStyle = 'rgba(255, 215, 0, ' + (opacity * 0.3) + ')';
                             ctx.fill();
                             
-                            // Sparkling Gold Micro-dot (1.5px)
                             ctx.beginPath();
                             ctx.arc(currX, currY, 1.5, 0, 2 * Math.PI, false);
                             ctx.fillStyle = 'rgba(255, 223, 0, ' + opacity + ')';
@@ -302,7 +335,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     </body>
     """
 
-    html_content = html_content.replace("</body>", gold_sparkle_script)
+    html_content = html_content.replace("</body>", resonating_animation_script)
     components.html(html_content, height=dynamic_height + 10)
 
 
