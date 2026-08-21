@@ -1,5 +1,5 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
@@ -17,7 +17,9 @@ st.title("Steam Methane Reforming (SMR) Neural Network Modeling")
 # 1. GITHUB DATA LOADING & PREPROCESSING (AUTOMATIC NORMALIZATION)
 # =====================================================================
 # Convert GitHub blob URL to Raw URL so pandas can read it directly
-GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/SMR_Data.csv"
+GITHUB_CSV_URL = (
+    "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/SMR_Data.csv"
+)
 
 
 @st.cache_data
@@ -161,24 +163,24 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
             shape="circle",
         )
 
-    # 2. Hidden Layer 1
+    # 2. Hidden Layer 1 (No labels)
     for i, nid in enumerate(h1_nodes):
         y_pos = (i - (h1 - 1) / 2) * y_gap
         net.add_node(
             nid,
-            label=f"H1 [{act_fn}]\nN{i+1}",
+            label="",
             x=x_h1,
             y=y_pos,
             color={"background": "#1B4F72", "border": "#3498DB"},
             shape="circle",
         )
 
-    # 3. Hidden Layer 2 (Optional)
+    # 3. Hidden Layer 2 (Optional, No labels)
     for i, nid in enumerate(h2_nodes):
         y_pos = (i - (h2 - 1) / 2) * y_gap
         net.add_node(
             nid,
-            label=f"H2 [{act_fn}]\nN{i+1}",
+            label="",
             x=x_h2,
             y=y_pos,
             color={"background": "#0E6251", "border": "#1ABC9C"},
@@ -247,7 +249,9 @@ class ConfigurableNet(nn.Module):
 
         layers = [nn.Linear(in_dim, h1), chosen_act]
         if h2 > 0:
-            layers.extend([nn.Linear(h1, h2), chosen_act, nn.Linear(h2, out_dim)])
+            layers.extend(
+                [nn.Linear(h1, h2), chosen_act, nn.Linear(h2, out_dim)]
+            )
         else:
             layers.append(nn.Linear(h1, out_dim))
 
