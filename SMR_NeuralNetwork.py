@@ -23,24 +23,20 @@ GITHUB_CSV_URL = (
 
 @st.cache_data
 def load_and_preprocess_smr_data(url_or_path):
-    # Fallback to local path if GitHub URL fails or during local dev
     try:
         df = pd.read_csv(url_or_path)
     except Exception:
         df = pd.read_csv("SMR_Data.csv")
 
-    # Extract 3 Inputs and 4 Outputs dynamically from the data
     input_cols = df.columns[:3]
     output_cols = df.columns[3:7]
 
     X_raw = df[input_cols].values
     Y_raw = df[output_cols].values
 
-    # Z-Score Standardize Inputs
     scaler_X = StandardScaler()
     X_scaled = scaler_X.fit_transform(X_raw)
 
-    # Standardize Outputs
     scaler_Y = StandardScaler()
     Y_scaled = scaler_Y.fit_transform(Y_raw)
 
@@ -64,7 +60,6 @@ except Exception as e:
     )
     st.stop()
 
-# Dynamic input/output counts inferred directly from loaded SMR data
 num_inputs = len(input_names)
 num_outputs = len(output_names)
 
@@ -74,14 +69,13 @@ num_outputs = len(output_names)
 # =====================================================================
 st.sidebar.header("1. Network Architecture")
 hidden1_size = st.sidebar.slider("Layer 1 Neurons", 1, 50, 12)
-hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 50, 6)  # 0 means skip
+hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 50, 6)
 
 global_activation = st.sidebar.selectbox(
     "Global Transfer Function (All Layers)",
     ["Tanh (tansig)", "Sigmoid (logsig)", "ReLU"],
 )
 
-# Brief descriptive subtitles for each transfer function
 activation_descriptions = {
     "Tanh (tansig)": "Outputs zero-centered values between -1 and 1. Great for continuous non-linear process dynamics.",
     "Sigmoid (logsig)": "Outputs values scaled between 0 and 1. Useful for smooth non-linear probability transitions.",
@@ -106,7 +100,7 @@ test_ratio = st.sidebar.slider(
 
 
 # =====================================================================
-# 3. PYVIS NETWORK DIAGRAM VISUALIZER
+# 3. PYVIS NETWORK DIAGRAM VISUALIZER WITH SYNAPTIC PULSE ANIMATION
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     max_neurons = max(in_dim, h1, h2, out_dim)
@@ -121,7 +115,6 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         directed=True,
     )
 
-    # Disable physics forces & match Streamlit subtitle font stacks
     net.set_options(
         """
     {
@@ -136,7 +129,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         }
       },
       "edges": {
-        "color": { "color": "rgba(200, 200, 200, 0.35)", "highlight": "#3498DB" },
+        "color": { "color": "rgba(200, 200, 200, 0.25)", "highlight": "#3498DB" },
         "smooth": { "type": "continuous" },
         "arrows": { "to": { "enabled": true, "scaleFactor": 0.5 } }
       },
@@ -146,7 +139,6 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     """
     )
 
-    # Fixed horizontal X coordinates
     x_input = -600
     x_h1 = -200
     x_h2 = 200
@@ -157,71 +149,66 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     h2_nodes = [f"L2_N{i}" for i in range(h2)] if h2 > 0 else []
     output_nodes = [f"L3_N{i}" for i in range(out_dim)]
 
-    # Helper function for equal vertical distribution across full canvas height
     def get_equal_y(index, total_count):
         if total_count == 1:
             return 0
         return -total_height / 2 + (index / (total_count - 1)) * total_height
 
-    # 1. Input Layer
+    # Input Layer
     for i, nid in enumerate(input_nodes):
         label_text = (
             f"Input\n{input_names[i]}"
             if i < len(input_names)
             else f"Input\nN{i+1}"
         )
-        y_pos = get_equal_y(i, in_dim)
         net.add_node(
             nid,
             label=label_text,
             x=x_input,
-            y=y_pos,
+            y=get_equal_y(i, in_dim),
             color={"background": "#2C3E50", "border": "#5D6D7E"},
             shape="circle",
         )
 
-    # 2. Hidden Layer 1
+    # Hidden Layer 1
     for i, nid in enumerate(h1_nodes):
-        y_pos = get_equal_y(i, h1)
         net.add_node(
             nid,
             label=" ",
             x=x_h1,
-            y=y_pos,
+            y=get_equal_y(i, h1),
             color={"background": "#1B4F72", "border": "#3498DB"},
             shape="circle",
         )
 
-    # 3. Hidden Layer 2 (Optional)
+    # Hidden Layer 2
     for i, nid in enumerate(h2_nodes):
-        y_pos = get_equal_y(i, h2)
         net.add_node(
             nid,
             label=" ",
             x=x_h2,
-            y=y_pos,
+            y=get_equal_y(i, h2),
             color={"background": "#0E6251", "border": "#1ABC9C"},
             shape="circle",
         )
 
-    # 4. Output Layer
+    # Output Layer
     for i, nid in enumerate(output_nodes):
         label_text = (
             f"Output\n{output_names[i]}"
             if i < len(output_names)
             else f"Output\nN{i+1}"
         )
-        y_pos = get_equal_y(i, out_dim)
         net.add_node(
             nid,
             label=label_text,
             x=x_output,
-            y=y_pos,
+            y=get_equal_y(i, out_dim),
             color={"background": "#7E5109", "border": "#F39C12"},
             shape="circle",
         )
 
-    # Edge Connections
+    # Connections
     for src in input_nodes:
         for dst in h1_nodes:
             net.add_edge(src, dst)
@@ -239,6 +226,80 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                 net.add_edge(src, dst)
 
     html_content = net.generate_html()
+
+    # Inject JavaScript overlay to render animated pulsing particles along synaptic edges
+    animation_script = """
+    <script type="text/javascript">
+    document.addEventListener("DOMContentLoaded", function() {
+        var checkExist = setInterval(function() {
+            if (typeof network !== 'undefined') {
+                clearInterval(checkExist);
+                
+                var particles = [];
+                var edgeList = edges.get();
+                
+                // Initialize multiple pulsing light particles across random edges
+                for (var i = 0; i < edgeList.length * 2; i++) {
+                    var randomEdge = edgeList[Math.floor(Math.random() * edgeList.length)];
+                    particles.push({
+                        from: randomEdge.from,
+                        to: randomEdge.to,
+                        progress: Math.random(),
+                        speed: 0.005 + Math.random() * 0.008,
+                        size: 3 + Math.random() * 3,
+                        color: Math.random() > 0.5 ? '#00FFFF' : '#00FF99'
+                    });
+                }
+
+                network.on("afterDrawing", function(ctx) {
+                    particles.forEach(function(p) {
+                        var fromPos = network.getPositions([p.from])[p.from];
+                        var toPos = network.getPositions([p.to])[p.to];
+                        
+                        if (fromPos && toPos) {
+                            p.progress += p.speed;
+                            if (p.progress >= 1) {
+                                p.progress = 0;
+                                var nextEdge = edgeList[Math.floor(Math.random() * edgeList.length)];
+                                p.from = nextEdge.from;
+                                p.to = nextEdge.to;
+                            }
+                            
+                            var currentX = fromPos.x + (toPos.x - fromPos.x) * p.progress;
+                            var currentY = fromPos.y + (toPos.y - fromPos.y) * p.progress;
+                            
+                            // Outer Glow
+                            ctx.beginPath();
+                            ctx.arc(currentX, currentY, p.size * 2, 0, 2 * Math.PI, false);
+                            ctx.fillStyle = 'rgba(0, 255, 255, 0.25)';
+                            ctx.fill();
+                            
+                            // Core Pulsing Particle
+                            ctx.beginPath();
+                            ctx.arc(currentX, currentY, p.size, 0, 2 * Math.PI, false);
+                            ctx.fillStyle = p.color;
+                            ctx.shadowColor = '#00FFFF';
+                            ctx.shadowBlur = 10;
+                            ctx.fill();
+                            ctx.shadowBlur = 0; // reset shadow
+                        }
+                    });
+                });
+                
+                // Trigger canvas redraw loop
+                function animate() {
+                    network.redraw();
+                    requestAnimationFrame(animate);
+                }
+                animate();
+            }
+        }, 100);
+    });
+    </script>
+    </body>
+    """
+
+    html_content = html_content.replace("</body>", animation_script)
     components.html(html_content, height=dynamic_height + 10)
 
 
@@ -281,7 +342,6 @@ if "net" not in st.session_state:
 if "loss_history" not in st.session_state:
     st.session_state.loss_history = []
 
-# Partitioning Data
 num_samples = len(X_norm)
 split_idx = int(num_samples * (1 - test_ratio))
 
@@ -438,7 +498,6 @@ with tab3:
                 test_preds_norm = net(X_test).numpy()
                 Y_test_norm = Y_test.numpy()
 
-                # Denormalize outputs back to real SMR engineering units
                 Y_test_actual = scaler_Y.inverse_transform(Y_test_norm)
                 Y_test_pred = scaler_Y.inverse_transform(test_preds_norm)
 
@@ -456,7 +515,6 @@ with tab3:
                     )
                     st.line_chart(chart_data)
 
-                    # Compute R² score
                     y_t = Y_test_actual[:, idx]
                     y_p = Y_test_pred[:, idx]
                     r2 = 1 - (
