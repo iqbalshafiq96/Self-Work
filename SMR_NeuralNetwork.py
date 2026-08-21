@@ -100,7 +100,7 @@ test_ratio = st.sidebar.slider(
 
 
 # =====================================================================
-# 3. PYVIS NETWORK DIAGRAM VISUALIZER WITH SUBTLE SYNAPTIC PULSES
+# 3. PYVIS NETWORK DIAGRAM VISUALIZER WITH GOLD SPARKLING PULSES
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     max_neurons = max(in_dim, h1, h2, out_dim)
@@ -129,7 +129,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         }
       },
       "edges": {
-        "color": { "color": "rgba(200, 200, 200, 0.18)", "highlight": "#3498DB" },
+        "color": { "color": "rgba(200, 200, 200, 0.18)", "highlight": "#F1C40F" },
         "smooth": { "type": "continuous" },
         "arrows": { "to": { "enabled": true, "scaleFactor": 0.4 } }
       },
@@ -227,8 +227,8 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
 
     html_content = net.generate_html()
 
-    # Dynamic particle script with tiny micro-dots following edge coordinates precisely
-    subtle_particle_script = """
+    # Gold sparkling micro-particle animation along connection lines
+    gold_sparkle_script = """
     <script type="text/javascript">
     document.addEventListener("DOMContentLoaded", function() {
         var checkExist = setInterval(function() {
@@ -238,17 +238,16 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                 var particles = [];
                 var edgeList = edges.get();
                 
-                // Spawn a few subtle micro-particles assigned directly to edges
-                var particleCount = Math.min(edgeList.length, 30);
+                var particleCount = Math.min(edgeList.length, 35);
                 for (var i = 0; i < particleCount; i++) {
                     var edge = edgeList[i % edgeList.length];
                     particles.push({
-                        edgeId: edge.id,
                         from: edge.from,
                         to: edge.to,
                         progress: Math.random(),
-                        speed: 0.003 + Math.random() * 0.004,
-                        opacity: 0.3 + Math.random() * 0.4
+                        speed: 0.002 + Math.random() * 0.004,
+                        sparklePhase: Math.random() * Math.PI * 2,
+                        sparkleSpeed: 0.05 + Math.random() * 0.1
                     });
                 }
 
@@ -259,6 +258,8 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                         
                         if (fromPos && toPos) {
                             p.progress += p.speed;
+                            p.sparklePhase += p.sparkleSpeed;
+
                             if (p.progress >= 0.95) {
                                 p.progress = 0.05;
                                 var randEdge = edgeList[Math.floor(Math.random() * edgeList.length)];
@@ -266,20 +267,24 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                                 p.to = randEdge.to;
                             }
                             
-                            // Linear interpolation matching the connection line
+                            // Position along the exact vector line between nodes
                             var currX = fromPos.x + (toPos.x - fromPos.x) * p.progress;
                             var currY = fromPos.y + (toPos.y - fromPos.y) * p.progress;
                             
-                            // Subtle soft outer glow
+                            // Sparkle flickering multiplier
+                            var sparkle = 0.4 + 0.6 * Math.sin(p.sparklePhase);
+                            var opacity = (0.3 + 0.7 * sparkle).toFixed(2);
+                            
+                            // Warm Gold Ambient Glow
                             ctx.beginPath();
                             ctx.arc(currX, currY, 3, 0, 2 * Math.PI, false);
-                            ctx.fillStyle = 'rgba(52, 152, 219, ' + (p.opacity * 0.3) + ')';
+                            ctx.fillStyle = 'rgba(255, 215, 0, ' + (opacity * 0.3) + ')';
                             ctx.fill();
                             
-                            // Tiny micro-dot core (1.5px radius)
+                            // Sparkling Gold Micro-dot (1.5px)
                             ctx.beginPath();
                             ctx.arc(currX, currY, 1.5, 0, 2 * Math.PI, false);
-                            ctx.fillStyle = 'rgba(255, 255, 255, ' + p.opacity + ')';
+                            ctx.fillStyle = 'rgba(255, 223, 0, ' + opacity + ')';
                             ctx.fill();
                         }
                     });
@@ -297,7 +302,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     </body>
     """
 
-    html_content = html_content.replace("</body>", subtle_particle_script)
+    html_content = html_content.replace("</body>", gold_sparkle_script)
     components.html(html_content, height=dynamic_height + 10)
 
 
@@ -394,7 +399,7 @@ with tab_corr:
     st.pyplot(fig)
 
 
-# --- TAB 1: BATCH TRAINING phase ---
+# --- TAB 1: BATCH TRAINING ---
 with tab1:
     st.markdown(
         "Train the model parameters using normalized SMR training inputs (`X_train`, `Y_train`)."
