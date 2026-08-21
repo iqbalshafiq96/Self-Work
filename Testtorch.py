@@ -26,7 +26,7 @@ test_ratio = st.sidebar.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 
 # =====================================================================
-# 2. TRUNCATED COMPACT NETWORK VISUALIZER (GRAPHVIZ)
+# 2. TRUNCATED COMPACT NETWORK VISUALIZER (CLEAN NEURON DOTS)
 # =====================================================================
 def draw_neural_network(in_dim, h1, h2, out_dim, act_fn, max_display=5):
     dot = graphviz.Digraph(comment="Neural Network Architecture")
@@ -40,38 +40,40 @@ def draw_neural_network(in_dim, h1, h2, out_dim, act_fn, max_display=5):
         color="#2E86C1", 
         fontcolor="white", 
         fontname="Segoe UI",
-        width="0.25",       # Tiny node diameter
-        height="0.25",
+        width="0.22",       # Compact node size
+        height="0.22",
         fixedsize="true",
-        fontsize="7"        # Small font size
+        fontsize="7"
     )
     dot.attr("edge", arrowsize="0.3")
 
     # Helper function to get node representation list (truncates if large)
     def get_layer_nodes(count, prefix):
         if count <= max_display:
-            return [(f"{prefix}_{i}", f"{prefix}_{i+1}") for i in range(count)]
+            return [(f"{prefix}_{i}", False) for i in range(count)]
         else:
             # Show first 3 nodes, an ellipsis node, and the last node
-            nodes = [(f"{prefix}_{i}", f"{prefix}_{i+1}") for i in range(3)]
-            nodes.append((f"{prefix}_dots", "..."))
-            nodes.append((f"{prefix}_{count-1}", f"{prefix}_{count}"))
+            nodes = [(f"{prefix}_{i}", False) for i in range(3)]
+            nodes.append((f"{prefix}_dots", True))  # True indicates ellipsis node
+            nodes.append((f"{prefix}_{count-1}", False))
             return nodes
 
     # 1. Input Layer
     input_nodes = get_layer_nodes(in_dim, "I")
     with dot.subgraph(name="cluster_input") as c:
         c.attr(color="white", label=f"Input ({in_dim})", fontsize="9")
-        for node_id, label in input_nodes:
-            color = "#34495E" if label != "..." else "#7F8C8D"
+        for node_id, is_dots in input_nodes:
+            label = "..." if is_dots else ""  # Blank for clean neurons
+            color = "#7F8C8D" if is_dots else "#34495E"
             c.node(node_id, label, fillcolor=color)
 
     # 2. Hidden Layer 1
     h1_nodes = get_layer_nodes(h1, "H1")
     with dot.subgraph(name="cluster_h1") as c:
         c.attr(color="white", label=f"Hidden 1 ({h1})\n[{act_fn}]", fontsize="9")
-        for node_id, label in h1_nodes:
-            color = "#2980B9" if label != "..." else "#7F8C8D"
+        for node_id, is_dots in h1_nodes:
+            label = "..." if is_dots else ""
+            color = "#7F8C8D" if is_dots else "#2980B9"
             c.node(node_id, label, fillcolor=color)
 
     # Connect Input -> Hidden 1
@@ -86,8 +88,9 @@ def draw_neural_network(in_dim, h1, h2, out_dim, act_fn, max_display=5):
         h2_nodes = get_layer_nodes(h2, "H2")
         with dot.subgraph(name="cluster_h2") as c:
             c.attr(color="white", label=f"Hidden 2 ({h2})\n[{act_fn}]", fontsize="9")
-            for node_id, label in h2_nodes:
-                color = "#16A085" if label != "..." else "#7F8C8D"
+            for node_id, is_dots in h2_nodes:
+                label = "..." if is_dots else ""
+                color = "#7F8C8D" if is_dots else "#16A085"
                 c.node(node_id, label, fillcolor=color)
 
         for h1_id, _ in h1_nodes:
@@ -100,8 +103,9 @@ def draw_neural_network(in_dim, h1, h2, out_dim, act_fn, max_display=5):
     output_nodes = get_layer_nodes(out_dim, "O")
     with dot.subgraph(name="cluster_output") as c:
         c.attr(color="white", label=f"Output ({out_dim})\n[Linear]", fontsize="9")
-        for node_id, label in output_nodes:
-            color = "#D35400" if label != "..." else "#7F8C8D"
+        for node_id, is_dots in output_nodes:
+            label = "..." if is_dots else ""
+            color = "#7F8C8D" if is_dots else "#D35400"
             c.node(node_id, label, fillcolor=color)
 
     for p_id, _ in prev_nodes:
@@ -116,12 +120,10 @@ def draw_neural_network(in_dim, h1, h2, out_dim, act_fn, max_display=5):
 # =====================================================================
 st.subheader("Network Diagram & Visual Representation")
 
-# Place diagram inside a bounded column with fixed max height
+# Place diagram inside a bounded column layout
 v_col1, v_col2, v_col3 = st.columns([1, 3, 1])
 with v_col2:
     net_graph = draw_neural_network(num_inputs, hidden1_size, hidden2_size, num_outputs, activation1)
-    
-    # Use graphviz inside a tight container
     st.graphviz_chart(net_graph, use_container_width=True)
 
 
