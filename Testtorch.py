@@ -15,7 +15,9 @@ st.title("Neural Network: Interactive Architecture & Testing")
 # =====================================================================
 st.sidebar.header("1. Network Architecture")
 num_inputs = st.sidebar.number_input("Number of Inputs", min_value=1, max_value=20, value=4)
-hidden1_size = st.sidebar.slider("Layer 1 Neurons", 1, 50, 8)
+
+# Updated Defaults: Layer 1 = 12, Layer 2 = 4
+hidden1_size = st.sidebar.slider("Layer 1 Neurons", 1, 50, 12)
 hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 50, 4)  # 0 means skip
 num_outputs = st.sidebar.number_input("Number of Outputs", min_value=1, max_value=5, value=1)
 
@@ -32,9 +34,9 @@ test_ratio = st.sidebar.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 
 # =====================================================================
-# 2. PYVIS UNLIMITED NEURON GRAPH VISUALIZER (LEFT-TO-RIGHT & ENLARGED)
+# 2. PYVIS UNLIMITED NEURON GRAPH VISUALIZER (NUMERIC ZOOM & PRE-ZOOMED)
 # =====================================================================
-def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
+def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, initial_scale=1.25):
     # Dynamically scale canvas height & vertical node gap based on largest layer
     max_neurons = max(in_dim, h1, h2, out_dim)
     dynamic_height = max(520, min(max_neurons * 55, 1600))
@@ -42,8 +44,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     
     net = Network(height=f"{dynamic_height}px", width="100%", bgcolor="rgba(0,0,0,0)", font_color="white", directed=True)
     
-    # Modern font stack with larger node size (42px) & readable labels (18px)
-    # Physics settings enforce horizontal separation (Left-to-Right layout)
+    # Modern font stack with node size (42px) & readable labels (18px)
     net.set_options(f"""
     {{
       "nodes": {{
@@ -60,6 +61,10 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         "color": {{ "color": "rgba(200, 200, 200, 0.35)", "highlight": "#3498DB" }},
         "smooth": false,
         "arrows": {{ "to": {{ "enabled": true, "scaleFactor": 0.5 }} }}
+      }},
+      "interaction": {{
+        "zoomView": true,
+        "dragView": true
       }},
       "physics": {{
         "barnesHut": {{ "gravitationalConstant": -4500, "springLength": 140, "springConstant": 0.03 }},
@@ -124,23 +129,19 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         )
 
     # 3. Connect Strictly Sequential (Input -> Layer 1 -> [Layer 2] -> Output)
-    # Input -> Hidden Layer 1
     for src in input_nodes:
         for dst in h1_nodes:
             net.add_edge(src, dst)
 
-    # Hidden Layer 1 -> Hidden Layer 2 (if exists) OR Hidden Layer 1 -> Output (if no Hidden Layer 2)
     if h2 > 0:
         for src in h1_nodes:
             for dst in h2_nodes:
                 net.add_edge(src, dst)
         
-        # Hidden Layer 2 -> Output Layer
         for src in h2_nodes:
             for dst in output_nodes:
                 net.add_edge(src, dst)
     else:
-        # Hidden Layer 1 -> Output Layer
         for src in h1_nodes:
             for dst in output_nodes:
                 net.add_edge(src, dst)
@@ -148,29 +149,39 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     # Generate HTML content
     html_content = net.generate_html()
     
-    # Custom CSS injection: Strips borders, shadows, and forces full background transparency
-    custom_css = """
+    # Custom JS & CSS injection: Handles canvas transparency and numerical zoom scaling
+    zoom_script = f"""
     <style>
-        body, html, #mynetwork {
+        body, html, #mynetwork {{
             background-color: transparent !important;
             border: none !important;
             box-shadow: none !important;
             margin: 0 !important;
             padding: 0 !important;
             font-family: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, sans-serif !important;
-        }
-        div.vis-network {
+        }}
+        div.vis-network {{
             border: none !important;
             outline: none !important;
-        }
+        }}
     </style>
+    <script type="text/javascript">
+        window.addEventListener('load', function() {{
+            setTimeout(function() {{
+                if (typeof network !== 'undefined') {{
+                    network.moveTo({{
+                        scale: {initial_scale},
+                        animation: {{ duration: 500, easingFunction: 'easeInOutQuad' }}
+                    }});
+                }}
+            }}, 300);
+        }});
+    </script>
     """
     
-    # Inject styling into HTML head & strip PyVis inline canvas styles
-    html_content = html_content.replace("</head>", f"{custom_css}</head>")
+    html_content = html_content.replace("</head>", f"{zoom_script}</head>")
     html_content = html_content.replace("background-color: #0E1117;", "background-color: transparent;")
     
-    # Embed component with dynamic height allocation
     components.html(html_content, height=dynamic_height + 10)
 
 
@@ -178,7 +189,41 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
 # 3. ARCHITECTURE VISUALIZATION & MODEL CLASS
 # =====================================================================
 st.subheader("Interactive Physics Network Diagram")
-render_pyvis_network(num_inputs, hidden1_size, hidden2_size, num_outputs, global_activation)
+
+# Numerical Zoom Presets
+if "zoom_level" not in st.session_state:
+    st.session_state.zoom_level = 1.25
+
+zoom_cols = st.columns([1, 1, 1, 1, 1, 1, 4])
+with zoom_cols[0]:
+    if st.button("0.50x"):
+        st.session_state.zoom_level = 0.50
+with zoom_cols[1]:
+    if st.button("0.75x"):
+        st.session_state.zoom_level = 0.75
+with zoom_cols[2]:
+    if st.button("1.00x"):
+        st.session_state.zoom_level = 1.00
+with zoom_cols[3]:
+    if st.button("1.25x"):
+        st.session_state.zoom_level = 1.25
+with zoom_cols[4]:
+    if st.button("1.50x"):
+        st.session_state.zoom_level = 1.50
+with zoom_cols[5]:
+    if st.button("2.00x"):
+        st.session_state.zoom_level = 2.00
+
+st.caption(f"Current Zoom Level: **{st.session_state.zoom_level}x** (You can also scroll with mouse or pinch to zoom/pan)")
+
+render_pyvis_network(
+    num_inputs, 
+    hidden1_size, 
+    hidden2_size, 
+    num_outputs, 
+    global_activation, 
+    initial_scale=st.session_state.zoom_level
+)
 
 
 class ConfigurableNet(nn.Module):
