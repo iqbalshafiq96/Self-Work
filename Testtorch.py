@@ -32,7 +32,7 @@ test_ratio = st.sidebar.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 
 # =====================================================================
-# 2. PYVIS UNLIMITED NEURON GRAPH VISUALIZER (LARGER NODES)
+# 2. PYVIS UNLIMITED NEURON GRAPH VISUALIZER (STRICT SEQUENTIAL FLOW)
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     # Dynamically scale canvas height & vertical node gap based on largest layer
@@ -51,8 +51,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         "font": {{ 
           "size": 14, 
           "face": "Source Sans Pro, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
-          "color": "#FFFFFF",
-          "vadjust": 0
+          "color": "#FFFFFF"
         }}
       }},
       "edges": {{
@@ -67,42 +66,81 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     }}
     """)
 
-    # Horizontal coordinate positioning per layer
-    layers = [
-        ("Input", in_dim, "#2C3E50", "#5D6D7E", -400),
-        (f"Hidden 1 [{act_fn}]", h1, "#1B4F72", "#3498DB", -130),
-    ]
+    # 1. Define Layer Nodes explicitly
+    input_nodes = [f"L0_N{i}" for i in range(in_dim)]
+    h1_nodes = [f"L1_N{i}" for i in range(h1)]
+    h2_nodes = [f"L2_N{i}" for i in range(h2)] if h2 > 0 else []
+    output_nodes = [f"L3_N{i}" for i in range(out_dim)]
+
+    # 2. Add Nodes with explicit horizontal placement
+    # Input Layer
+    for i, nid in enumerate(input_nodes):
+        y = (i - (in_dim - 1) / 2) * y_gap
+        net.add_node(
+            nid, 
+            label=f"Input\nNode {i+1}" if in_dim <= 3 else f"N{i+1}", 
+            x=-400, 
+            y=y, 
+            color={"background": "#2C3E50", "border": "#5D6D7E"}, 
+            shape="circle"
+        )
+
+    # Hidden Layer 1
+    for i, nid in enumerate(h1_nodes):
+        y = (i - (h1 - 1) / 2) * y_gap
+        net.add_node(
+            nid, 
+            label=f"H1 [{act_fn}]\nNode {i+1}" if h1 <= 3 else f"N{i+1}", 
+            x=-130 if h2 > 0 else 0, 
+            y=y, 
+            color={"background": "#1B4F72", "border": "#3498DB"}, 
+            shape="circle"
+        )
+
+    # Hidden Layer 2 (Only created if h2 > 0)
+    for i, nid in enumerate(h2_nodes):
+        y = (i - (h2 - 1) / 2) * y_gap
+        net.add_node(
+            nid, 
+            label=f"H2 [{act_fn}]\nNode {i+1}" if h2 <= 3 else f"N{i+1}", 
+            x=140, 
+            y=y, 
+            color={"background": "#0E6251", "border": "#1ABC9C"}, 
+            shape="circle"
+        )
+
+    # Output Layer
+    for i, nid in enumerate(output_nodes):
+        y = (i - (out_dim - 1) / 2) * y_gap
+        net.add_node(
+            nid, 
+            label=f"Output\nNode {i+1}" if out_dim <= 3 else f"N{i+1}", 
+            x=400, 
+            y=y, 
+            color={"background": "#7E5109", "border": "#F39C12"}, 
+            shape="circle"
+        )
+
+    # 3. Connect Strictly Sequential (Input -> Layer 1 -> [Layer 2] -> Output)
+    # Input -> Hidden Layer 1
+    for src in input_nodes:
+        for dst in h1_nodes:
+            net.add_edge(src, dst)
+
+    # Hidden Layer 1 -> Hidden Layer 2 (if exists) OR Hidden Layer 1 -> Output (if no Hidden Layer 2)
     if h2 > 0:
-        layers.append((f"Hidden 2 [{act_fn}]", h2, "#0E6251", "#1ABC9C", 140))
-    layers.append(("Output", out_dim, "#7E5109", "#F39C12", 400))
-
-    layer_node_ids = []
-
-    # 1. Add ALL Nodes without truncation
-    for l_idx, (label, count, fill_color, border_color, x_pos) in enumerate(layers):
-        current_layer_ids = []
+        for src in h1_nodes:
+            for dst in h2_nodes:
+                net.add_edge(src, dst)
         
-        for i in range(count):
-            node_id = f"L{l_idx}_N{i}"
-            node_label = f"{label}\nNode {i+1}" if count <= 3 else f"N{i+1}"
-            y_pos = (i - (count - 1) / 2) * y_gap
-            
-            net.add_node(
-                node_id, 
-                label=node_label, 
-                x=x_pos, 
-                y=y_pos, 
-                color={"background": fill_color, "border": border_color},
-                shape="circle"
-            )
-            current_layer_ids.append(node_id)
-
-        layer_node_ids.append(current_layer_ids)
-
-    # 2. Fully Connect Edges between adjacent layers
-    for i in range(len(layer_node_ids) - 1):
-        for src in layer_node_ids[i]:
-            for dst in layer_node_ids[i+1]:
+        # Hidden Layer 2 -> Output Layer
+        for src in h2_nodes:
+            for dst in output_nodes:
+                net.add_edge(src, dst)
+    else:
+        # Hidden Layer 1 -> Output Layer
+        for src in h1_nodes:
+            for dst in output_nodes:
                 net.add_edge(src, dst)
 
     # Generate HTML content
