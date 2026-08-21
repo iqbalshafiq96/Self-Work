@@ -4,7 +4,8 @@ import torch.nn as nn
 import torch.optim as optim
 import pandas as pd
 import numpy as np
-import graphviz
+from pyvis.network import Network
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Neural Net Configurator", layout="wide")
 st.title("Neural Network: Interactive Architecture & Testing")
@@ -31,113 +32,92 @@ test_ratio = st.sidebar.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 
 # =====================================================================
-# 2. DIGITAL & COMPACT NETWORK VISUALIZER (GRAPHVIZ)
+# 2. PYVIS INTERACTIVE PHYSICS GRAPH VISUALIZER
 # =====================================================================
-def draw_neural_network(in_dim, h1, h2, out_dim, act_fn, max_display=4):
-    dot = graphviz.Digraph(comment="Neural Network Architecture")
+def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, max_display=4):
+    net = Network(height="280px", width="100%", bgcolor="#0E1117", font_color="white", directed=True)
     
-    # Sleek canvas & layout defaults
-    dot.attr(
-        rankdir="LR", 
-        bgcolor="transparent", 
-        dpi="96", 
-        ranksep="0.45", 
-        nodesep="0.12",
-        pad="0.05"
-    )
-    
-    # Modern digital node styling
-    dot.attr(
-        "node", 
-        shape="circle", 
-        style="filled", 
-        fontname="Segoe UI, Helvetica, Arial",
-        width="0.18",
-        height="0.18",
-        fixedsize="true",
-        fontsize="6",
-        penwidth="1.0"
-    )
-    dot.attr("edge", arrowsize="0.25", penwidth="0.8")
+    # Physics settings for smooth node layout & interaction
+    net.set_options("""
+    {
+      "nodes": {
+        "borderWidth": 2,
+        "size": 18,
+        "font": { "size": 11, "face": "Segoe UI" }
+      },
+      "edges": {
+        "color": { "color": "rgba(200, 200, 200, 0.2)", "highlight": "#3498DB" },
+        "smooth": false,
+        "arrows": { "to": { "enabled": true, "scaleFactor": 0.3 } }
+      },
+      "physics": {
+        "barnesHut": { "gravitationalConstant": -1200, "springLength": 50, "springConstant": 0.04 },
+        "minVelocity": 0.75
+      }
+    }
+    """)
 
-    def get_layer_nodes(count, prefix):
-        if count <= max_display:
-            return [(f"{prefix}_{i}", False) for i in range(count)]
-        else:
-            nodes = [(f"{prefix}_{i}", False) for i in range(2)]
-            nodes.append((f"{prefix}_dots", True))
-            nodes.append((f"{prefix}_{count-1}", False))
-            return nodes
-
-    # --- 1. Input Layer ---
-    input_nodes = get_layer_nodes(in_dim, "I")
-    with dot.subgraph(name="cluster_input") as c:
-        c.attr(style="none", border="0", label=f"Input\n({in_dim})", fontname="Segoe UI", fontsize="8", fontcolor="#808B96")
-        for node_id, is_dots in input_nodes:
-            if is_dots:
-                c.node(node_id, "...", shape="plaintext", fontcolor="#5D6D7E", fontsize="10")
-            else:
-                c.node(node_id, "", fillcolor="#2C3E50", color="#5D6D7E")
-
-    # --- 2. Hidden Layer 1 ---
-    h1_nodes = get_layer_nodes(h1, "H1")
-    with dot.subgraph(name="cluster_h1") as c:
-        c.attr(style="none", border="0", label=f"Hidden 1 ({h1})\n[{act_fn}]", fontname="Segoe UI", fontsize="8", fontcolor="#2980B9")
-        for node_id, is_dots in h1_nodes:
-            if is_dots:
-                c.node(node_id, "...", shape="plaintext", fontcolor="#5D6D7E", fontsize="10")
-            else:
-                c.node(node_id, "", fillcolor="#1B4F72", color="#3498DB")
-
-    for i_id, _ in input_nodes:
-        for h1_id, _ in h1_nodes:
-            dot.edge(i_id, h1_id, color="#34495E40")  # Translucent edges
-
-    prev_nodes = h1_nodes
-
-    # --- 3. Hidden Layer 2 (Optional) ---
+    layers = [
+        ("Input", in_dim, "#2C3E50", "#5D6D7E", -250),
+        (f"Hidden 1 [{act_fn}]", h1, "#1B4F72", "#3498DB", -80),
+    ]
     if h2 > 0:
-        h2_nodes = get_layer_nodes(h2, "H2")
-        with dot.subgraph(name="cluster_h2") as c:
-            c.attr(style="none", border="0", label=f"Hidden 2 ({h2})\n[{act_fn}]", fontname="Segoe UI", fontsize="8", fontcolor="#16A085")
-            for node_id, is_dots in h2_nodes:
-                if is_dots:
-                    c.node(node_id, "...", shape="plaintext", fontcolor="#5D6D7E", fontsize="10")
-                else:
-                    c.node(node_id, "", fillcolor="#0E6251", color="#1ABC9C")
+        layers.append((f"Hidden 2 [{act_fn}]", h2, "#0E6251", "#1ABC9C", 80))
+    layers.append(("Output", out_dim, "#7E5109", "#F39C12", 250))
 
-        for h1_id, _ in h1_nodes:
-            for h2_id, _ in h2_nodes:
-                dot.edge(h1_id, h2_id, color="#34495E40")
+    layer_node_ids = []
 
-        prev_nodes = h2_nodes
+    # 1. Add Nodes
+    for l_idx, (label, count, fill_color, border_color, x_pos) in enumerate(layers):
+        current_layer_ids = []
+        display_count = min(count, max_display)
+        
+        for i in range(display_count):
+            node_id = f"L{l_idx}_N{i}"
+            node_label = f"{label}\nNode {i+1}" if display_count <= 2 else f"N{i+1}"
+            y_pos = (i - (display_count - 1) / 2) * 50
+            
+            net.add_node(
+                node_id, 
+                label=node_label, 
+                x=x_pos, 
+                y=y_pos, 
+                color={"background": fill_color, "border": border_color},
+                shape="circle"
+            )
+            current_layer_ids.append(node_id)
+        
+        # Add summary node if count exceeds limit
+        if count > max_display:
+            dots_id = f"L{l_idx}_dots"
+            net.add_node(
+                dots_id, 
+                label=f"+{count - max_display} more", 
+                x=x_pos, 
+                y=((max_display) - (max_display - 1) / 2) * 50,
+                color={"background": "#34495E", "border": "#7F8C8D"},
+                shape="ellipse"
+            )
+            current_layer_ids.append(dots_id)
 
-    # --- 4. Output Layer ---
-    output_nodes = get_layer_nodes(out_dim, "O")
-    with dot.subgraph(name="cluster_output") as c:
-        c.attr(style="none", border="0", label=f"Output\n({out_dim})", fontname="Segoe UI", fontsize="8", fontcolor="#E67E22")
-        for node_id, is_dots in output_nodes:
-            if is_dots:
-                c.node(node_id, "...", shape="plaintext", fontcolor="#5D6D7E", fontsize="10")
-            else:
-                c.node(node_id, "", fillcolor="#7E5109", color="#F39C12")
+        layer_node_ids.append(current_layer_ids)
 
-    for p_id, _ in prev_nodes:
-        for o_id, _ in output_nodes:
-            dot.edge(p_id, o_id, color="#34495E40")
+    # 2. Add Edges between adjacent layers
+    for i in range(len(layer_node_ids) - 1):
+        for src in layer_node_ids[i]:
+            for dst in layer_node_ids[i+1]:
+                net.add_edge(src, dst)
 
-    return dot
+    # Save to static HTML string & display inside Streamlit component
+    html_content = net.generate_html()
+    components.html(html_content, height=290)
 
 
 # =====================================================================
 # 3. ARCHITECTURE VISUALIZATION & MODEL CLASS
 # =====================================================================
-st.subheader("Network Architecture")
-
-_, center_col, _ = st.columns([1, 2, 1])
-with center_col:
-    net_graph = draw_neural_network(num_inputs, hidden1_size, hidden2_size, num_outputs, global_activation)
-    st.graphviz_chart(net_graph, use_container_width=True)
+st.subheader("Interactive Physics Network Diagram")
+render_pyvis_network(num_inputs, hidden1_size, hidden2_size, num_outputs, global_activation)
 
 
 class ConfigurableNet(nn.Module):
