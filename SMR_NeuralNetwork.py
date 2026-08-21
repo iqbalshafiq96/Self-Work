@@ -168,7 +168,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         y_pos = (i - (h1 - 1) / 2) * y_gap
         net.add_node(
             nid,
-            label="",
+            label=" ",
             x=x_h1,
             y=y_pos,
             color={"background": "#1B4F72", "border": "#3498DB"},
@@ -180,7 +180,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         y_pos = (i - (h2 - 1) / 2) * y_gap
         net.add_node(
             nid,
-            label="",
+            label=" ",
             x=x_h2,
             y=y_pos,
             color={"background": "#0E6251", "border": "#1ABC9C"},
