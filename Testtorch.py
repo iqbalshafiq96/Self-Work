@@ -31,88 +31,100 @@ test_ratio = st.sidebar.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 
 # =====================================================================
-# 2. TRUNCATED COMPACT NETWORK VISUALIZER (CLEAN NEURON DOTS)
+# 2. DIGITAL & COMPACT NETWORK VISUALIZER (GRAPHVIZ)
 # =====================================================================
-def draw_neural_network(in_dim, h1, h2, out_dim, act_fn, max_display=5):
+def draw_neural_network(in_dim, h1, h2, out_dim, act_fn, max_display=4):
     dot = graphviz.Digraph(comment="Neural Network Architecture")
     
-    # Ultra-compact graph properties
-    dot.attr(rankdir="LR", dpi="72", ranksep="0.3", nodesep="0.15")
+    # Sleek canvas & layout defaults
+    dot.attr(
+        rankdir="LR", 
+        bgcolor="transparent", 
+        dpi="96", 
+        ranksep="0.45", 
+        nodesep="0.12",
+        pad="0.05"
+    )
+    
+    # Modern digital node styling
     dot.attr(
         "node", 
         shape="circle", 
         style="filled", 
-        color="#2E86C1", 
-        fontcolor="white", 
-        fontname="Segoe UI",
-        width="0.22",
-        height="0.22",
+        fontname="Segoe UI, Helvetica, Arial",
+        width="0.18",
+        height="0.18",
         fixedsize="true",
-        fontsize="7"
+        fontsize="6",
+        penwidth="1.0"
     )
-    dot.attr("edge", arrowsize="0.3")
+    dot.attr("edge", arrowsize="0.25", penwidth="0.8")
 
     def get_layer_nodes(count, prefix):
         if count <= max_display:
             return [(f"{prefix}_{i}", False) for i in range(count)]
         else:
-            nodes = [(f"{prefix}_{i}", False) for i in range(3)]
+            nodes = [(f"{prefix}_{i}", False) for i in range(2)]
             nodes.append((f"{prefix}_dots", True))
             nodes.append((f"{prefix}_{count-1}", False))
             return nodes
 
-    # 1. Input Layer
+    # --- 1. Input Layer ---
     input_nodes = get_layer_nodes(in_dim, "I")
     with dot.subgraph(name="cluster_input") as c:
-        c.attr(color="white", label=f"Input ({in_dim})", fontsize="9")
+        c.attr(style="none", border="0", label=f"Input\n({in_dim})", fontname="Segoe UI", fontsize="8", fontcolor="#808B96")
         for node_id, is_dots in input_nodes:
-            label = "..." if is_dots else ""
-            color = "#7F8C8D" if is_dots else "#34495E"
-            c.node(node_id, label, fillcolor=color)
+            if is_dots:
+                c.node(node_id, "...", shape="plaintext", fontcolor="#5D6D7E", fontsize="10")
+            else:
+                c.node(node_id, "", fillcolor="#2C3E50", color="#5D6D7E")
 
-    # 2. Hidden Layer 1
+    # --- 2. Hidden Layer 1 ---
     h1_nodes = get_layer_nodes(h1, "H1")
     with dot.subgraph(name="cluster_h1") as c:
-        c.attr(color="white", label=f"Hidden 1 ({h1})\n[{act_fn}]", fontsize="9")
+        c.attr(style="none", border="0", label=f"Hidden 1 ({h1})\n[{act_fn}]", fontname="Segoe UI", fontsize="8", fontcolor="#2980B9")
         for node_id, is_dots in h1_nodes:
-            label = "..." if is_dots else ""
-            color = "#7F8C8D" if is_dots else "#2980B9"
-            c.node(node_id, label, fillcolor=color)
+            if is_dots:
+                c.node(node_id, "...", shape="plaintext", fontcolor="#5D6D7E", fontsize="10")
+            else:
+                c.node(node_id, "", fillcolor="#1B4F72", color="#3498DB")
 
     for i_id, _ in input_nodes:
         for h1_id, _ in h1_nodes:
-            dot.edge(i_id, h1_id, color="#BDC3C7", arrowhead="none")
+            dot.edge(i_id, h1_id, color="#34495E40")  # Translucent edges
 
     prev_nodes = h1_nodes
 
-    # 3. Hidden Layer 2 (Optional)
+    # --- 3. Hidden Layer 2 (Optional) ---
     if h2 > 0:
         h2_nodes = get_layer_nodes(h2, "H2")
         with dot.subgraph(name="cluster_h2") as c:
-            c.attr(color="white", label=f"Hidden 2 ({h2})\n[{act_fn}]", fontsize="9")
+            c.attr(style="none", border="0", label=f"Hidden 2 ({h2})\n[{act_fn}]", fontname="Segoe UI", fontsize="8", fontcolor="#16A085")
             for node_id, is_dots in h2_nodes:
-                label = "..." if is_dots else ""
-                color = "#7F8C8D" if is_dots else "#16A085"
-                c.node(node_id, label, fillcolor=color)
+                if is_dots:
+                    c.node(node_id, "...", shape="plaintext", fontcolor="#5D6D7E", fontsize="10")
+                else:
+                    c.node(node_id, "", fillcolor="#0E6251", color="#1ABC9C")
 
         for h1_id, _ in h1_nodes:
             for h2_id, _ in h2_nodes:
-                dot.edge(h1_id, h2_id, color="#BDC3C7", arrowhead="none")
+                dot.edge(h1_id, h2_id, color="#34495E40")
 
         prev_nodes = h2_nodes
 
-    # 4. Output Layer
+    # --- 4. Output Layer ---
     output_nodes = get_layer_nodes(out_dim, "O")
     with dot.subgraph(name="cluster_output") as c:
-        c.attr(color="white", label=f"Output ({out_dim})\n[Linear]", fontsize="9")
+        c.attr(style="none", border="0", label=f"Output\n({out_dim})", fontname="Segoe UI", fontsize="8", fontcolor="#E67E22")
         for node_id, is_dots in output_nodes:
-            label = "..." if is_dots else ""
-            color = "#7F8C8D" if is_dots else "#D35400"
-            c.node(node_id, label, fillcolor=color)
+            if is_dots:
+                c.node(node_id, "...", shape="plaintext", fontcolor="#5D6D7E", fontsize="10")
+            else:
+                c.node(node_id, "", fillcolor="#7E5109", color="#F39C12")
 
     for p_id, _ in prev_nodes:
         for o_id, _ in output_nodes:
-            dot.edge(p_id, o_id, color="#BDC3C7", arrowhead="none")
+            dot.edge(p_id, o_id, color="#34495E40")
 
     return dot
 
@@ -120,10 +132,10 @@ def draw_neural_network(in_dim, h1, h2, out_dim, act_fn, max_display=5):
 # =====================================================================
 # 3. ARCHITECTURE VISUALIZATION & MODEL CLASS
 # =====================================================================
-st.subheader("Network Diagram & Visual Representation")
+st.subheader("Network Architecture")
 
-v_col1, v_col2, v_col3 = st.columns([1, 3, 1])
-with v_col2:
+_, center_col, _ = st.columns([1, 2, 1])
+with center_col:
     net_graph = draw_neural_network(num_inputs, hidden1_size, hidden2_size, num_outputs, global_activation)
     st.graphviz_chart(net_graph, use_container_width=True)
 
