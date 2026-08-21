@@ -13,19 +13,6 @@ from pyvis.network import Network
 st.set_page_config(page_title="SMR Neural Net Configurator", layout="wide")
 st.title("Steam Methane Reforming (SMR) Neural Network Modeling")
 
-# Inject CSS to remove the border from Streamlit's component iframe container
-st.markdown(
-    """
-    <style>
-    iframe {
-        border: none !important;
-        outline: none !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
 # =====================================================================
 # 1. GITHUB DATA LOADING & PREPROCESSING (AUTOMATIC NORMALIZATION)
 # =====================================================================
@@ -246,24 +233,20 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
 
     controls_and_animation_script = """
     <style>
-      *, html, body {
+      html, body {
         width: 100%;
         height: 100%;
         margin: 0;
         padding: 0;
         overflow: hidden;
-        border: 0 !important;
-        border-style: none !important;
+        border: none !important;
         outline: none !important;
-        box-shadow: none !important;
       }
       #mynetwork {
         width: 100% !important;
         height: 100vh !important;
-        border: 0 !important;
-        border-style: none !important;
+        border: none !important;
         outline: none !important;
-        box-shadow: none !important;
       }
       .diagram-controls {
         position: absolute;
@@ -276,7 +259,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         background: rgba(255, 255, 255, 0.25);
         padding: 6px 14px;
         border-radius: 8px;
-        border: 1px solid rgba(0, 0, 0, 0.15) !important;
+        border: 1px solid rgba(0, 0, 0, 0.15);
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
         font-family: Segoe UI, -apple-system, Roboto, sans-serif;
@@ -295,7 +278,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
       .diagram-btn {
         background: rgba(255, 255, 255, 0.5);
         color: #000000;
-        border: 1px solid rgba(0, 0, 0, 0.25) !important;
+        border: 1px solid rgba(0, 0, 0, 0.25);
         border-radius: 5px;
         padding: 4px 10px;
         font-size: 12px;
@@ -306,7 +289,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
       }
       .diagram-btn:hover {
         background: rgba(255, 255, 255, 0.85);
-        border-color: #000000 !important;
+        border-color: #000000;
       }
     </style>
 
