@@ -372,17 +372,13 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                             var localPhase = globalPhase;
 
                             if (node.id.startsWith('L0_')) {
-                                // Input Nodes: Soft slate/cyan resonant pulse (slightly phase shifted)
                                 localPhase += 0.5;
                                 beamColor = 'rgba(93, 109, 126, ';
                             } else if (node.id.startsWith('L1_')) {
-                                // Hidden Layer 1: Vivid Blue pulse
                                 beamColor = 'rgba(52, 152, 219, ';
                             } else if (node.id.startsWith('L2_')) {
-                                // Hidden Layer 2: Emerald Green pulse
                                 beamColor = 'rgba(26, 188, 156, ';
                             } else if (node.id.startsWith('L3_')) {
-                                // Output Nodes: Warm Amber/Gold pulse
                                 localPhase += 1.0;
                                 beamColor = 'rgba(243, 156, 18, ';
                             }
@@ -463,7 +459,7 @@ render_pyvis_network(
 
 
 # =====================================================================
-# 4. MODEL CLASS & DATA PARTITIONING
+# 4. MODEL CLASS & DATA PARTITIONING (DYNAMIC RANDOMIZATION)
 # =====================================================================
 class ConfigurableNet(nn.Module):
 
@@ -498,19 +494,26 @@ if "active_tab" not in st.session_state:
     st.session_state.active_tab = "Data Correlation Matrix"
 
 num_samples = len(X_norm)
-split_idx = int(num_samples * (1 - test_ratio))
 
-torch.manual_seed(42)
-indices = torch.randperm(num_samples)
+# Helper function to generate fresh random indices
+def repartition_dataset(total_samples, current_test_ratio):
+    split_idx = int(total_samples * (1 - current_test_ratio))
+    indices = torch.randperm(total_samples)
+    return indices[:split_idx], indices[split_idx:]
 
-train_idx = indices[:split_idx]
-test_idx = indices[split_idx:]
+# Initialize train/test split in session state if missing
+if "train_idx" not in st.session_state or "test_idx" not in st.session_state:
+    st.session_state.train_idx, st.session_state.test_idx = repartition_dataset(
+        num_samples, test_ratio
+    )
 
 X_tensor = torch.tensor(X_norm, dtype=torch.float32)
 Y_tensor = torch.tensor(Y_norm, dtype=torch.float32)
 
-X_train, Y_train = X_tensor[train_idx], Y_tensor[train_idx]
-X_test, Y_test = X_tensor[test_idx], Y_tensor[test_idx]
+X_train = X_tensor[st.session_state.train_idx]
+Y_train = Y_tensor[st.session_state.train_idx]
+X_test = X_tensor[st.session_state.test_idx]
+Y_test = Y_tensor[st.session_state.test_idx]
 
 st.subheader("Dataset Summary & Partitioning")
 mcol1, mcol2, mcol3 = st.columns(3)
@@ -519,11 +522,18 @@ mcol2.metric("Training Samples", X_train.shape[0])
 mcol3.metric("Testing Samples", X_test.shape[0])
 
 if st.button("Initialize / Reset Model Architecture"):
+    # Reshuffle train/test splits randomly based on the selected split ratio
+    st.session_state.train_idx, st.session_state.test_idx = repartition_dataset(
+        num_samples, test_ratio
+    )
+    
+    # Initialize a fresh PyTorch model
     st.session_state.net = ConfigurableNet(
         num_inputs, hidden1_size, hidden2_size, global_activation, num_outputs
     )
     st.session_state.loss_history = []
-    st.success("New PyTorch SMR Model initialized!")
+    st.success("New PyTorch SMR Model initialized with freshly randomized Train/Test sets!")
+    st.rerun()
 
 
 # =====================================================================
@@ -531,7 +541,6 @@ if st.button("Initialize / Reset Model Architecture"):
 # =====================================================================
 st.divider()
 
-# Tab Navigation persistent via Session State
 tab_options = [
     "Data Correlation Matrix",
     "Batch Training Phase",
@@ -539,7 +548,6 @@ tab_options = [
     "Model Testing & Verification",
 ]
 
-# Custom Styled Radio acting as persistent Tabs
 selected_tab = st.radio(
     "Workflow Navigation",
     options=tab_options,
