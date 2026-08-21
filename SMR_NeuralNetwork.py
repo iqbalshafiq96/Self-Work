@@ -81,6 +81,15 @@ global_activation = st.sidebar.selectbox(
     ["Tanh (tansig)", "Sigmoid (logsig)", "ReLU"],
 )
 
+# Brief descriptive subtitles for each transfer function
+activation_descriptions = {
+    "Tanh (tansig)": "Outputs zero-centered values between -1 and 1. Great for continuous non-linear process dynamics.",
+    "Sigmoid (logsig)": "Outputs values scaled between 0 and 1. Useful for smooth non-linear probability transitions.",
+    "ReLU": "Passes positive values directly and zeroes out negative ones. Ideal for deep networks and fast convergence.",
+}
+
+st.sidebar.caption(f"ℹ️ {activation_descriptions[global_activation]}")
+
 st.sidebar.header("2. Optimization & Data Options")
 lr = st.sidebar.number_input(
     "Learning Rate",
@@ -137,7 +146,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     """
     )
 
-    # Fixed horizontal X coordinates (Left to Right)
+    # Fixed horizontal X coordinates
     x_input = -600
     x_h1 = -200
     x_h2 = 200
