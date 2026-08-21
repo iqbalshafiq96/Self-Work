@@ -32,37 +32,41 @@ test_ratio = st.sidebar.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 
 # =====================================================================
-# 2. PYVIS INTERACTIVE PHYSICS GRAPH VISUALIZER (BORDERLESS & SCALED)
+# 2. PYVIS UNLIMITED NEURON GRAPH VISUALIZER
 # =====================================================================
-def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, max_display=4):
-    # Expanded canvas size and transparent background
-    net = Network(height="420px", width="100%", bgcolor="rgba(0,0,0,0)", font_color="white", directed=True)
+def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
+    # Dynamically scale canvas height & vertical node gap based on largest layer
+    max_neurons = max(in_dim, h1, h2, out_dim)
+    dynamic_height = max(420, min(max_neurons * 35, 1200))
+    y_gap = max(25, min(75, 450 // max_neurons))
     
-    # Modern font stack matching Streamlit's UI and tuned physics for larger scale
-    net.set_options("""
-    {
-      "nodes": {
+    net = Network(height=f"{dynamic_height}px", width="100%", bgcolor="rgba(0,0,0,0)", font_color="white", directed=True)
+    
+    # Modern font stack matching Streamlit's UI with adaptive physics
+    net.set_options(f"""
+    {{
+      "nodes": {{
         "borderWidth": 2,
-        "size": 24,
-        "font": { 
-          "size": 13, 
+        "size": 20,
+        "font": {{ 
+          "size": 12, 
           "face": "Source Sans Pro, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
           "color": "#E0E0E0"
-        }
-      },
-      "edges": {
-        "color": { "color": "rgba(200, 200, 200, 0.35)", "highlight": "#3498DB" },
+        }}
+      }},
+      "edges": {{
+        "color": {{ "color": "rgba(200, 200, 200, 0.25)", "highlight": "#3498DB" }},
         "smooth": false,
-        "arrows": { "to": { "enabled": true, "scaleFactor": 0.4 } }
-      },
-      "physics": {
-        "barnesHut": { "gravitationalConstant": -2000, "springLength": 80, "springConstant": 0.04 },
+        "arrows": {{ "to": {{ "enabled": true, "scaleFactor": 0.3 }} }}
+      }},
+      "physics": {{
+        "barnesHut": {{ "gravitationalConstant": -2500, "springLength": 90, "springConstant": 0.03 }},
         "minVelocity": 0.75
-      }
-    }
+      }}
+    }}
     """)
 
-    # Proportionally expanded x-axis coordinates for wider node layout
+    # Horizontal coordinate positioning per layer
     layers = [
         ("Input", in_dim, "#2C3E50", "#5D6D7E", -380),
         (f"Hidden 1 [{act_fn}]", h1, "#1B4F72", "#3498DB", -120),
@@ -73,15 +77,14 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, max_display=4):
 
     layer_node_ids = []
 
-    # 1. Add Nodes
+    # 1. Add ALL Nodes without truncation
     for l_idx, (label, count, fill_color, border_color, x_pos) in enumerate(layers):
         current_layer_ids = []
-        display_count = min(count, max_display)
         
-        for i in range(display_count):
+        for i in range(count):
             node_id = f"L{l_idx}_N{i}"
-            node_label = f"{label}\nNode {i+1}" if display_count <= 2 else f"N{i+1}"
-            y_pos = (i - (display_count - 1) / 2) * 75  # Increased vertical node spacing
+            node_label = f"{label}\nNode {i+1}" if count <= 3 else f"N{i+1}"
+            y_pos = (i - (count - 1) / 2) * y_gap
             
             net.add_node(
                 node_id, 
@@ -92,23 +95,10 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, max_display=4):
                 shape="circle"
             )
             current_layer_ids.append(node_id)
-        
-        # Add summary node if count exceeds limit
-        if count > max_display:
-            dots_id = f"L{l_idx}_dots"
-            net.add_node(
-                dots_id, 
-                label=f"+{count - max_display} more", 
-                x=x_pos, 
-                y=((max_display) - (max_display - 1) / 2) * 75,
-                color={"background": "#34495E", "border": "#7F8C8D"},
-                shape="ellipse"
-            )
-            current_layer_ids.append(dots_id)
 
         layer_node_ids.append(current_layer_ids)
 
-    # 2. Add Edges between adjacent layers
+    # 2. Fully Connect Edges between adjacent layers
     for i in range(len(layer_node_ids) - 1):
         for src in layer_node_ids[i]:
             for dst in layer_node_ids[i+1]:
@@ -139,8 +129,8 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, max_display=4):
     html_content = html_content.replace("</head>", f"{custom_css}</head>")
     html_content = html_content.replace("background-color: #0E1117;", "background-color: transparent;")
     
-    # Embed component in Streamlit frame
-    components.html(html_content, height=430)
+    # Embed component with dynamic height allocation
+    components.html(html_content, height=dynamic_height + 10)
 
 
 # =====================================================================
