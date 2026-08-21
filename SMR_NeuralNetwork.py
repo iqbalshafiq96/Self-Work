@@ -100,7 +100,7 @@ test_ratio = st.sidebar.slider(
 
 
 # =====================================================================
-# 3. PYVIS NETWORK DIAGRAM WITH EDGE-RESONATING HIDDEN LAYERS
+# 3. PYVIS NETWORK DIAGRAM WITH PRECISE HIDDEN-LAYER EDGE RESONANCE
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     max_neurons = max(in_dim, h1, h2, out_dim)
@@ -120,7 +120,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     {
       "nodes": {
         "borderWidth": 2,
-        "size": 60,
+        "size": 30,
         "font": { 
           "size": 16, 
           "face": "Source Sans Pro, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif", 
@@ -227,7 +227,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
 
     html_content = net.generate_html()
 
-    # Injected animation script targeting only hidden layer node edges + gold particle movement
+    # Dynamic bounding box aligned resonance script
     edge_resonating_script = """
     <script type="text/javascript">
     document.addEventListener("DOMContentLoaded", function() {
@@ -258,34 +258,35 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                     globalPhase += 0.04;
                     var pulseIntensity = 0.5 + 0.5 * Math.sin(globalPhase);
                     
-                    // 1. Resonate Light Beams strictly at the outer border edge of Hidden Layer Nodes
+                    // Resonate Light Beams strictly at the outer border edge of Hidden Layer Nodes
                     nodeList.forEach(function(node) {
-                        // Exclude Input (L0_) and Output (L3_) nodes
                         if (node.id.startsWith('L1_') || node.id.startsWith('L2_')) {
                             var pos = network.getPositions([node.id])[node.id];
-                            if (pos) {
-                                var baseRadius = 30; // Node radius
-                                var strokeWidth = 2 + (pulseIntensity * 3.5);
-                                var alpha = 0.4 + (pulseIntensity * 0.6);
+                            var box = network.getBoundingBox(node.id);
+                            
+                            if (pos && box) {
+                                // Dynamic radius calculation matching actual canvas bounding box size
+                                var actualRadius = (box.right - box.left) / 2;
+                                var strokeWidth = 1.5 + (pulseIntensity * 2.5);
+                                var alpha = 0.5 + (pulseIntensity * 0.5);
                                 
                                 var beamColor = node.id.startsWith('L1_') 
-                                    ? 'rgba(52, 152, 219, '  // Blue glow for Layer 1
-                                    : 'rgba(26, 188, 156, '; // Teal glow for Layer 2
+                                    ? 'rgba(52, 152, 219, '  
+                                    : 'rgba(26, 188, 156, '; 
 
-                                // Resonating rim beam on node circumference
                                 ctx.beginPath();
-                                ctx.arc(pos.x, pos.y, baseRadius + 1, 0, 2 * Math.PI, false);
+                                ctx.arc(pos.x, pos.y, actualRadius, 0, 2 * Math.PI, false);
                                 ctx.strokeStyle = beamColor + alpha + ')';
                                 ctx.lineWidth = strokeWidth;
                                 ctx.shadowColor = beamColor + '1.0)';
-                                ctx.shadowBlur = 8 * pulseIntensity;
+                                ctx.shadowBlur = 6 * pulseIntensity;
                                 ctx.stroke();
-                                ctx.shadowBlur = 0; // Reset shadow for subsequent draws
+                                ctx.shadowBlur = 0; 
                             }
                         }
                     });
 
-                    // 2. Sparkling Gold Micro-particles traveling along edge lines
+                    // Sparkling Gold Micro-particles traveling along edge lines
                     particles.forEach(function(p) {
                         var fromPos = network.getPositions([p.from])[p.from];
                         var toPos = network.getPositions([p.to])[p.to];
