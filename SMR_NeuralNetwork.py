@@ -16,30 +16,27 @@ st.title("Steam Methane Reforming (SMR) Neural Network Modeling")
 # =====================================================================
 # 1. GITHUB DATA LOADING & PREPROCESSING (AUTOMATIC NORMALIZATION)
 # =====================================================================
-# Convert GitHub blob URL to Raw URL so pandas can read it directly
-GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/SMR_Data.csv"
+GITHUB_CSV_URL = (
+    "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/SMR_Data.csv"
+)
 
 
 @st.cache_data
 def load_and_preprocess_smr_data(url_or_path):
-    # Fallback to local path if GitHub URL fails or during local dev
     try:
         df = pd.read_csv(url_or_path)
     except Exception:
         df = pd.read_csv("SMR_Data.csv")
 
-    # Extract 3 Inputs and 4 Outputs
     input_cols = df.columns[:3]
     output_cols = df.columns[3:7]
 
     X_raw = df[input_cols].values
     Y_raw = df[output_cols].values
 
-    # Z-Score Standardize Inputs
     scaler_X = StandardScaler()
     X_scaled = scaler_X.fit_transform(X_raw)
 
-    # Standardize Outputs
     scaler_Y = StandardScaler()
     Y_scaled = scaler_Y.fit_transform(Y_raw)
 
@@ -113,7 +110,6 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         directed=True,
     )
 
-    # Disable physics forces so fixed x, y coordinates stick strictly
     net.set_options(
         """
     {
@@ -133,7 +129,6 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     """
     )
 
-    # Fixed horizontal X coordinates (Left to Right)
     x_input = -600
     x_h1 = -200
     x_h2 = 200
@@ -161,24 +156,24 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
             shape="circle",
         )
 
-    # 2. Hidden Layer 1
+    # 2. Hidden Layer 1 (Clean node, no text labels)
     for i, nid in enumerate(h1_nodes):
         y_pos = (i - (h1 - 1) / 2) * y_gap
         net.add_node(
             nid,
-            label=f"H1 [{act_fn}]\nN{i+1}",
+            label="",
             x=x_h1,
             y=y_pos,
             color={"background": "#1B4F72", "border": "#3498DB"},
             shape="circle",
         )
 
-    # 3. Hidden Layer 2 (Optional)
+    # 3. Hidden Layer 2 (Optional, clean node, no text labels)
     for i, nid in enumerate(h2_nodes):
         y_pos = (i - (h2 - 1) / 2) * y_gap
         net.add_node(
             nid,
-            label=f"H2 [{act_fn}]\nN{i+1}",
+            label="",
             x=x_h2,
             y=y_pos,
             color={"background": "#0E6251", "border": "#1ABC9C"},
@@ -193,7 +188,6 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
             else f"Output\nN{i+1}"
         )
         y_pos = (i - (out_dim - 1) / 2) * y_gap
-        # Adjust X position if Layer 2 is bypassed
         x_out_pos = x_output if h2 > 0 else x_h2 + 400
         net.add_node(
             nid,
@@ -419,7 +413,6 @@ with tab3:
                 test_preds_norm = net(X_test).numpy()
                 Y_test_norm = Y_test.numpy()
 
-                # Denormalize outputs back to real SMR engineering units
                 Y_test_actual = scaler_Y.inverse_transform(Y_test_norm)
                 Y_test_pred = scaler_Y.inverse_transform(test_preds_norm)
 
@@ -437,7 +430,6 @@ with tab3:
                     )
                     st.line_chart(chart_data)
 
-                    # Compute R² score
                     y_t = Y_test_actual[:, idx]
                     y_p = Y_test_pred[:, idx]
                     r2 = 1 - (
