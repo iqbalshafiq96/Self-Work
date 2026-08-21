@@ -100,7 +100,7 @@ test_ratio = st.sidebar.slider(
 
 
 # =====================================================================
-# 3. PYVIS NETWORK DIAGRAM VISUALIZER WITH SYNAPTIC PULSE ANIMATION
+# 3. PYVIS NETWORK DIAGRAM VISUALIZER WITH SUBTLE SYNAPTIC PULSES
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     max_neurons = max(in_dim, h1, h2, out_dim)
@@ -129,9 +129,9 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         }
       },
       "edges": {
-        "color": { "color": "rgba(200, 200, 200, 0.25)", "highlight": "#3498DB" },
+        "color": { "color": "rgba(200, 200, 200, 0.18)", "highlight": "#3498DB" },
         "smooth": { "type": "continuous" },
-        "arrows": { "to": { "enabled": true, "scaleFactor": 0.5 } }
+        "arrows": { "to": { "enabled": true, "scaleFactor": 0.4 } }
       },
       "interaction": { "zoomView": true, "dragView": true },
       "physics": { "enabled": false }
@@ -227,8 +227,8 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
 
     html_content = net.generate_html()
 
-    # Inject JavaScript overlay to render animated pulsing particles along synaptic edges
-    animation_script = """
+    # Dynamic particle script with tiny micro-dots following edge coordinates precisely
+    subtle_particle_script = """
     <script type="text/javascript">
     document.addEventListener("DOMContentLoaded", function() {
         var checkExist = setInterval(function() {
@@ -238,16 +238,17 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                 var particles = [];
                 var edgeList = edges.get();
                 
-                // Initialize multiple pulsing light particles across random edges
-                for (var i = 0; i < edgeList.length * 2; i++) {
-                    var randomEdge = edgeList[Math.floor(Math.random() * edgeList.length)];
+                // Spawn a few subtle micro-particles assigned directly to edges
+                var particleCount = Math.min(edgeList.length, 30);
+                for (var i = 0; i < particleCount; i++) {
+                    var edge = edgeList[i % edgeList.length];
                     particles.push({
-                        from: randomEdge.from,
-                        to: randomEdge.to,
+                        edgeId: edge.id,
+                        from: edge.from,
+                        to: edge.to,
                         progress: Math.random(),
-                        speed: 0.005 + Math.random() * 0.008,
-                        size: 3 + Math.random() * 3,
-                        color: Math.random() > 0.5 ? '#00FFFF' : '#00FF99'
+                        speed: 0.003 + Math.random() * 0.004,
+                        opacity: 0.3 + Math.random() * 0.4
                     });
                 }
 
@@ -258,35 +259,32 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                         
                         if (fromPos && toPos) {
                             p.progress += p.speed;
-                            if (p.progress >= 1) {
-                                p.progress = 0;
-                                var nextEdge = edgeList[Math.floor(Math.random() * edgeList.length)];
-                                p.from = nextEdge.from;
-                                p.to = nextEdge.to;
+                            if (p.progress >= 0.95) {
+                                p.progress = 0.05;
+                                var randEdge = edgeList[Math.floor(Math.random() * edgeList.length)];
+                                p.from = randEdge.from;
+                                p.to = randEdge.to;
                             }
                             
-                            var currentX = fromPos.x + (toPos.x - fromPos.x) * p.progress;
-                            var currentY = fromPos.y + (toPos.y - fromPos.y) * p.progress;
+                            // Linear interpolation matching the connection line
+                            var currX = fromPos.x + (toPos.x - fromPos.x) * p.progress;
+                            var currY = fromPos.y + (toPos.y - fromPos.y) * p.progress;
                             
-                            // Outer Glow
+                            // Subtle soft outer glow
                             ctx.beginPath();
-                            ctx.arc(currentX, currentY, p.size * 2, 0, 2 * Math.PI, false);
-                            ctx.fillStyle = 'rgba(0, 255, 255, 0.25)';
+                            ctx.arc(currX, currY, 3, 0, 2 * Math.PI, false);
+                            ctx.fillStyle = 'rgba(52, 152, 219, ' + (p.opacity * 0.3) + ')';
                             ctx.fill();
                             
-                            // Core Pulsing Particle
+                            // Tiny micro-dot core (1.5px radius)
                             ctx.beginPath();
-                            ctx.arc(currentX, currentY, p.size, 0, 2 * Math.PI, false);
-                            ctx.fillStyle = p.color;
-                            ctx.shadowColor = '#00FFFF';
-                            ctx.shadowBlur = 10;
+                            ctx.arc(currX, currY, 1.5, 0, 2 * Math.PI, false);
+                            ctx.fillStyle = 'rgba(255, 255, 255, ' + p.opacity + ')';
                             ctx.fill();
-                            ctx.shadowBlur = 0; // reset shadow
                         }
                     });
                 });
                 
-                // Trigger canvas redraw loop
                 function animate() {
                     network.redraw();
                     requestAnimationFrame(animate);
@@ -299,7 +297,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     </body>
     """
 
-    html_content = html_content.replace("</body>", animation_script)
+    html_content = html_content.replace("</body>", subtle_particle_script)
     components.html(html_content, height=dynamic_height + 10)
 
 
@@ -396,7 +394,7 @@ with tab_corr:
     st.pyplot(fig)
 
 
-# --- TAB 1: BATCH TRAINING ---
+# --- TAB 1: BATCH TRAINING phase ---
 with tab1:
     st.markdown(
         "Train the model parameters using normalized SMR training inputs (`X_train`, `Y_train`)."
