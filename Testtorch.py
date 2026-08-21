@@ -71,10 +71,16 @@ X = torch.randn(num_samples, num_inputs)
 T = torch.randn(num_samples, num_outputs)
 
 col1, col2 = st.columns(2)
-col1.write("**Inputs (X preview):**", pd.DataFrame(X.numpy()).head())
-col2.write("**Targets (T preview):**", pd.DataFrame(T.numpy()).head())
 
-# Instantiate Network Button
+with col1:
+    st.write("**Inputs (X preview):**")
+    st.dataframe(pd.DataFrame(X.numpy()).head())
+
+with col2:
+    st.write("**Targets (T preview):**")
+    st.dataframe(pd.DataFrame(T.numpy()).head())
+
+# Initialize Model Button
 if st.button("Initialize / Reset Model Architecture"):
     st.session_state.net = ConfigurableNet(num_inputs, hidden1_size, hidden2_size, activation1, num_outputs)
     st.session_state.loss_history = []
@@ -119,7 +125,7 @@ with tab1:
                 optimizer.step()
                 
                 st.session_state.loss_history.append(loss.item())
-                progress_bar.progress((epoch + 1) / epochs)
+                progress_bar.progress((epoch + 1) / int(epochs))
                 
                 # Real-time loss plot update
                 chart_place.line_chart(st.session_state.loss_history, y_label="MSE Loss")
@@ -141,14 +147,14 @@ with tab2:
             criterion = nn.MSELoss()
             
             # Generate new dynamic streaming samples
-            stream_X = torch.randn(stream_size, num_inputs)
-            stream_T = torch.randn(stream_size, num_outputs)
+            stream_X = torch.randn(int(stream_size), num_inputs)
+            stream_T = torch.randn(int(stream_size), num_outputs)
             
             status_place = st.empty()
             chart_place = st.empty()
             
             net.train()
-            for i in range(stream_size):
+            for i in range(int(stream_size)):
                 x_sample = stream_X[i:i+1]
                 t_sample = stream_T[i:i+1]
                 
