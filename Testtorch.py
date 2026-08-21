@@ -15,9 +15,14 @@ st.title("Neural Network: Interactive Architecture & Testing")
 st.sidebar.header("1. Network Architecture")
 num_inputs = st.sidebar.number_input("Number of Inputs", min_value=1, max_value=20, value=4)
 hidden1_size = st.sidebar.slider("Layer 1 Neurons", 1, 50, 8)
-activation1 = st.sidebar.selectbox("Layer 1 Activation (Transfer Fcn)", ["Tanh (tansig)", "Sigmoid (logsig)", "ReLU"])
 hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 50, 4)  # 0 means skip
 num_outputs = st.sidebar.number_input("Number of Outputs", min_value=1, max_value=5, value=1)
+
+# Global Activation Function applied to all hidden layers
+global_activation = st.sidebar.selectbox(
+    "Global Transfer Function (All Layers)", 
+    ["Tanh (tansig)", "Sigmoid (logsig)", "ReLU"]
+)
 
 st.sidebar.header("2. Optimization & Data Options")
 lr = st.sidebar.number_input("Learning Rate", min_value=0.0001, max_value=1.0, value=0.01, step=0.001)
@@ -40,21 +45,19 @@ def draw_neural_network(in_dim, h1, h2, out_dim, act_fn, max_display=5):
         color="#2E86C1", 
         fontcolor="white", 
         fontname="Segoe UI",
-        width="0.22",       # Compact node size
+        width="0.22",
         height="0.22",
         fixedsize="true",
         fontsize="7"
     )
     dot.attr("edge", arrowsize="0.3")
 
-    # Helper function to get node representation list (truncates if large)
     def get_layer_nodes(count, prefix):
         if count <= max_display:
             return [(f"{prefix}_{i}", False) for i in range(count)]
         else:
-            # Show first 3 nodes, an ellipsis node, and the last node
             nodes = [(f"{prefix}_{i}", False) for i in range(3)]
-            nodes.append((f"{prefix}_dots", True))  # True indicates ellipsis node
+            nodes.append((f"{prefix}_dots", True))
             nodes.append((f"{prefix}_{count-1}", False))
             return nodes
 
@@ -63,7 +66,7 @@ def draw_neural_network(in_dim, h1, h2, out_dim, act_fn, max_display=5):
     with dot.subgraph(name="cluster_input") as c:
         c.attr(color="white", label=f"Input ({in_dim})", fontsize="9")
         for node_id, is_dots in input_nodes:
-            label = "..." if is_dots else ""  # Blank for clean neurons
+            label = "..." if is_dots else ""
             color = "#7F8C8D" if is_dots else "#34495E"
             c.node(node_id, label, fillcolor=color)
 
@@ -76,7 +79,6 @@ def draw_neural_network(in_dim, h1, h2, out_dim, act_fn, max_display=5):
             color = "#7F8C8D" if is_dots else "#2980B9"
             c.node(node_id, label, fillcolor=color)
 
-    # Connect Input -> Hidden 1
     for i_id, _ in input_nodes:
         for h1_id, _ in h1_nodes:
             dot.edge(i_id, h1_id, color="#BDC3C7", arrowhead="none")
@@ -120,10 +122,9 @@ def draw_neural_network(in_dim, h1, h2, out_dim, act_fn, max_display=5):
 # =====================================================================
 st.subheader("Network Diagram & Visual Representation")
 
-# Place diagram inside a bounded column layout
 v_col1, v_col2, v_col3 = st.columns([1, 3, 1])
 with v_col2:
-    net_graph = draw_neural_network(num_inputs, hidden1_size, hidden2_size, num_outputs, activation1)
+    net_graph = draw_neural_network(num_inputs, hidden1_size, hidden2_size, num_outputs, global_activation)
     st.graphviz_chart(net_graph, use_container_width=True)
 
 
@@ -136,13 +137,15 @@ class ConfigurableNet(nn.Module):
             "ReLU": nn.ReLU()
         }
         
+        chosen_act = act_map[act_fn_name]
+        
         layers = []
         layers.append(nn.Linear(in_dim, h1))
-        layers.append(act_map[act_fn_name])
+        layers.append(chosen_act)
         
         if h2 > 0:
             layers.append(nn.Linear(h1, h2))
-            layers.append(act_map[act_fn_name])
+            layers.append(chosen_act)
             layers.append(nn.Linear(h2, out_dim))
         else:
             layers.append(nn.Linear(h1, out_dim))
@@ -164,12 +167,10 @@ if "loss_history" not in st.session_state:
 st.subheader("Dataset Configuration & Partitioning")
 num_samples = st.slider("Total Dataset Size", 50, 1000, 200)
 
-# Generate synthetic dataset
 torch.manual_seed(42)
 X_raw = torch.randn(num_samples, num_inputs)
 T_raw = torch.sin(X_raw[:, :1]) * 2.0 + torch.randn(num_samples, num_outputs) * 0.2
 
-# Partition dataset using PyTorch indices
 split_idx = int(num_samples * (1 - test_ratio))
 indices = torch.randperm(num_samples)
 
@@ -185,7 +186,7 @@ col2.metric("Training Samples", X_train.shape[0])
 col3.metric("Testing Samples", X_test.shape[0])
 
 if st.button("Initialize / Reset Model Architecture"):
-    st.session_state.net = ConfigurableNet(num_inputs, hidden1_size, hidden2_size, activation1, num_outputs)
+    st.session_state.net = ConfigurableNet(num_inputs, hidden1_size, hidden2_size, global_activation, num_outputs)
     st.session_state.loss_history = []
     st.success("New model initialized!")
 
