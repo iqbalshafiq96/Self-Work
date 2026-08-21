@@ -121,7 +121,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     {
       "nodes": {
         "borderWidth": 2,
-        "size": 38,
+        "size": 60,
         "font": { "size": 16, "face": "Source Sans Pro", "color": "#FFFFFF", "bold": true }
       },
       "edges": {
