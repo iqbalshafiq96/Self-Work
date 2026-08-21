@@ -100,7 +100,7 @@ test_ratio = st.sidebar.slider(
 
 
 # =====================================================================
-# 3. PYVIS NETWORK DIAGRAM WITH PRECISE HIDDEN-LAYER EDGE RESONANCE
+# 3. PYVIS NETWORK DIAGRAM WITH ZOOM SLIDER & HOME RESET BUTTON
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     max_neurons = max(in_dim, h1, h2, out_dim)
@@ -115,6 +115,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         directed=True,
     )
 
+    # Disabled scroll zoomView to prevent mouse scroll zooming
     net.set_options(
         """
     {
@@ -133,7 +134,10 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         "smooth": { "type": "continuous" },
         "arrows": { "to": { "enabled": true, "scaleFactor": 0.4 } }
       },
-      "interaction": { "zoomView": true, "dragView": true },
+      "interaction": { 
+        "zoomView": false, 
+        "dragView": true 
+      },
       "physics": { "enabled": false }
     }
     """
@@ -227,14 +231,82 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
 
     html_content = net.generate_html()
 
-    # Dynamic bounding box aligned resonance script
-    edge_resonating_script = """
+    # Custom overlay controls (Zoom slider & Home Reset) + edge resonance animation
+    controls_and_animation_script = """
+    <style>
+      .diagram-controls {
+        position: absolute;
+        top: 15px;
+        right: 20px;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(20, 24, 33, 0.85);
+        padding: 6px 12px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        backdrop-filter: blur(4px);
+        font-family: system-ui, -apple-system, sans-serif;
+        color: #FFFFFF;
+        font-size: 12px;
+      }
+      .diagram-controls input[type=range] {
+        width: 90px;
+        cursor: pointer;
+        accent-color: #3498DB;
+      }
+      .diagram-btn {
+        background: #2C3E50;
+        color: #FFFFFF;
+        border: 1px solid #5D6D7E;
+        border-radius: 4px;
+        padding: 3px 8px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .diagram-btn:hover {
+        background: #34495E;
+      }
+    </style>
+
+    <div class="diagram-controls">
+      <span>Zoom:</span>
+      <input type="range" id="zoomSlider" min="0" max="200" value="100">
+      <span id="zoomValue" style="min-width: 35px;">100%</span>
+      <button class="diagram-btn" id="resetZoomBtn" title="Reset view and zoom">🏠 Reset</button>
+    </div>
+
     <script type="text/javascript">
     document.addEventListener("DOMContentLoaded", function() {
         var checkExist = setInterval(function() {
             if (typeof network !== 'undefined') {
                 clearInterval(checkExist);
                 
+                var zoomSlider = document.getElementById("zoomSlider");
+                var zoomValLabel = document.getElementById("zoomValue");
+                var resetBtn = document.getElementById("resetZoomBtn");
+
+                // Handle Zoom Slider Movement (0% to 200%)
+                zoomSlider.addEventListener("input", function() {
+                    var val = parseFloat(this.value);
+                    zoomValLabel.innerText = val + "%";
+                    var scaleFactor = val / 100.0;
+                    network.moveTo({ scale: scaleFactor });
+                });
+
+                // Handle Home Reset Button Click
+                resetBtn.addEventListener("click", function() {
+                    zoomSlider.value = 100;
+                    zoomValLabel.innerText = "100%";
+                    network.moveTo({
+                        position: { x: 0, y: 0 },
+                        scale: 1.0,
+                        animation: { duration: 300, easingFunction: "easeInOutQuad" }
+                    });
+                });
+
                 var particles = [];
                 var edgeList = edges.get();
                 var nodeList = nodes.get();
@@ -265,7 +337,6 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                             var box = network.getBoundingBox(node.id);
                             
                             if (pos && box) {
-                                // Dynamic radius calculation matching actual canvas bounding box size
                                 var actualRadius = (box.right - box.left) / 2;
                                 var strokeWidth = 1.5 + (pulseIntensity * 2.5);
                                 var alpha = 0.5 + (pulseIntensity * 0.5);
@@ -286,7 +357,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                         }
                     });
 
-                    // Sparkling Gold Micro-particles traveling along edge lines
+                    // Sparkling Gold Micro-particles traveling along synapses
                     particles.forEach(function(p) {
                         var fromPos = network.getPositions([p.from])[p.from];
                         var toPos = network.getPositions([p.to])[p.to];
@@ -333,7 +404,9 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     </body>
     """
 
-    html_content = html_content.replace("</body>", edge_resonating_script)
+    html_content = html_content.replace(
+        "</body>", controls_and_animation_script
+    )
     components.html(html_content, height=dynamic_height + 10)
 
 
