@@ -32,35 +32,36 @@ test_ratio = st.sidebar.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 
 # =====================================================================
-# 2. PYVIS UNLIMITED NEURON GRAPH VISUALIZER
+# 2. PYVIS UNLIMITED NEURON GRAPH VISUALIZER (LARGER NODES)
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     # Dynamically scale canvas height & vertical node gap based on largest layer
     max_neurons = max(in_dim, h1, h2, out_dim)
-    dynamic_height = max(420, min(max_neurons * 35, 1200))
-    y_gap = max(25, min(75, 450 // max_neurons))
+    dynamic_height = max(480, min(max_neurons * 45, 1400))
+    y_gap = max(40, min(90, 550 // max_neurons))
     
     net = Network(height=f"{dynamic_height}px", width="100%", bgcolor="rgba(0,0,0,0)", font_color="white", directed=True)
     
-    # Modern font stack matching Streamlit's UI with adaptive physics
+    # Modern font stack with larger node size (32px) & readable fonts
     net.set_options(f"""
     {{
       "nodes": {{
         "borderWidth": 2,
-        "size": 20,
+        "size": 32,
         "font": {{ 
-          "size": 12, 
+          "size": 14, 
           "face": "Source Sans Pro, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
-          "color": "#E0E0E0"
+          "color": "#FFFFFF",
+          "vadjust": 0
         }}
       }},
       "edges": {{
-        "color": {{ "color": "rgba(200, 200, 200, 0.25)", "highlight": "#3498DB" }},
+        "color": {{ "color": "rgba(200, 200, 200, 0.3)", "highlight": "#3498DB" }},
         "smooth": false,
-        "arrows": {{ "to": {{ "enabled": true, "scaleFactor": 0.3 }} }}
+        "arrows": {{ "to": {{ "enabled": true, "scaleFactor": 0.4 }} }}
       }},
       "physics": {{
-        "barnesHut": {{ "gravitationalConstant": -2500, "springLength": 90, "springConstant": 0.03 }},
+        "barnesHut": {{ "gravitationalConstant": -3500, "springLength": 110, "springConstant": 0.03 }},
         "minVelocity": 0.75
       }}
     }}
@@ -68,12 +69,12 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
 
     # Horizontal coordinate positioning per layer
     layers = [
-        ("Input", in_dim, "#2C3E50", "#5D6D7E", -380),
-        (f"Hidden 1 [{act_fn}]", h1, "#1B4F72", "#3498DB", -120),
+        ("Input", in_dim, "#2C3E50", "#5D6D7E", -400),
+        (f"Hidden 1 [{act_fn}]", h1, "#1B4F72", "#3498DB", -130),
     ]
     if h2 > 0:
         layers.append((f"Hidden 2 [{act_fn}]", h2, "#0E6251", "#1ABC9C", 140))
-    layers.append(("Output", out_dim, "#7E5109", "#F39C12", 380))
+    layers.append(("Output", out_dim, "#7E5109", "#F39C12", 400))
 
     layer_node_ids = []
 
