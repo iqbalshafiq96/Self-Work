@@ -31,7 +31,7 @@ v2 = st.sidebar.number_input("Comp 2 Value", value=50.0, min_value=0.0)
 c3 = st.sidebar.text_input("Component 3", "n-butane")
 v3 = st.sidebar.number_input("Comp 3 Value", value=30.0, min_value=0.0)
 
-components = [c1, c2, c3]
+components = [c1.strip().lower(), c2.strip().lower(), c3.strip().lower()]
 raw_values = [v1, v2, v3]
 
 st.sidebar.header("3. Separator Operating Conditions")
@@ -46,6 +46,10 @@ pressure_pa = pressure_bar * 1e5
 try:
     # Normalize compositions to fractions
     total_val = sum(raw_values)
+    if total_val <= 0:
+        st.error("Total component input must be greater than zero.")
+        st.stop()
+        
     fractions = [v / total_val for v in raw_values]
 
     # Initialize mixture based on selected basis
@@ -54,14 +58,23 @@ try:
     else:  # Mass / Weight basis
         mix = Mixture(components, ws=fractions, T=temp_k, P=pressure_pa)
 
+    # Extract phase fraction safely
+    beta = mix.V_over_F if mix.V_over_F is not None else (1.0 if mix.phase == 'g' else 0.0)
+
     # Calculate Vapor and Liquid Flows
-    beta = mix.V_over_F  # Vapor fraction (0 = all liquid, 1 = all vapor)
     vapor_molar_flow = total_flow * beta
     liquid_molar_flow = total_flow * (1 - beta)
 
-    # Get compositions (x = liquid mole frac, y = vapor mole frac)
-    x_comp = mix.x if mix.x else [0]*len(components)
-    y_comp = mix.y if mix.y else [0]*len(components)
+    # Extract phase compositions safely (handling 100% liquid, 100% vapor, or 2-phase)
+    if beta == 0.0:  # All liquid
+        x_comp = list(mix.zs)
+        y_comp = [0.0] * len(components)
+    elif beta == 1.0:  # All vapor
+        x_comp = [0.0] * len(components)
+        y_comp = list(mix.zs)
+    else:  # Two-phase equilibrium region
+        x_comp = list(mix.liquid0.zs) if hasattr(mix, 'liquid0') and mix.liquid0 else list(mix.zs)
+        y_comp = list(mix.gas0.zs) if hasattr(mix, 'gas0') and mix.gas0 else list(mix.zs)
 
     # --- MAIN DISPLAY LAYOUT ---
     col1, col2 = st.columns([1, 1])
@@ -82,7 +95,14 @@ try:
             "Vapor Outlet (y)": y_comp,
             "Liquid Bottoms (x)": x_comp
         })
-        st.dataframe(df.style.format({"Feed (z)": "{:.4f}", "Vapor Outlet (y)": "{:.4f}", "Liquid Bottoms (x)": "{:.4f}"}), use_container_width=True)
+        st.dataframe(
+            df.style.format({
+                "Feed (z)": "{:.4f}", 
+                "Vapor Outlet (y)": "{:.4f}", 
+                "Liquid Bottoms (x)": "{:.4f}"
+            }), 
+            use_container_width=True
+        )
 
     with col2:
         st.subheader("🖼️ Separator Process Diagram")
