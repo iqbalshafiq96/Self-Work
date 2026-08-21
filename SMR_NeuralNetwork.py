@@ -100,7 +100,7 @@ test_ratio = st.sidebar.slider(
 
 
 # =====================================================================
-# 3. PYVIS NETWORK DIAGRAM WITH TRANSPARENT ZOOM SLIDER & HOME BUTTON
+# 3. PYVIS NETWORK DIAGRAM WITH BLACK FONT CONTROLS
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     max_neurons = max(in_dim, h1, h2, out_dim)
@@ -231,7 +231,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
 
     html_content = net.generate_html()
 
-    # Glassmorphism overlay (no black fill), matching font stack, and network particle animations
+    # Glassmorphism overlay with explicit Black Font (#000000)
     controls_and_animation_script = """
     <style>
       .diagram-controls {
@@ -242,47 +242,47 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         display: flex;
         align-items: center;
         gap: 10px;
-        background: rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.25);
         padding: 6px 14px;
         border-radius: 8px;
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(0, 0, 0, 0.15);
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        color: #E0E6ED;
+        color: #000000;
         font-size: 13px;
-        font-weight: 500;
+        font-weight: 600;
       }
       .diagram-controls input[type=range] {
         width: 100px;
         height: 4px;
         cursor: pointer;
         accent-color: #3498DB;
-        background: rgba(255, 255, 255, 0.2);
+        background: rgba(0, 0, 0, 0.2);
         border-radius: 2px;
       }
       .diagram-btn {
-        background: rgba(255, 255, 255, 0.12);
-        color: #FFFFFF;
-        border: 1px solid rgba(255, 255, 255, 0.25);
+        background: rgba(255, 255, 255, 0.5);
+        color: #000000;
+        border: 1px solid rgba(0, 0, 0, 0.25);
         border-radius: 5px;
         padding: 4px 10px;
         font-size: 12px;
         font-family: inherit;
-        font-weight: 500;
+        font-weight: 700;
         cursor: pointer;
         transition: all 0.2s ease;
       }
       .diagram-btn:hover {
-        background: rgba(52, 152, 219, 0.4);
-        border-color: #3498DB;
+        background: rgba(255, 255, 255, 0.85);
+        border-color: #000000;
       }
     </style>
 
     <div class="diagram-controls">
-      <span style="color: #E0E6ED;">Zoom</span>
+      <span style="color: #000000;">Zoom</span>
       <input type="range" id="zoomSlider" min="0" max="200" value="100">
-      <span id="zoomValue" style="min-width: 40px; font-weight: 600; color: #3498DB;">100%</span>
+      <span id="zoomValue" style="min-width: 40px; font-weight: 700; color: #000000;">100%</span>
       <button class="diagram-btn" id="resetZoomBtn" title="Reset view and zoom">🏠 Reset</button>
     </div>
 
