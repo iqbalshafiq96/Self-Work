@@ -522,12 +522,38 @@ tab_corr, tab1, tab2, tab3 = st.tabs(
 # --- TAB 0: CORRELATION MATRIX ---
 with tab_corr:
     st.write("### SMR Data Feature Correlation Matrix")
-    fig, ax = plt.subplots(figsize=(8, 5))
+
+    plt.rcParams["font.sans-serif"] = [
+        "Segoe UI",
+        "Aptos",
+        "Arial",
+        "DejaVu Sans",
+    ]
+    plt.rcParams["axes.edgecolor"] = "#CCCCCC"
+    plt.rcParams["axes.linewidth"] = 0.8
+
     corr = df_raw.corr()
+
+    fig, ax = plt.subplots(figsize=(6.4, 4.0), dpi=150)
+
     sns.heatmap(
-        corr, annot=True, cmap="coolwarm", fmt=".2f", linewidths=0.5, ax=ax
+        corr,
+        annot=True,
+        cmap="coolwarm",
+        fmt=".2f",
+        linewidths=0.5,
+        ax=ax,
+        cbar_kws={"shrink": 0.8},
+        annot_kws={"size": 9, "fontfamily": "sans-serif"},
     )
-    st.pyplot(fig)
+
+    ax.tick_params(labelsize=9, colors="#31333F")
+    plt.xticks(rotation=45, ha="right")
+    plt.yticks(rotation=0)
+
+    c_left, c_mid, c_right = st.columns([0.1, 0.8, 0.1])
+    with c_mid:
+        st.pyplot(fig, use_container_width=True)
 
 
 # --- TAB 1: BATCH TRAINING ---
