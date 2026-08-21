@@ -32,35 +32,37 @@ test_ratio = st.sidebar.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 
 # =====================================================================
-# 2. PYVIS UNLIMITED NEURON GRAPH VISUALIZER (STRICT SEQUENTIAL FLOW)
+# 2. PYVIS UNLIMITED NEURON GRAPH VISUALIZER (LEFT-TO-RIGHT & ENLARGED)
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     # Dynamically scale canvas height & vertical node gap based on largest layer
     max_neurons = max(in_dim, h1, h2, out_dim)
-    dynamic_height = max(480, min(max_neurons * 45, 1400))
-    y_gap = max(40, min(90, 550 // max_neurons))
+    dynamic_height = max(520, min(max_neurons * 55, 1600))
+    y_gap = max(50, min(100, 650 // max_neurons))
     
     net = Network(height=f"{dynamic_height}px", width="100%", bgcolor="rgba(0,0,0,0)", font_color="white", directed=True)
     
-    # Modern font stack with larger node size (32px) & readable fonts
+    # Modern font stack with larger node size (42px) & readable labels (18px)
+    # Physics settings enforce horizontal separation (Left-to-Right layout)
     net.set_options(f"""
     {{
       "nodes": {{
         "borderWidth": 2,
-        "size": 32,
+        "size": 42,
         "font": {{ 
-          "size": 14, 
+          "size": 18, 
           "face": "Source Sans Pro, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
-          "color": "#FFFFFF"
+          "color": "#FFFFFF",
+          "bold": true
         }}
       }},
       "edges": {{
-        "color": {{ "color": "rgba(200, 200, 200, 0.3)", "highlight": "#3498DB" }},
+        "color": {{ "color": "rgba(200, 200, 200, 0.35)", "highlight": "#3498DB" }},
         "smooth": false,
-        "arrows": {{ "to": {{ "enabled": true, "scaleFactor": 0.4 }} }}
+        "arrows": {{ "to": {{ "enabled": true, "scaleFactor": 0.5 }} }}
       }},
       "physics": {{
-        "barnesHut": {{ "gravitationalConstant": -3500, "springLength": 110, "springConstant": 0.03 }},
+        "barnesHut": {{ "gravitationalConstant": -4500, "springLength": 140, "springConstant": 0.03 }},
         "minVelocity": 0.75
       }}
     }}
@@ -72,50 +74,50 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     h2_nodes = [f"L2_N{i}" for i in range(h2)] if h2 > 0 else []
     output_nodes = [f"L3_N{i}" for i in range(out_dim)]
 
-    # 2. Add Nodes with explicit horizontal placement
-    # Input Layer
+    # 2. Add Nodes with Left-to-Right horizontal coordinate positioning
+    # Input Layer (Far Left)
     for i, nid in enumerate(input_nodes):
         y = (i - (in_dim - 1) / 2) * y_gap
         net.add_node(
             nid, 
             label=f"Input\nNode {i+1}" if in_dim <= 3 else f"N{i+1}", 
-            x=-400, 
+            x=-450, 
             y=y, 
             color={"background": "#2C3E50", "border": "#5D6D7E"}, 
             shape="circle"
         )
 
-    # Hidden Layer 1
+    # Hidden Layer 1 (Middle Left)
     for i, nid in enumerate(h1_nodes):
         y = (i - (h1 - 1) / 2) * y_gap
         net.add_node(
             nid, 
             label=f"H1 [{act_fn}]\nNode {i+1}" if h1 <= 3 else f"N{i+1}", 
-            x=-130 if h2 > 0 else 0, 
+            x=-150 if h2 > 0 else 0, 
             y=y, 
             color={"background": "#1B4F72", "border": "#3498DB"}, 
             shape="circle"
         )
 
-    # Hidden Layer 2 (Only created if h2 > 0)
+    # Hidden Layer 2 (Middle Right - only created if h2 > 0)
     for i, nid in enumerate(h2_nodes):
         y = (i - (h2 - 1) / 2) * y_gap
         net.add_node(
             nid, 
             label=f"H2 [{act_fn}]\nNode {i+1}" if h2 <= 3 else f"N{i+1}", 
-            x=140, 
+            x=150, 
             y=y, 
             color={"background": "#0E6251", "border": "#1ABC9C"}, 
             shape="circle"
         )
 
-    # Output Layer
+    # Output Layer (Far Right)
     for i, nid in enumerate(output_nodes):
         y = (i - (out_dim - 1) / 2) * y_gap
         net.add_node(
             nid, 
             label=f"Output\nNode {i+1}" if out_dim <= 3 else f"N{i+1}", 
-            x=400, 
+            x=450, 
             y=y, 
             color={"background": "#7E5109", "border": "#F39C12"}, 
             shape="circle"
