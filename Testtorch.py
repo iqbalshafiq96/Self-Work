@@ -16,7 +16,7 @@ st.sidebar.header("1. Network Architecture")
 num_inputs = st.sidebar.number_input("Number of Inputs", min_value=1, max_value=10, value=4)
 hidden1_size = st.sidebar.slider("Layer 1 Neurons", 1, 20, 8)
 activation1 = st.sidebar.selectbox("Layer 1 Activation (Transfer Fcn)", ["Tanh (tansig)", "Sigmoid (logsig)", "ReLU"])
-hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 20, 4) # 0 means skip
+hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 20, 4)  # 0 means skip
 num_outputs = st.sidebar.number_input("Number of Outputs", min_value=1, max_value=5, value=1)
 
 st.sidebar.header("2. Optimization & Data Options")
@@ -26,22 +26,36 @@ test_ratio = st.sidebar.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 
 # =====================================================================
-# 2. DYNAMIC NETWORK VISUALIZER (GRAPHVIZ)
+# 2. DYNAMIC COMPACT NETWORK VISUALIZER (GRAPHVIZ)
 # =====================================================================
 def draw_neural_network(in_dim, h1, h2, out_dim, act_fn):
     dot = graphviz.Digraph(comment="Neural Network Architecture")
-    dot.attr(rankdir="LR", size="8,5", dpi="150")
-    dot.attr("node", shape="circle", style="filled", color="#2E86C1", fontcolor="white", fontname="Segoe UI")
+    
+    # Global Graph & Node scaling for compact rendering
+    dot.attr(rankdir="LR", dpi="80", ranksep="0.5", nodesep="0.2")
+    dot.attr(
+        "node", 
+        shape="circle", 
+        style="filled", 
+        color="#2E86C1", 
+        fontcolor="white", 
+        fontname="Segoe UI",
+        width="0.3",       # Compact node diameter
+        height="0.3",
+        fixedsize="true",
+        fontsize="8"       # Small font size inside nodes
+    )
+    dot.attr("edge", arrowsize="0.5")
 
     # Input Layer Nodes
     with dot.subgraph(name="cluster_input") as c:
-        c.attr(color="white", label="Input Layer")
+        c.attr(color="white", label="Input", fontsize="10")
         for i in range(in_dim):
             c.node(f"I_{i}", f"X{i+1}", fillcolor="#34495E")
 
     # Hidden Layer 1 Nodes
     with dot.subgraph(name="cluster_h1") as c:
-        c.attr(color="white", label=f"Hidden Layer 1\n({act_fn})")
+        c.attr(color="white", label=f"Hidden 1\n({act_fn})", fontsize="10")
         for i in range(h1):
             c.node(f"H1_{i}", f"H1_{i+1}", fillcolor="#2980B9")
 
@@ -56,7 +70,7 @@ def draw_neural_network(in_dim, h1, h2, out_dim, act_fn):
     # Optional Hidden Layer 2 Nodes
     if h2 > 0:
         with dot.subgraph(name="cluster_h2") as c:
-            c.attr(color="white", label=f"Hidden Layer 2\n({act_fn})")
+            c.attr(color="white", label=f"Hidden 2\n({act_fn})", fontsize="10")
             for i in range(h2):
                 c.node(f"H2_{i}", f"H2_{i+1}", fillcolor="#16A085")
 
@@ -70,7 +84,7 @@ def draw_neural_network(in_dim, h1, h2, out_dim, act_fn):
 
     # Output Layer Nodes
     with dot.subgraph(name="cluster_output") as c:
-        c.attr(color="white", label="Output Layer\n(Linear)")
+        c.attr(color="white", label="Output\n(Linear)", fontsize="10")
         for i in range(out_dim):
             c.node(f"O_{i}", f"Y{i+1}", fillcolor="#D35400")
 
@@ -86,8 +100,12 @@ def draw_neural_network(in_dim, h1, h2, out_dim, act_fn):
 # 3. ARCHITECTURE VISUALIZATION & MODEL CLASS
 # =====================================================================
 st.subheader("Network Diagram & Visual Representation")
-net_graph = draw_neural_network(num_inputs, hidden1_size, hidden2_size, num_outputs, activation1)
-st.graphviz_chart(net_graph, use_container_width=True)
+
+# Center and constrain diagram width so it fits perfectly
+v_col1, v_col2, v_col3 = st.columns([1, 4, 1])
+with v_col2:
+    net_graph = draw_neural_network(num_inputs, hidden1_size, hidden2_size, num_outputs, activation1)
+    st.graphviz_chart(net_graph, use_container_width=True)
 
 
 class ConfigurableNet(nn.Module):
