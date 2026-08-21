@@ -16,7 +16,7 @@ st.title("Neural Network: Interactive Architecture & Testing")
 st.sidebar.header("1. Network Architecture")
 num_inputs = st.sidebar.number_input("Number of Inputs", min_value=1, max_value=20, value=4)
 
-# Updated Defaults: Layer 1 = 12, Layer 2 = 4
+# Default Neurons set to Layer 1 = 12, Layer 2 = 4
 hidden1_size = st.sidebar.slider("Layer 1 Neurons", 1, 50, 12)
 hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 50, 4)  # 0 means skip
 num_outputs = st.sidebar.number_input("Number of Outputs", min_value=1, max_value=5, value=1)
@@ -34,9 +34,9 @@ test_ratio = st.sidebar.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 
 # =====================================================================
-# 2. PYVIS UNLIMITED NEURON GRAPH VISUALIZER (NUMERIC ZOOM & PRE-ZOOMED)
+# 2. PYVIS UNLIMITED NEURON GRAPH VISUALIZER
 # =====================================================================
-def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, initial_scale=1.25):
+def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, initial_scale=1.5):
     # Dynamically scale canvas height & vertical node gap based on largest layer
     max_neurons = max(in_dim, h1, h2, out_dim)
     dynamic_height = max(520, min(max_neurons * 55, 1600))
@@ -149,7 +149,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, initial_scale=1.25):
     # Generate HTML content
     html_content = net.generate_html()
     
-    # Custom JS & CSS injection: Handles canvas transparency and numerical zoom scaling
+    # Custom JS & CSS injection: Resets camera position and applies numerical zoom scale
     zoom_script = f"""
     <style>
         body, html, #mynetwork {{
@@ -170,11 +170,12 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, initial_scale=1.25):
             setTimeout(function() {{
                 if (typeof network !== 'undefined') {{
                     network.moveTo({{
+                        position: {{ x: 0, y: 0 }},
                         scale: {initial_scale},
-                        animation: {{ duration: 500, easingFunction: 'easeInOutQuad' }}
+                        animation: {{ duration: 400, easingFunction: 'easeInOutQuad' }}
                     }});
                 }}
-            }}, 300);
+            }}, 200);
         }});
     </script>
     """
@@ -186,35 +187,33 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, initial_scale=1.25):
 
 
 # =====================================================================
-# 3. ARCHITECTURE VISUALIZATION & MODEL CLASS
+# 3. ARCHITECTURE VISUALIZATION & CONTROLS
 # =====================================================================
 st.subheader("Interactive Physics Network Diagram")
 
-# Numerical Zoom Presets
+# Session State for Zoom Control
 if "zoom_level" not in st.session_state:
-    st.session_state.zoom_level = 1.25
+    st.session_state.zoom_level = 1.50
 
-zoom_cols = st.columns([1, 1, 1, 1, 1, 1, 4])
-with zoom_cols[0]:
-    if st.button("0.50x"):
-        st.session_state.zoom_level = 0.50
-with zoom_cols[1]:
-    if st.button("0.75x"):
-        st.session_state.zoom_level = 0.75
-with zoom_cols[2]:
-    if st.button("1.00x"):
-        st.session_state.zoom_level = 1.00
-with zoom_cols[3]:
-    if st.button("1.25x"):
-        st.session_state.zoom_level = 1.25
-with zoom_cols[4]:
-    if st.button("1.50x"):
+ctrl_col1, ctrl_col2 = st.columns([3, 1])
+
+with ctrl_col1:
+    zoom_slider = st.slider(
+        "Zoom Scale", 
+        min_value=0.25, 
+        max_value=3.00, 
+        value=st.session_state.zoom_level, 
+        step=0.05,
+        format="%.2fx"
+    )
+    st.session_state.zoom_level = zoom_slider
+
+with ctrl_col2:
+    st.write(" ") # Vertical alignment spacer
+    st.write(" ")
+    if st.button("Reset View (1.5x)"):
         st.session_state.zoom_level = 1.50
-with zoom_cols[5]:
-    if st.button("2.00x"):
-        st.session_state.zoom_level = 2.00
-
-st.caption(f"Current Zoom Level: **{st.session_state.zoom_level}x** (You can also scroll with mouse or pinch to zoom/pan)")
+        st.rerun()
 
 render_pyvis_network(
     num_inputs, 
