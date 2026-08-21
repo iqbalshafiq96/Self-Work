@@ -13,10 +13,10 @@ st.title("Neural Network: Interactive Architecture & Testing")
 # 1. SIDEBAR CONFIGURATION
 # =====================================================================
 st.sidebar.header("1. Network Architecture")
-num_inputs = st.sidebar.number_input("Number of Inputs", min_value=1, max_value=10, value=4)
-hidden1_size = st.sidebar.slider("Layer 1 Neurons", 1, 20, 8)
+num_inputs = st.sidebar.number_input("Number of Inputs", min_value=1, max_value=20, value=4)
+hidden1_size = st.sidebar.slider("Layer 1 Neurons", 1, 50, 8)
 activation1 = st.sidebar.selectbox("Layer 1 Activation (Transfer Fcn)", ["Tanh (tansig)", "Sigmoid (logsig)", "ReLU"])
-hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 20, 4)  # 0 means skip
+hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 50, 4)  # 0 means skip
 num_outputs = st.sidebar.number_input("Number of Outputs", min_value=1, max_value=5, value=1)
 
 st.sidebar.header("2. Optimization & Data Options")
@@ -26,13 +26,13 @@ test_ratio = st.sidebar.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 
 # =====================================================================
-# 2. DYNAMIC COMPACT NETWORK VISUALIZER (GRAPHVIZ)
+# 2. TRUNCATED COMPACT NETWORK VISUALIZER (GRAPHVIZ)
 # =====================================================================
-def draw_neural_network(in_dim, h1, h2, out_dim, act_fn):
+def draw_neural_network(in_dim, h1, h2, out_dim, act_fn, max_display=5):
     dot = graphviz.Digraph(comment="Neural Network Architecture")
     
-    # Global Graph & Node scaling for compact rendering
-    dot.attr(rankdir="LR", dpi="80", ranksep="0.5", nodesep="0.2")
+    # Ultra-compact graph properties
+    dot.attr(rankdir="LR", dpi="72", ranksep="0.3", nodesep="0.15")
     dot.attr(
         "node", 
         shape="circle", 
@@ -40,58 +40,73 @@ def draw_neural_network(in_dim, h1, h2, out_dim, act_fn):
         color="#2E86C1", 
         fontcolor="white", 
         fontname="Segoe UI",
-        width="0.3",       # Compact node diameter
-        height="0.3",
+        width="0.25",       # Tiny node diameter
+        height="0.25",
         fixedsize="true",
-        fontsize="8"       # Small font size inside nodes
+        fontsize="7"        # Small font size
     )
-    dot.attr("edge", arrowsize="0.5")
+    dot.attr("edge", arrowsize="0.3")
 
-    # Input Layer Nodes
+    # Helper function to get node representation list (truncates if large)
+    def get_layer_nodes(count, prefix):
+        if count <= max_display:
+            return [(f"{prefix}_{i}", f"{prefix}_{i+1}") for i in range(count)]
+        else:
+            # Show first 3 nodes, an ellipsis node, and the last node
+            nodes = [(f"{prefix}_{i}", f"{prefix}_{i+1}") for i in range(3)]
+            nodes.append((f"{prefix}_dots", "..."))
+            nodes.append((f"{prefix}_{count-1}", f"{prefix}_{count}"))
+            return nodes
+
+    # 1. Input Layer
+    input_nodes = get_layer_nodes(in_dim, "I")
     with dot.subgraph(name="cluster_input") as c:
-        c.attr(color="white", label="Input", fontsize="10")
-        for i in range(in_dim):
-            c.node(f"I_{i}", f"X{i+1}", fillcolor="#34495E")
+        c.attr(color="white", label=f"Input ({in_dim})", fontsize="9")
+        for node_id, label in input_nodes:
+            color = "#34495E" if label != "..." else "#7F8C8D"
+            c.node(node_id, label, fillcolor=color)
 
-    # Hidden Layer 1 Nodes
+    # 2. Hidden Layer 1
+    h1_nodes = get_layer_nodes(h1, "H1")
     with dot.subgraph(name="cluster_h1") as c:
-        c.attr(color="white", label=f"Hidden 1\n({act_fn})", fontsize="10")
-        for i in range(h1):
-            c.node(f"H1_{i}", f"H1_{i+1}", fillcolor="#2980B9")
+        c.attr(color="white", label=f"Hidden 1 ({h1})\n[{act_fn}]", fontsize="9")
+        for node_id, label in h1_nodes:
+            color = "#2980B9" if label != "..." else "#7F8C8D"
+            c.node(node_id, label, fillcolor=color)
 
     # Connect Input -> Hidden 1
-    for i in range(in_dim):
-        for j in range(h1):
-            dot.edge(f"I_{i}", f"H1_{j}", color="#BDC3C7", arrowhead="none")
+    for i_id, _ in input_nodes:
+        for h1_id, _ in h1_nodes:
+            dot.edge(i_id, h1_id, color="#BDC3C7", arrowhead="none")
 
-    prev_layer_prefix = "H1"
-    prev_layer_count = h1
+    prev_nodes = h1_nodes
 
-    # Optional Hidden Layer 2 Nodes
+    # 3. Hidden Layer 2 (Optional)
     if h2 > 0:
+        h2_nodes = get_layer_nodes(h2, "H2")
         with dot.subgraph(name="cluster_h2") as c:
-            c.attr(color="white", label=f"Hidden 2\n({act_fn})", fontsize="10")
-            for i in range(h2):
-                c.node(f"H2_{i}", f"H2_{i+1}", fillcolor="#16A085")
+            c.attr(color="white", label=f"Hidden 2 ({h2})\n[{act_fn}]", fontsize="9")
+            for node_id, label in h2_nodes:
+                color = "#16A085" if label != "..." else "#7F8C8D"
+                c.node(node_id, label, fillcolor=color)
 
-        # Connect Hidden 1 -> Hidden 2
-        for i in range(h1):
-            for j in range(h2):
-                dot.edge(f"H1_{i}", f"H2_{j}", color="#BDC3C7", arrowhead="none")
+        for h1_id, _ in h1_nodes:
+            for h2_id, _ in h2_nodes:
+                dot.edge(h1_id, h2_id, color="#BDC3C7", arrowhead="none")
 
-        prev_layer_prefix = "H2"
-        prev_layer_count = h2
+        prev_nodes = h2_nodes
 
-    # Output Layer Nodes
+    # 4. Output Layer
+    output_nodes = get_layer_nodes(out_dim, "O")
     with dot.subgraph(name="cluster_output") as c:
-        c.attr(color="white", label="Output\n(Linear)", fontsize="10")
-        for i in range(out_dim):
-            c.node(f"O_{i}", f"Y{i+1}", fillcolor="#D35400")
+        c.attr(color="white", label=f"Output ({out_dim})\n[Linear]", fontsize="9")
+        for node_id, label in output_nodes:
+            color = "#D35400" if label != "..." else "#7F8C8D"
+            c.node(node_id, label, fillcolor=color)
 
-    # Connect Last Hidden Layer -> Output
-    for i in range(prev_layer_count):
-        for j in range(out_dim):
-            dot.edge(f"{prev_layer_prefix}_{i}", f"O_{j}", color="#BDC3C7", arrowhead="none")
+    for p_id, _ in prev_nodes:
+        for o_id, _ in output_nodes:
+            dot.edge(p_id, o_id, color="#BDC3C7", arrowhead="none")
 
     return dot
 
@@ -101,10 +116,12 @@ def draw_neural_network(in_dim, h1, h2, out_dim, act_fn):
 # =====================================================================
 st.subheader("Network Diagram & Visual Representation")
 
-# Center and constrain diagram width so it fits perfectly
-v_col1, v_col2, v_col3 = st.columns([1, 4, 1])
+# Place diagram inside a bounded column with fixed max height
+v_col1, v_col2, v_col3 = st.columns([1, 3, 1])
 with v_col2:
     net_graph = draw_neural_network(num_inputs, hidden1_size, hidden2_size, num_outputs, activation1)
+    
+    # Use graphviz inside a tight container
     st.graphviz_chart(net_graph, use_container_width=True)
 
 
@@ -271,7 +288,6 @@ with tab3:
                 y_true = T_test.numpy().flatten()
                 y_pred = test_predictions.numpy().flatten()
                 
-                # Pure PyTorch / NumPy calculation for R2 Score
                 target_mean = np.mean(y_true)
                 ss_tot = np.sum((y_true - target_mean) ** 2)
                 ss_res = np.sum((y_true - y_pred) ** 2)
