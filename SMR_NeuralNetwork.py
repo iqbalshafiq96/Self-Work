@@ -100,7 +100,7 @@ test_ratio = st.sidebar.slider(
 
 
 # =====================================================================
-# 3. PYVIS NETWORK DIAGRAM WITH ZOOM SLIDER & HOME RESET BUTTON
+# 3. PYVIS NETWORK DIAGRAM WITH TRANSPARENT ZOOM SLIDER & HOME BUTTON
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     max_neurons = max(in_dim, h1, h2, out_dim)
@@ -231,7 +231,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
 
     html_content = net.generate_html()
 
-    # Custom overlay controls (Zoom slider & Home Reset) + edge resonance animation
+    # Glassmorphism overlay (no black fill), matching font stack, and network particle animations
     controls_and_animation_script = """
     <style>
       .diagram-controls {
@@ -241,40 +241,48 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         z-index: 9999;
         display: flex;
         align-items: center;
-        gap: 8px;
-        background: rgba(20, 24, 33, 0.85);
-        padding: 6px 12px;
+        gap: 10px;
+        background: rgba(255, 255, 255, 0.08);
+        padding: 6px 14px;
         border-radius: 8px;
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        backdrop-filter: blur(4px);
-        font-family: system-ui, -apple-system, sans-serif;
-        color: #FFFFFF;
-        font-size: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        color: #E0E6ED;
+        font-size: 13px;
+        font-weight: 500;
       }
       .diagram-controls input[type=range] {
-        width: 90px;
+        width: 100px;
+        height: 4px;
         cursor: pointer;
         accent-color: #3498DB;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 2px;
       }
       .diagram-btn {
-        background: #2C3E50;
+        background: rgba(255, 255, 255, 0.12);
         color: #FFFFFF;
-        border: 1px solid #5D6D7E;
-        border-radius: 4px;
-        padding: 3px 8px;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 5px;
+        padding: 4px 10px;
         font-size: 12px;
+        font-family: inherit;
+        font-weight: 500;
         cursor: pointer;
-        transition: background 0.2s;
+        transition: all 0.2s ease;
       }
       .diagram-btn:hover {
-        background: #34495E;
+        background: rgba(52, 152, 219, 0.4);
+        border-color: #3498DB;
       }
     </style>
 
     <div class="diagram-controls">
-      <span>Zoom:</span>
+      <span style="color: #E0E6ED;">Zoom</span>
       <input type="range" id="zoomSlider" min="0" max="200" value="100">
-      <span id="zoomValue" style="min-width: 35px;">100%</span>
+      <span id="zoomValue" style="min-width: 40px; font-weight: 600; color: #3498DB;">100%</span>
       <button class="diagram-btn" id="resetZoomBtn" title="Reset view and zoom">🏠 Reset</button>
     </div>
 
@@ -288,22 +296,24 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                 var zoomValLabel = document.getElementById("zoomValue");
                 var resetBtn = document.getElementById("resetZoomBtn");
 
-                // Handle Zoom Slider Movement (0% to 200%)
+                // Dynamic Scaling (0% to 200%)
                 zoomSlider.addEventListener("input", function() {
                     var val = parseFloat(this.value);
                     zoomValLabel.innerText = val + "%";
                     var scaleFactor = val / 100.0;
-                    network.moveTo({ scale: scaleFactor });
+                    network.moveTo({ 
+                        scale: scaleFactor 
+                    });
                 });
 
-                // Handle Home Reset Button Click
+                // Home Reset (Scale 1.0 & Position (0,0))
                 resetBtn.addEventListener("click", function() {
                     zoomSlider.value = 100;
                     zoomValLabel.innerText = "100%";
                     network.moveTo({
                         position: { x: 0, y: 0 },
                         scale: 1.0,
-                        animation: { duration: 300, easingFunction: "easeInOutQuad" }
+                        animation: { duration: 350, easingFunction: "easeInOutQuad" }
                     });
                 });
 
