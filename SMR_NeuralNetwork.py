@@ -239,10 +239,14 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         margin: 0;
         padding: 0;
         overflow: hidden;
+        border: none !important;
+        outline: none !important;
       }
       #mynetwork {
         width: 100% !important;
         height: 100vh !important;
+        border: none !important;
+        outline: none !important;
       }
       .diagram-controls {
         position: absolute;
@@ -476,7 +480,7 @@ if "net" not in st.session_state:
 if "loss_history" not in st.session_state:
     st.session_state.loss_history = []
 if "active_tab" not in st.session_state:
-    st.session_state.active_tab = "Batch Training Phase"
+    st.session_state.active_tab = "Data Correlation Matrix"
 
 num_samples = len(X_norm)
 split_idx = int(num_samples * (1 - test_ratio))
