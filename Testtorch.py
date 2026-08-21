@@ -32,39 +32,44 @@ test_ratio = st.sidebar.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 
 # =====================================================================
-# 2. PYVIS INTERACTIVE PHYSICS GRAPH VISUALIZER (TRANSPARENT BACKGROUND)
+# 2. PYVIS INTERACTIVE PHYSICS GRAPH VISUALIZER (BORDERLESS & SCALED)
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, max_display=4):
-    # Set bgcolor to None so it doesn't render a solid background
-    net = Network(height="280px", width="100%", bgcolor="rgba(0,0,0,0)", font_color="white", directed=True)
+    # Expanded canvas size and transparent background
+    net = Network(height="420px", width="100%", bgcolor="rgba(0,0,0,0)", font_color="white", directed=True)
     
-    # Physics settings for smooth node layout & interaction
+    # Modern font stack matching Streamlit's UI and tuned physics for larger scale
     net.set_options("""
     {
       "nodes": {
         "borderWidth": 2,
-        "size": 18,
-        "font": { "size": 11, "face": "Segoe UI" }
+        "size": 24,
+        "font": { 
+          "size": 13, 
+          "face": "Source Sans Pro, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+          "color": "#E0E0E0"
+        }
       },
       "edges": {
-        "color": { "color": "rgba(200, 200, 200, 0.4)", "highlight": "#3498DB" },
+        "color": { "color": "rgba(200, 200, 200, 0.35)", "highlight": "#3498DB" },
         "smooth": false,
-        "arrows": { "to": { "enabled": true, "scaleFactor": 0.3 } }
+        "arrows": { "to": { "enabled": true, "scaleFactor": 0.4 } }
       },
       "physics": {
-        "barnesHut": { "gravitationalConstant": -1200, "springLength": 50, "springConstant": 0.04 },
+        "barnesHut": { "gravitationalConstant": -2000, "springLength": 80, "springConstant": 0.04 },
         "minVelocity": 0.75
       }
     }
     """)
 
+    # Proportionally expanded x-axis coordinates for wider node layout
     layers = [
-        ("Input", in_dim, "#2C3E50", "#5D6D7E", -250),
-        (f"Hidden 1 [{act_fn}]", h1, "#1B4F72", "#3498DB", -80),
+        ("Input", in_dim, "#2C3E50", "#5D6D7E", -380),
+        (f"Hidden 1 [{act_fn}]", h1, "#1B4F72", "#3498DB", -120),
     ]
     if h2 > 0:
-        layers.append((f"Hidden 2 [{act_fn}]", h2, "#0E6251", "#1ABC9C", 80))
-    layers.append(("Output", out_dim, "#7E5109", "#F39C12", 250))
+        layers.append((f"Hidden 2 [{act_fn}]", h2, "#0E6251", "#1ABC9C", 140))
+    layers.append(("Output", out_dim, "#7E5109", "#F39C12", 380))
 
     layer_node_ids = []
 
@@ -76,7 +81,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, max_display=4):
         for i in range(display_count):
             node_id = f"L{l_idx}_N{i}"
             node_label = f"{label}\nNode {i+1}" if display_count <= 2 else f"N{i+1}"
-            y_pos = (i - (display_count - 1) / 2) * 50
+            y_pos = (i - (display_count - 1) / 2) * 75  # Increased vertical node spacing
             
             net.add_node(
                 node_id, 
@@ -95,7 +100,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, max_display=4):
                 dots_id, 
                 label=f"+{count - max_display} more", 
                 x=x_pos, 
-                y=((max_display) - (max_display - 1) / 2) * 50,
+                y=((max_display) - (max_display - 1) / 2) * 75,
                 color={"background": "#34495E", "border": "#7F8C8D"},
                 shape="ellipse"
             )
@@ -109,10 +114,33 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, max_display=4):
             for dst in layer_node_ids[i+1]:
                 net.add_edge(src, dst)
 
-    # Save to HTML and strip canvas container background CSS
+    # Generate HTML content
     html_content = net.generate_html()
+    
+    # Custom CSS injection: Strips borders, shadows, and forces full background transparency
+    custom_css = """
+    <style>
+        body, html, #mynetwork {
+            background-color: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            font-family: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, sans-serif !important;
+        }
+        div.vis-network {
+            border: none !important;
+            outline: none !important;
+        }
+    </style>
+    """
+    
+    # Inject styling into HTML head & strip PyVis inline canvas styles
+    html_content = html_content.replace("</head>", f"{custom_css}</head>")
     html_content = html_content.replace("background-color: #0E1117;", "background-color: transparent;")
-    components.html(html_content, height=290)
+    
+    # Embed component in Streamlit frame
+    components.html(html_content, height=430)
 
 
 # =====================================================================
