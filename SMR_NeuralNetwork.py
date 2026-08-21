@@ -29,7 +29,7 @@ def load_and_preprocess_smr_data(url_or_path):
     except Exception:
         df = pd.read_csv("SMR_Data.csv")
 
-    # Extract 3 Inputs and 4 Outputs
+    # Extract 3 Inputs and 4 Outputs dynamically from the data
     input_cols = df.columns[:3]
     output_cols = df.columns[3:7]
 
@@ -64,19 +64,17 @@ except Exception as e:
     )
     st.stop()
 
+# Dynamic input/output counts inferred directly from loaded SMR data
+num_inputs = len(input_names)
+num_outputs = len(output_names)
+
 
 # =====================================================================
 # 2. SIDEBAR CONFIGURATION
 # =====================================================================
 st.sidebar.header("1. Network Architecture")
-num_inputs = st.sidebar.number_input(
-    "Number of Inputs", min_value=1, max_value=10, value=len(input_names)
-)
 hidden1_size = st.sidebar.slider("Layer 1 Neurons", 1, 50, 12)
 hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 50, 6)  # 0 means skip
-num_outputs = st.sidebar.number_input(
-    "Number of Outputs", min_value=1, max_value=10, value=len(output_names)
-)
 
 global_activation = st.sidebar.selectbox(
     "Global Transfer Function (All Layers)",
@@ -99,7 +97,7 @@ test_ratio = st.sidebar.slider(
 
 
 # =====================================================================
-# 3. PYVIS NETWORK DIAGRAM VISUALIZER (STREAMLIT NATIVE TYPOGRAPHY & EQUAL VERTICAL SPACING)
+# 3. PYVIS NETWORK DIAGRAM VISUALIZER
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     max_neurons = max(in_dim, h1, h2, out_dim)
@@ -156,7 +154,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
             return 0
         return -total_height / 2 + (index / (total_count - 1)) * total_height
 
-    # 1. Input Layer (Equal Vertical Spacing)
+    # 1. Input Layer
     for i, nid in enumerate(input_nodes):
         label_text = (
             f"Input\n{input_names[i]}"
@@ -173,7 +171,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
             shape="circle",
         )
 
-    # 2. Hidden Layer 1 (Equal Vertical Spacing)
+    # 2. Hidden Layer 1
     for i, nid in enumerate(h1_nodes):
         y_pos = get_equal_y(i, h1)
         net.add_node(
@@ -185,7 +183,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
             shape="circle",
         )
 
-    # 3. Hidden Layer 2 (Optional, Equal Vertical Spacing)
+    # 3. Hidden Layer 2 (Optional)
     for i, nid in enumerate(h2_nodes):
         y_pos = get_equal_y(i, h2)
         net.add_node(
@@ -197,7 +195,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
             shape="circle",
         )
 
-    # 4. Output Layer (Equal Vertical Spacing)
+    # 4. Output Layer
     for i, nid in enumerate(output_nodes):
         label_text = (
             f"Output\n{output_names[i]}"
@@ -235,7 +233,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     components.html(html_content, height=dynamic_height + 10)
 
 
-st.subheader("Interactive Architecture Diagram (Left to Right)")
+st.subheader("Interactive Architecture Diagram")
 render_pyvis_network(
     num_inputs, hidden1_size, hidden2_size, num_outputs, global_activation
 )
