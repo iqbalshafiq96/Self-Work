@@ -34,7 +34,7 @@ test_ratio = st.sidebar.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 
 # =====================================================================
-# 2. PYVIS UNLIMITED NEURON GRAPH VISUALIZER
+# 2. PYVIS UNLIMITED NEURON GRAPH VISUALIZER (CANVAS SCROLL ZOOM DISABLED)
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, initial_scale=1.5):
     # Dynamically scale canvas height & vertical node gap based on largest layer
@@ -45,6 +45,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, initial_scale=1.5):
     net = Network(height=f"{dynamic_height}px", width="100%", bgcolor="rgba(0,0,0,0)", font_color="white", directed=True)
     
     # Modern font stack with node size (42px) & readable labels (18px)
+    # "zoomView": false disables scroll-to-zoom inside JS space
     net.set_options(f"""
     {{
       "nodes": {{
@@ -63,7 +64,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, initial_scale=1.5):
         "arrows": {{ "to": {{ "enabled": true, "scaleFactor": 0.5 }} }}
       }},
       "interaction": {{
-        "zoomView": true,
+        "zoomView": false,
         "dragView": true
       }},
       "physics": {{
@@ -149,7 +150,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn, initial_scale=1.5):
     # Generate HTML content
     html_content = net.generate_html()
     
-    # Custom JS & CSS injection: Resets camera position and applies numerical zoom scale
+    # Custom JS & CSS injection: Resets camera position and applies scale from slider
     zoom_script = f"""
     <style>
         body, html, #mynetwork {{
