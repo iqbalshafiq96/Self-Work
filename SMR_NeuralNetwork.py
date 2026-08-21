@@ -127,7 +127,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     """
     )
 
-    # Wide horizontal positioning to avoid overlap
+    # Wide horizontal positioning to avoid text overlap
     x_input = -800
     x_h1 = -250
     x_h2 = 250
