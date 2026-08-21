@@ -10,3 +10,4 @@ schemdraw
 pillow
 torch
 scikit-learn
+pyvis
