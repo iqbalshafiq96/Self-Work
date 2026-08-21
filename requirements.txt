@@ -11,3 +11,4 @@ pillow
 torch
 scikit-learn
 pyvis
+seaborn
