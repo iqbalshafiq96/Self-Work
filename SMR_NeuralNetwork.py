@@ -100,43 +100,42 @@ test_ratio = st.sidebar.slider(
 
 
 # =====================================================================
-# 3. PYVIS NETWORK DIAGRAM WITH BLACK FONT CONTROLS
+# 3. AUTOSCALING PYVIS NETWORK DIAGRAM WITH WINDOW RESIZE LISTENERS
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     max_neurons = max(in_dim, h1, h2, out_dim)
-    dynamic_height = max(500, min(max_neurons * 60, 1000))
-    total_height = max(300, dynamic_height - 150)
+    dynamic_height = max(550, min(max_neurons * 65, 900))
 
     net = Network(
-        height=f"{dynamic_height}px",
+        height="100%",
         width="100%",
         bgcolor="rgba(0,0,0,0)",
         font_color="white",
         directed=True,
     )
 
-    # Disabled scroll zoomView to prevent mouse scroll zooming
     net.set_options(
         """
     {
       "nodes": {
         "borderWidth": 2,
-        "size": 30,
+        "size": 28,
         "font": { 
-          "size": 16, 
-          "face": "Source Sans Pro, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif", 
+          "size": 15, 
+          "face": "Segoe UI, Roboto, Helvetica, Arial, sans-serif", 
           "color": "#FFFFFF", 
           "bold": true 
         }
       },
       "edges": {
-        "color": { "color": "rgba(200, 200, 200, 0.18)", "highlight": "#F1C40F" },
+        "color": { "color": "rgba(200, 200, 200, 0.22)", "highlight": "#F1C40F" },
         "smooth": { "type": "continuous" },
         "arrows": { "to": { "enabled": true, "scaleFactor": 0.4 } }
       },
       "interaction": { 
         "zoomView": false, 
-        "dragView": true 
+        "dragView": true,
+        "hover": true
       },
       "physics": { "enabled": false }
     }
@@ -156,7 +155,8 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     def get_equal_y(index, total_count):
         if total_count == 1:
             return 0
-        return -total_height / 2 + (index / (total_count - 1)) * total_height
+        spread_height = max(350, total_count * 50)
+        return -spread_height / 2 + (index / (total_count - 1)) * spread_height
 
     # Input Layer
     for i, nid in enumerate(input_nodes):
@@ -231,9 +231,19 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
 
     html_content = net.generate_html()
 
-    # Glassmorphism overlay with explicit Black Font (#000000)
     controls_and_animation_script = """
     <style>
+      html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+      #mynetwork {
+        width: 100% !important;
+        height: 100vh !important;
+      }
       .diagram-controls {
         position: absolute;
         top: 15px;
@@ -248,7 +258,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         border: 1px solid rgba(0, 0, 0, 0.15);
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-family: Segoe UI, -apple-system, Roboto, sans-serif;
         color: #000000;
         font-size: 13px;
         font-weight: 600;
@@ -281,9 +291,9 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
 
     <div class="diagram-controls">
       <span style="color: #000000;">Zoom</span>
-      <input type="range" id="zoomSlider" min="0" max="200" value="100">
+      <input type="range" id="zoomSlider" min="10" max="200" value="100">
       <span id="zoomValue" style="min-width: 40px; font-weight: 700; color: #000000;">100%</span>
-      <button class="diagram-btn" id="resetZoomBtn" title="Reset view and zoom">🏠 Reset</button>
+      <button class="diagram-btn" id="resetZoomBtn" title="Reset view and fit to screen">🏠 Auto-Fit</button>
     </div>
 
     <script type="text/javascript">
@@ -296,25 +306,34 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                 var zoomValLabel = document.getElementById("zoomValue");
                 var resetBtn = document.getElementById("resetZoomBtn");
 
-                // Dynamic Scaling (0% to 200%)
+                function fitDiagramToScreen() {
+                    network.fit({
+                        animation: { duration: 300, easingFunction: "easeInOutQuad" }
+                    });
+                    setTimeout(function() {
+                        var currentScale = network.getScale();
+                        var pct = Math.round(currentScale * 100);
+                        zoomSlider.value = pct;
+                        zoomValLabel.innerText = pct + "%";
+                    }, 350);
+                }
+
+                fitDiagramToScreen();
+
+                window.addEventListener('resize', function() {
+                    network.setSize('100%', '100vh');
+                    fitDiagramToScreen();
+                });
+
                 zoomSlider.addEventListener("input", function() {
                     var val = parseFloat(this.value);
                     zoomValLabel.innerText = val + "%";
                     var scaleFactor = val / 100.0;
-                    network.moveTo({ 
-                        scale: scaleFactor 
-                    });
+                    network.moveTo({ scale: scaleFactor });
                 });
 
-                // Home Reset (Scale 1.0 & Position (0,0))
                 resetBtn.addEventListener("click", function() {
-                    zoomSlider.value = 100;
-                    zoomValLabel.innerText = "100%";
-                    network.moveTo({
-                        position: { x: 0, y: 0 },
-                        scale: 1.0,
-                        animation: { duration: 350, easingFunction: "easeInOutQuad" }
-                    });
+                    fitDiagramToScreen();
                 });
 
                 var particles = [];
@@ -340,7 +359,6 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                     globalPhase += 0.04;
                     var pulseIntensity = 0.5 + 0.5 * Math.sin(globalPhase);
                     
-                    // Resonate Light Beams strictly at the outer border edge of Hidden Layer Nodes
                     nodeList.forEach(function(node) {
                         if (node.id.startsWith('L1_') || node.id.startsWith('L2_')) {
                             var pos = network.getPositions([node.id])[node.id];
@@ -367,7 +385,6 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
                         }
                     });
 
-                    // Sparkling Gold Micro-particles traveling along synapses
                     particles.forEach(function(p) {
                         var fromPos = network.getPositions([p.from])[p.from];
                         var toPos = network.getPositions([p.to])[p.to];
@@ -417,7 +434,7 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     html_content = html_content.replace(
         "</body>", controls_and_animation_script
     )
-    components.html(html_content, height=dynamic_height + 10)
+    components.html(html_content, height=dynamic_height)
 
 
 st.subheader("Interactive Architecture Diagram")
