@@ -99,7 +99,7 @@ test_ratio = st.sidebar.slider(
 
 
 # =====================================================================
-# 3. PYVIS NETWORK DIAGRAM VISUALIZER (STRICT HORIZONTAL & EQUAL VERTICAL FLOW)
+# 3. PYVIS NETWORK DIAGRAM VISUALIZER (STREAMLIT NATIVE TYPOGRAPHY & EQUAL VERTICAL SPACING)
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     max_neurons = max(in_dim, h1, h2, out_dim)
@@ -114,14 +114,19 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         directed=True,
     )
 
-    # Disable physics forces so fixed x, y coordinates stick strictly
+    # Disable physics forces & match Streamlit subtitle font stacks
     net.set_options(
         """
     {
       "nodes": {
         "borderWidth": 2,
         "size": 60,
-        "font": { "size": 16, "face": "Source Sans Pro", "color": "#FFFFFF", "bold": true }
+        "font": { 
+          "size": 16, 
+          "face": "Source Sans Pro, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif", 
+          "color": "#FFFFFF", 
+          "bold": true 
+        }
       },
       "edges": {
         "color": { "color": "rgba(200, 200, 200, 0.35)", "highlight": "#3498DB" },
