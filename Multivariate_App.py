@@ -37,13 +37,13 @@ try:
     normalized_array = scaler.fit_transform(numeric_df)
     normalized_df = pd.DataFrame(normalized_array, columns=numeric_df.columns, index=numeric_df.index)
 
-    # 4. Perform Correlation Matrix Analysis (Lower Triangle Only)
+    # 4. Perform Correlation Matrix Analysis (Lower Triangle INCLUDING Diagonal)
     corr_matrix = normalized_df.corr()
     
-    # Mask upper triangle AND diagonal (store strictly below 1 diagonal line)
-    mask_upper = np.triu(np.ones_like(corr_matrix, dtype=bool))
+    # Mask strictly upper triangle (k=1 preserves diagonal 1s)
+    mask_strictly_upper = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
     lower_corr = corr_matrix.copy()
-    lower_corr[mask_upper] = np.nan
+    lower_corr[mask_strictly_upper] = np.nan
 
     # 5. Transform Correlation Matrix into Eigenvector matrix and Eigenvalues
     raw_eigenvalues, raw_eigenvectors = np.linalg.eig(corr_matrix.values)
@@ -57,24 +57,40 @@ try:
     sorted_eigenvalues = eigenvalues[sorted_index]
     sorted_eigenvectors = eigenvectors[:, sorted_index]
     
-    # Format eigenvectors into DataFrame
+    # Full eigenvector matrix
+    pc_names = [f"PC{i+1}" for i in range(len(sorted_eigenvalues))]
     eigenvector_df = pd.DataFrame(
         sorted_eigenvectors,
         index=numeric_df.columns,
-        columns=[f"PC{i+1}" for i in range(len(sorted_eigenvalues))]
+        columns=pc_names
     )
 
-    # 6. Cumulative Eigenvalue Calculation
+    # Create Diagonal Eigenvalue Matrix (Diagonal values only, others NaN/Null)
+    diag_eigen_matrix = np.full((len(sorted_eigenvalues), len(sorted_eigenvalues)), np.nan)
+    np.fill_diagonal(diag_eigen_matrix, sorted_eigenvalues)
+    eigenvalue_matrix_df = pd.DataFrame(
+        diag_eigen_matrix,
+        index=pc_names,
+        columns=pc_names
+    )
+
+    # 6. Cumulative Eigenvalue Calculation & 80% Threshold Filter
     var_explained = sorted_eigenvalues / np.sum(sorted_eigenvalues)
     cum_var_explained = np.cumsum(var_explained)
 
+    # Identify components needed to meet/exceed 80% threshold
+    num_components_selected = np.argmax(cum_var_explained >= 0.80) + 1
+    selected_pc_names = pc_names[:num_components_selected]
+    selected_eigenvector_df = eigenvector_df[selected_pc_names]
+
     # --- Streamlit Tabs Output ---
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "Raw Data", 
         "Normalized Data", 
         "Correlation Matrix", 
-        "Eigen vector matrix", 
-        "Cumulative eigen value distribution plot"
+        "Eigen value matrix", 
+        "Cumulative eigen value distribution plot",
+        "Selected Eigenvector matrix"
     ])
 
     # Tab 1: Raw Data
@@ -87,9 +103,9 @@ try:
         st.subheader("Normalized Data Table")
         st.dataframe(normalized_df, use_container_width=True)
 
-    # Tab 3: Interactive Correlation Matrix
+    # Tab 3: Interactive Correlation Matrix (Lower Triangle + Diagonal 1s)
     with tab3:
-        st.subheader("Correlation Matrix (Lower Triangle)")
+        st.subheader("Correlation Matrix (Lower Triangle including Diagonal)")
         fig_corr = px.imshow(
             lower_corr,
             labels=dict(color="Correlation"),
@@ -107,41 +123,40 @@ try:
         )
         st.plotly_chart(fig_corr, use_container_width=True)
 
-    # Tab 4: Interactive Eigenvector Matrix
+    # Tab 4: Eigenvalue Matrix (Diagonal only)
     with tab4:
-        st.subheader("Eigenvector Matrix")
-        fig_eigen = px.imshow(
-            eigenvector_df,
-            labels=dict(color="Weight"),
-            x=eigenvector_df.columns,
-            y=eigenvector_df.index,
+        st.subheader("Eigenvalue Matrix (Diagonal Only)")
+        fig_eigen_val = px.imshow(
+            eigenvalue_matrix_df,
+            labels=dict(color="Eigenvalue"),
+            x=eigenvalue_matrix_df.columns,
+            y=eigenvalue_matrix_df.index,
             color_continuous_scale="Viridis",
             text_auto=".3f"
         )
-        fig_eigen.update_layout(
+        fig_eigen_val.update_layout(
             font_family="Source Sans Pro, sans-serif",
             height=600
         )
-        st.plotly_chart(fig_eigen, use_container_width=True)
-        st.dataframe(eigenvector_df, use_container_width=True)
+        st.plotly_chart(fig_eigen_val, use_container_width=True)
+        st.dataframe(eigenvalue_matrix_df, use_container_width=True)
 
     # Tab 5: Cumulative Eigenvalue Distribution Plot (80% Threshold)
     with tab5:
         st.subheader("Cumulative Eigenvalue Distribution Plot")
-        components = [f"PC{i+1}" for i in range(len(sorted_eigenvalues))]
         
         fig_cum = go.Figure()
         
         # Individual variance bar plot
         fig_cum.add_trace(go.Bar(
-            x=components, 
+            x=pc_names, 
             y=var_explained.tolist(), 
             name="Individual Variance"
         ))
         
         # Cumulative variance line plot
         fig_cum.add_trace(go.Scatter(
-            x=components, 
+            x=pc_names, 
             y=cum_var_explained.tolist(), 
             name="Cumulative Variance", 
             mode="lines+markers"
@@ -152,7 +167,7 @@ try:
             type="line",
             x0=-0.5,
             y0=0.8,
-            x1=len(components)-0.5,
+            x1=len(pc_names)-0.5,
             y1=0.8,
             line=dict(color="Red", width=2, dash="dash")
         )
@@ -165,6 +180,24 @@ try:
             height=500
         )
         st.plotly_chart(fig_cum, use_container_width=True)
+
+    # Tab 6: Selected Eigenvector Matrix (Meeting >= 80% Variance Threshold)
+    with tab6:
+        st.subheader(f"Selected Eigenvector Matrix ({num_components_selected} Components for ≥80% Variance)")
+        fig_selected_eigen = px.imshow(
+            selected_eigenvector_df,
+            labels=dict(color="Weight"),
+            x=selected_eigenvector_df.columns,
+            y=selected_eigenvector_df.index,
+            color_continuous_scale="Viridis",
+            text_auto=".3f"
+        )
+        fig_selected_eigen.update_layout(
+            font_family="Source Sans Pro, sans-serif",
+            height=600
+        )
+        st.plotly_chart(fig_selected_eigen, use_container_width=True)
+        st.dataframe(selected_eigenvector_df, use_container_width=True)
 
 except Exception as e:
     st.error(f"Error loading data: {e}")
