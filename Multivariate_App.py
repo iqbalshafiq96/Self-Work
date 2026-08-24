@@ -11,7 +11,8 @@ st.set_page_config(page_title="Multivariate PCA Analysis", layout="wide")
 st.title("Multivariate Statistical Process Control (MSPC)")
 st.caption(
     "Developed by Iqbal SHERPA 20260824. Contact me for further information"
-    " @iqbalshafiq96@gmail.com")
+    " @iqbalshafiq96@gmail.com"
+)
 
 # Case Study Reference Image & Data URLs
 IMAGE_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case.png"
@@ -477,14 +478,14 @@ try:
                 with col_e_table:
                     st.markdown("**Residual $E$ Table (Normalized Data - $PV^T$)**")
                     st.dataframe(
-                        e_matrix_df.style.background_gradient(cmap='vlag', axis=None).format("{:.4f}"),
+                        e_matrix_df.style.format("{:.4f}"),
                         use_container_width=True
                     )
 
                 with col_spe_plot:
                     st.markdown("**Calculated SPE Scores & Baseline Control Chart**")
                     st.dataframe(
-                        spe_summary_df.style.background_gradient(subset=['SPE'], cmap='Blues').format("{:.4f}"),
+                        spe_summary_df.style.format("{:.4f}"),
                         use_container_width=True
                     )
 
