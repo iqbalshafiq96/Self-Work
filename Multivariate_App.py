@@ -9,19 +9,24 @@ from sklearn.preprocessing import StandardScaler
 st.set_page_config(page_title="Multivariate PCA Analysis", layout="wide")
 st.title("Multivariate PCA Analysis")
 
-# Define GitHub raw file URL
-GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/blob/main/Multivariate_NOC6.csv"
+# Direct Raw URL of your GitHub CSV file
+GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6.csv"
 
 @st.cache_data
 def load_data(url):
-    """Loads CSV data from GitHub."""
-    return pd.read_csv(url)
+    """Loads CSV data from GitHub, auto-converting URL and detecting delimiter (semicolon vs comma)."""
+    if "github.com" in url and "/blob/" in url:
+        url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
+    
+    #sep=None with engine='python' auto-detects semicolons vs commas
+    df = pd.read_csv(url, sep=None, engine='python')
+    return df
 
 try:
     # 1. Load Data
     raw_df = load_data(GITHUB_CSV_URL)
     
-    # Clean non-numeric columns if any exist
+    # Keep numeric columns for PCA calculations
     numeric_df = raw_df.select_dtypes(include=[np.number])
 
     # 3. Perform Normalization (StandardScaler: mean=0, std=1)
@@ -32,13 +37,12 @@ try:
     # 4. Perform Correlation Matrix Analysis (Lower Triangle Only)
     corr_matrix = normalized_df.corr()
     
-    # Mask the upper triangle and diagonal for lower-triangle display
+    # Mask upper triangle AND diagonal (store strictly below 1 diagonal line)
     mask_upper = np.triu(np.ones_like(corr_matrix, dtype=bool))
     lower_corr = corr_matrix.copy()
     lower_corr[mask_upper] = np.nan
 
-    # 5. Transform Correlation Matrix into Eigenvector and Eigenvalue
-    # Using correlation matrix for eigendecomposition
+    # 5. Transform Correlation Matrix into Eigenvector matrix and Eigenvalues
     eigenvalues, eigenvectors = np.linalg.eig(corr_matrix)
     
     # Sort eigenvalues and eigenvectors in descending order
@@ -73,14 +77,12 @@ try:
 
     # Tab 2: Normalized Data
     with tab2:
-        st.subheader("Normalized Data Table (Standardized)")
+        st.subheader("Normalized Data Table")
         st.dataframe(normalized_df, use_container_width=True)
 
     # Tab 3: Interactive Correlation Matrix
     with tab3:
-        st.subheader("Lower Triangular Correlation Matrix")
-        
-        # Interactive Heatmap via Plotly
+        st.subheader("Correlation Matrix (Lower Triangle)")
         fig_corr = px.imshow(
             lower_corr,
             labels=dict(color="Correlation"),
@@ -101,8 +103,6 @@ try:
     # Tab 4: Interactive Eigenvector Matrix
     with tab4:
         st.subheader("Eigenvector Matrix")
-        
-        # Interactive Heatmap for Eigenvectors
         fig_eigen = px.imshow(
             eigenvector_df,
             labels=dict(color="Weight"),
@@ -118,22 +118,21 @@ try:
         st.plotly_chart(fig_eigen, use_container_width=True)
         st.dataframe(eigenvector_df, use_container_width=True)
 
-    # Tab 5: Cumulative Eigenvalue Distribution Plot
+    # Tab 5: Cumulative Eigenvalue Distribution Plot (80% Threshold)
     with tab5:
-        st.subheader("Cumulative Eigenvalue / Variance Plot")
-        
+        st.subheader("Cumulative Eigenvalue Distribution Plot")
         components = [f"PC{i+1}" for i in range(len(sorted_eigenvalues))]
         
         fig_cum = go.Figure()
         
-        # Individual variance bar chart
+        # Individual variance bar plot
         fig_cum.add_trace(go.Bar(
             x=components, 
             y=var_explained, 
             name="Individual Variance"
         ))
         
-        # Cumulative variance line chart
+        # Cumulative variance line plot
         fig_cum.add_trace(go.Scatter(
             x=components, 
             y=cum_var_explained, 
@@ -148,7 +147,8 @@ try:
             y0=0.8,
             x1=len(components)-0.5,
             y1=0.8,
-            line=dict(color="Red", width=2, dash="dash")
+            line=dict(color="Red", width=2, dash="dash"),
+            name="80% Threshold"
         )
 
         fig_cum.update_layout(
@@ -158,9 +158,7 @@ try:
             yaxis=dict(range=[0, 1.05]),
             height=500
         )
-        
         st.plotly_chart(fig_cum, use_container_width=True)
 
 except Exception as e:
     st.error(f"Error loading data: {e}")
-    st.info("Make sure to replace `GITHUB_CSV_URL` with your exact GitHub raw link.")
