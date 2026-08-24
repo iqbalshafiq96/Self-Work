@@ -92,14 +92,26 @@ try:
         for val in cum_var_explained
     ]
 
+    # 7. Matrix Multiplication: Normalized Data x Selected Eigenvectors
+    if num_components_selected > 0:
+        pc_scores_array = np.dot(normalized_df.values, selected_eigenvector_df.values)
+        pc_scores_df = pd.DataFrame(
+            pc_scores_array,
+            columns=selected_pc_names,
+            index=normalized_df.index
+        )
+    else:
+        pc_scores_df = pd.DataFrame()
+
     # --- Streamlit Tabs Output ---
-    tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "Case Study Reference",
         "Raw Data", 
         "Normalized Data", 
         "Correlation Matrix", 
         "Eigenvalue Matrix", 
-        "Selected Eigenvector matrix"
+        "Selected Eigenvector matrix",
+        "Principal Component Computation"
     ])
 
     # Tab 0: Case Study Reference (Scaled to 80% width centered)
@@ -285,6 +297,63 @@ try:
             st.dataframe(selected_eigenvector_df, use_container_width=True)
         else:
             st.warning("No Principal Components are strictly below the 80% threshold.")
+
+    # Tab 6: Principal Component Computation (Matrix Multiplication Result)
+    with tab6:
+        st.subheader("Principal Component Scores Computation")
+        st.markdown(
+            r"$$\mathbf{PC\ Scores} = \mathbf{Normalized\ Data} \times \mathbf{Selected\ Eigenvectors}$$"
+        )
+        
+        if num_components_selected > 0:
+            left_col_pc, right_col_pc = st.columns([1.4, 1])
+            
+            # Heatmap Visualization of Computed PC Scores
+            with left_col_pc:
+                st.markdown("**Principal Component Scores Matrix**")
+                fig_pc_scores = px.imshow(
+                    pc_scores_df,
+                    labels=dict(color="Score"),
+                    x=pc_scores_df.columns,
+                    y=pc_scores_df.index,
+                    color_continuous_scale="RdBu",
+                    text_auto=".3f"
+                )
+                fig_pc_scores.update_layout(
+                    font_family="Source Sans Pro, sans-serif",
+                    height=580,
+                    margin=dict(l=0, r=0, t=30, b=0)
+                )
+                st.plotly_chart(fig_pc_scores, use_container_width=True)
+                st.dataframe(pc_scores_df, use_container_width=True)
+            
+            # Interactive Scatter/Biplot of Selected Principal Components
+            with right_col_pc:
+                st.markdown("**PC Scores Scatter Inspection**")
+                pc_cols = list(pc_scores_df.columns)
+                
+                c1_pc, c2_pc = st.columns(2)
+                with c1_pc:
+                    pc_x = st.selectbox("X-Axis PC Score", pc_cols, index=0)
+                with c2_pc:
+                    default_pc_y = 1 if len(pc_cols) > 1 else 0
+                    pc_y = st.selectbox("Y-Axis PC Score", pc_cols, index=default_pc_y)
+
+                fig_pc_scatter = px.scatter(
+                    pc_scores_df,
+                    x=pc_x,
+                    y=pc_y,
+                    hover_data=[pc_scores_df.index],
+                    title=f"Projection Space: {pc_x} vs {pc_y}"
+                )
+                fig_pc_scatter.update_layout(
+                    font_family="Source Sans Pro, sans-serif",
+                    height=480,
+                    margin=dict(l=0, r=0, t=30, b=0)
+                )
+                st.plotly_chart(fig_pc_scatter, use_container_width=True)
+        else:
+            st.warning("No Principal Components available (0 components strictly below the 80% cumulative threshold).")
 
 except Exception as e:
     st.error(f"Error loading data: {e}")
