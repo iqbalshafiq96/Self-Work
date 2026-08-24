@@ -301,8 +301,15 @@ try:
     # Tab 6: Principal Component Computation (Matrix Multiplication Result)
     with tab6:
         st.subheader("Principal Component Scores Computation")
+        
+        # Streamlit Native Typography Styled Formula
         st.markdown(
-            r"$$\mathbf{PC\ Scores} = \mathbf{Normalized\ Data} \times \mathbf{Selected\ Eigenvectors}$$"
+            """
+            <div style="font-family: 'Source Sans Pro', sans-serif; font-size: 1.1rem; margin-bottom: 1.2rem; color: #31333F;">
+                <strong>PC Scores</strong> = <strong>Normalized Data</strong> &times; <strong>Selected Eigenvectors</strong>
+            </div>
+            """, 
+            unsafe_allow_html=True
         )
         
         if num_components_selected > 0:
@@ -325,6 +332,9 @@ try:
                     margin=dict(l=0, r=0, t=30, b=0)
                 )
                 st.plotly_chart(fig_pc_scores, use_container_width=True)
+                
+                # Native Streamlit Styled Dataframe Label
+                st.caption("Principal Component Scores Matrix Data Table")
                 st.dataframe(pc_scores_df, use_container_width=True)
             
             # Interactive Scatter/Biplot of Selected Principal Components
