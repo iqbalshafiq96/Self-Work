@@ -97,10 +97,12 @@ try:
         "Selected Eigenvector matrix"
     ])
 
-    # Tab 0: Case Study Reference
+    # Tab 0: Case Study Reference (Scaled to 80% width centered)
     with tab0:
         st.subheader("Case Study Reference Diagram")
-        st.image(IMAGE_URL, use_container_width=True)
+        col1, col2, col3 = st.columns([1, 8, 1])
+        with col2:
+            st.image(IMAGE_URL, use_container_width=True)
 
     # Tab 1: Raw Data
     with tab1:
