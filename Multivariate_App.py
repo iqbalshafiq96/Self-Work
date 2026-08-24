@@ -36,9 +36,6 @@ def load_data(url):
 if "phase_selection" not in st.session_state:
     st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
 
-if "phase2_subtab" not in st.session_state:
-    st.session_state.phase2_subtab = "Hotelling T2 Online Control Chart"
-
 p1_active = st.session_state.phase_selection.startswith("Phase 1")
 p2_active = st.session_state.phase_selection.startswith("Phase 2")
 
@@ -158,7 +155,7 @@ try:
             "Selected Eigenvector matrix",
             "Principal Component Computation",
             "Hotelling T2 Calculation"
-        ])
+        ], key="phase1_tabs")
 
         with tab0:
             st.subheader("Case Study Reference Diagram")
@@ -473,35 +470,28 @@ try:
             case_t2_summary_df = case_pc_scores_df.copy()
             case_t2_summary_df['Hotelling_T2'] = case_t2_scores
             
-            # Persistent Navigation for Phase 2 Sub-views
-            subtab_options = [
+            # Native Streamlit tabs with key persistence
+            p2_tab1, p2_tab2, p2_tab3, p2_tab4 = st.tabs([
                 "Case Data",
                 "Normalized Data",
                 "Principal Component Scores",
                 "Hotelling T2 Online Control Chart"
-            ]
-            
-            active_subtab = st.radio(
-                "Phase 2 View Mode:",
-                options=subtab_options,
-                horizontal=True,
-                key="phase2_subtab"
-            )
+            ], key="phase2_tabs")
 
-            if active_subtab == "Case Data":
+            with p2_tab1:
                 st.subheader(f"Phase 2 Raw Data ({selected_case_label})")
                 st.dataframe(case_raw_df, use_container_width=True)
 
-            elif active_subtab == "Normalized Data":
+            with p2_tab2:
                 st.subheader(f"Phase 2 Normalized Data ({selected_case_label} - Using Phase 1 Parameters)")
                 st.dataframe(case_norm_df, use_container_width=True)
 
-            elif active_subtab == "Principal Component Scores":
+            with p2_tab3:
                 st.subheader(f"Phase 2 Online PC Scores ({selected_case_label})")
                 st.markdown("**PC Scores = Phase 2 Normalized Data × Phase 1 Selected Eigenvectors**")
                 st.dataframe(case_pc_scores_df, use_container_width=True)
 
-            elif active_subtab == "Hotelling T2 Online Control Chart":
+            with p2_tab4:
                 st.subheader(f"Phase 2 Hotelling T² Online Control Chart ({selected_case_label})")
                 st.caption(f"Evaluated against Phase 1 Limits (Warning Limit: {t2_warning_limit:.4f} | Control Limit: {t2_control_limit:.4f})")
                 
