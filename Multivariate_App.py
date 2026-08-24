@@ -545,6 +545,9 @@ try:
                     )
 
                 is_string_time = isinstance(x_start_p2, str)
+                
+                # Set dynamic Y-axis maximum to 15% above the control limit
+                y_max_limit = t2_control_limit * 1.15 if not np.isnan(t2_control_limit) else None
 
                 fig_online_t2.update_layout(
                     font_family="Source Sans Pro, sans-serif",
@@ -552,7 +555,10 @@ try:
                         title="Sample Time / Timestamp Index",
                         type='category' if is_string_time else None
                     ),
-                    yaxis_title="Hotelling T² Score",
+                    yaxis=dict(
+                        title="Hotelling T² Score",
+                        range=[0, y_max_limit] if y_max_limit else None
+                    ),
                     height=580,
                     margin=dict(l=0, r=0, t=30, b=0)
                 )
