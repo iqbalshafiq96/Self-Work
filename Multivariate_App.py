@@ -10,7 +10,7 @@ st.set_page_config(page_title="Multivariate PCA Analysis", layout="wide")
 st.title("Multivariate PCA Analysis")
 
 # Define GitHub raw file URL
-GITHUB_CSV_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPOSITORY/main/Multivariate_NOC6.csv"
+GITHUB_CSV_URL = "https://github.com/iqbalshafiq96/Self-Work/blob/main/Multivariate_NOC6.csv"
 
 @st.cache_data
 def load_data(url):
