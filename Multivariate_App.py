@@ -9,6 +9,13 @@ from sklearn.preprocessing import StandardScaler
 st.set_page_config(page_title="Multivariate PCA Analysis", layout="wide")
 st.title("Multivariate PCA Analysis")
 
+# Case Study Reference Image (Converted blob URL to raw.githubusercontent URL)
+IMAGE_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case.png"
+
+# Pop-out link directly below the title
+with st.popover("Case Study Reference"):
+    st.image(IMAGE_URL, caption="Case Study Reference Diagram", use_container_width=True)
+
 # Direct GitHub link
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv"
 
@@ -200,7 +207,7 @@ try:
             st.plotly_chart(fig_selected_eigen, use_container_width=True)
             st.dataframe(selected_eigenvector_df, use_container_width=True)
         else:
-            st.warning("No Principal Components are strictly below the 80% threshold (PC1 alone exceeds 80%).")
+            st.warning("No Principal Components are strictly below the 80% threshold.")
 
 except Exception as e:
     st.error(f"Error loading data: {e}")
