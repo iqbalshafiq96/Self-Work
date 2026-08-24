@@ -26,57 +26,35 @@ def load_data(url):
     return df
 
 # ---------------------------------------------------------
-# MODERN SIDEBAR NAVIGATION (Session State + Custom CSS)
+# WORKFLOW NAVIGATION BELOW TITLE
 # ---------------------------------------------------------
-st.markdown("""
-    <style>
-    /* Modern Nav Card Buttons in Sidebar */
-    div[data-testid="stSidebar"] div.stButton > button {
-        width: 100%;
-        border-radius: 8px;
-        border: 1px solid #dcdfe6;
-        padding: 10px 14px;
-        font-weight: 500;
-        transition: all 0.2s ease-in-out;
-        background-color: #ffffff;
-        color: #2c3e50;
-        margin-bottom: 4px;
-    }
-    
-    div[data-testid="stSidebar"] div.stButton > button:hover {
-        border-color: #1F77B4;
-        color: #1F77B4;
-        background-color: #f0f7fc;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 if "phase_selection" not in st.session_state:
     st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
-
-st.sidebar.markdown("## ⚙️ Workflow Navigation")
-st.sidebar.caption("Switch between offline modeling and online monitoring:")
 
 p1_active = st.session_state.phase_selection.startswith("Phase 1")
 p2_active = st.session_state.phase_selection.startswith("Phase 2")
 
-if st.sidebar.button(
-    "📊 Phase 1: Offline Setup", 
-    type="primary" if p1_active else "secondary", 
-    use_container_width=True
-):
-    st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
-    st.rerun()
+col_btn1, col_btn2, _ = st.columns([1, 1, 2])
 
-if st.sidebar.button(
-    "🚨 Phase 2: Online Monitoring", 
-    type="primary" if p2_active else "secondary", 
-    use_container_width=True
-):
-    st.session_state.phase_selection = "Phase 2: Online Monitoring and Fault Detection"
-    st.rerun()
+with col_btn1:
+    if st.button(
+        "📊 Phase 1: Offline Setup", 
+        type="primary" if p1_active else "secondary", 
+        use_container_width=True
+    ):
+        st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
+        st.rerun()
 
-st.sidebar.markdown("---")
+with col_btn2:
+    if st.button(
+        "🚨 Phase 2: Online Monitoring", 
+        type="primary" if p2_active else "secondary", 
+        use_container_width=True
+    ):
+        st.session_state.phase_selection = "Phase 2: Online Monitoring and Fault Detection"
+        st.rerun()
+
+st.markdown("---")
 phase_selection = st.session_state.phase_selection
 
 try:
