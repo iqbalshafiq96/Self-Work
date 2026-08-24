@@ -39,6 +39,12 @@ if "phase_selection" not in st.session_state:
 p1_active = st.session_state.phase_selection.startswith("Phase 1")
 p2_active = st.session_state.phase_selection.startswith("Phase 2")
 
+# Header displayed above the phase navigation bar
+if p1_active:
+    st.header("Phase 1: Offline Modelling and Monitoring Setup")
+elif p2_active:
+    st.header("Phase 2: Real-time Online Fault Detection")
+
 col_btn1, col_btn2, _ = st.columns([1, 1, 2])
 
 with col_btn1:
@@ -435,7 +441,6 @@ try:
     # PHASE 2: ONLINE MONITORING AND FAULT DETECTION
     # =========================================================
     elif phase_selection == "Phase 2: Online Monitoring and Fault Detection":
-        st.header("Phase 2: Real-time Online Fault Detection")
         
         # Selectbox to pick between Case 0 and Case 10 with Explicit Key
         selected_case_label = st.selectbox(
@@ -470,7 +475,7 @@ try:
             case_t2_summary_df = case_pc_scores_df.copy()
             case_t2_summary_df['Hotelling_T2'] = case_t2_scores
             
-            # Native Streamlit tabs with key persistence
+            # Native Streamlit tabs matching Phase 1 structure with key persistence
             p2_tab1, p2_tab2, p2_tab3, p2_tab4 = st.tabs([
                 "Case Data",
                 "Normalized Data",
