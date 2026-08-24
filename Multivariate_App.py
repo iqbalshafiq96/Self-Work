@@ -17,11 +17,14 @@ GITHUB_CASE0_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/ma
 
 @st.cache_data
 def load_data(url):
-    """Loads CSV data from GitHub, auto-converting URL and detecting delimiter."""
+    """Loads CSV data from GitHub, auto-converting URL, handling BOM, and detecting delimiter."""
     if "github.com" in url and "/blob/" in url:
         url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
     
-    df = pd.read_csv(url, sep=None, engine='python')
+    # encoding='utf-8-sig' strips hidden \ufeff BOM characters
+    df = pd.read_csv(url, sep=None, engine='python', encoding='utf-8-sig')
+    # Clean string column names (strip leftover whitespace/hidden chars)
+    df.columns = df.columns.astype(str).str.strip().str.replace('\ufeff', '')
     return df
 
 # Sidebar Phase Navigation
@@ -409,19 +412,23 @@ try:
     elif phase_selection == "Phase 2: Online Monitoring and Fault Detection":
         st.header("Phase 2: Real-time Online Fault Detection")
         
-        # 1. Load Online Case Data
+        # 1. Load Online Case Data with BOM Fix & Offset Index starting at 1
         case0_raw_df = load_data(GITHUB_CASE0_URL)
+        case0_raw_df.index = case0_raw_df.index + 1
         
-        # Determine index & feature set
+        # Determine index & feature set (handling Optional Timestamp vs 1-based index)
         if "Timestamp" in case0_raw_df.columns:
             time_axis = case0_raw_df["Timestamp"]
             numeric_case0_df = case0_raw_df.drop(columns=["Timestamp"]).select_dtypes(include=[np.number])
         else:
-            time_axis = case0_raw_df.index + 1
+            time_axis = case0_raw_df.index
             numeric_case0_df = case0_raw_df.select_dtypes(include=[np.number])
 
-        # 2. Normalize Online Data using Phase 1 Scaler parameters
-        case0_norm_array = scaler.transform(numeric_case0_df[numeric_df.columns])
+        # Align columns to Phase 1 variables strictly
+        numeric_case0_df = numeric_case0_df[numeric_df.columns]
+
+        # 2. Normalize Online Data using Phase 1 fitted Scaler
+        case0_norm_array = scaler.transform(numeric_case0_df)
         case0_norm_df = pd.DataFrame(case0_norm_array, columns=numeric_df.columns, index=time_axis)
 
         # 3. Calculate Online Principal Component Scores
@@ -513,7 +520,7 @@ try:
 
                 fig_online_t2.update_layout(
                     font_family="Source Sans Pro, sans-serif",
-                    xaxis_title="Timestamp / Observation",
+                    xaxis_title="Sample Index",
                     yaxis_title="Hotelling T² Score",
                     height=580,
                     margin=dict(l=0, r=0, t=30, b=0)
