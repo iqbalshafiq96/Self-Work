@@ -34,7 +34,12 @@ st.markdown("---")
 # Case Study Reference Image & Data URLs
 IMAGE_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case.png"
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv"
-GITHUB_CASE0_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"
+
+# Phase 2 Case Files Dictionary
+CASE_FILES = {
+    "Case 0 (Normal / Baseline Operation)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
+    "Case 10 (Fault Incident / Abnormal Operation)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_10.csv"
+}
 
 @st.cache_data
 def load_data(url):
@@ -421,54 +426,67 @@ try:
     elif phase_selection == "Phase 2: Online Monitoring and Fault Detection":
         st.header("Phase 2: Real-time Online Fault Detection")
         
-        case0_raw_df = load_data(GITHUB_CASE0_URL)
-        case0_raw_df.index = case0_raw_df.index + 1
-        
-        if "Timestamp" in case0_raw_df.columns:
-            time_axis = case0_raw_df["Timestamp"]
-            numeric_case0_df = case0_raw_df.drop(columns=["Timestamp"]).select_dtypes(include=[np.number])
+        p2_tab1, p2_tab2, p2_tab3, p2_tab4 = st.tabs([
+            "Case Data",
+            "Normalized Data",
+            "Principal Component Scores",
+            "Hotelling T2 Online Control Chart"
+        ])
+
+        # Raw Data Tab - Case Selection Dropdown at top
+        with p2_tab1:
+            st.subheader("Phase 2 Raw Case Data")
+            selected_case_name = st.selectbox(
+                "Select Case File for Online Monitoring:",
+                options=list(CASE_FILES.keys()),
+                index=0,
+                key="phase2_case_selector"
+            )
+            selected_case_url = CASE_FILES[selected_case_name]
+            
+            case_raw_df = load_data(selected_case_url)
+            case_raw_df.index = case_raw_df.index + 1
+            st.dataframe(case_raw_df, use_container_width=True)
+
+        # Dynamic Computation based on Selected Case
+        if "Timestamp" in case_raw_df.columns:
+            time_axis = case_raw_df["Timestamp"]
+            numeric_case_df = case_raw_df.drop(columns=["Timestamp"]).select_dtypes(include=[np.number])
         else:
-            time_axis = case0_raw_df.index
-            numeric_case0_df = case0_raw_df.select_dtypes(include=[np.number])
+            time_axis = case_raw_df.index
+            numeric_case_df = case_raw_df.select_dtypes(include=[np.number])
 
-        numeric_case0_df = numeric_case0_df[numeric_df.columns]
+        numeric_case_df = numeric_case_df[numeric_df.columns]
 
-        case0_norm_array = scaler.transform(numeric_case0_df)
-        case0_norm_df = pd.DataFrame(case0_norm_array, columns=numeric_df.columns, index=time_axis)
+        # Standardize using Phase 1 Scaler
+        case_norm_array = scaler.transform(numeric_case_df)
+        case_norm_df = pd.DataFrame(case_norm_array, columns=numeric_df.columns, index=time_axis)
 
         if num_components_selected > 0:
-            case0_pc_scores_array = np.dot(case0_norm_df.values, selected_eigenvector_df.values)
-            case0_pc_scores_df = pd.DataFrame(case0_pc_scores_array, columns=selected_pc_names, index=time_axis)
+            # Compute Online PC Scores & Hotelling T²
+            case_pc_scores_array = np.dot(case_norm_df.values, selected_eigenvector_df.values)
+            case_pc_scores_df = pd.DataFrame(case_pc_scores_array, columns=selected_pc_names, index=time_axis)
             
-            case0_t2_components = (case0_pc_scores_array ** 2) / selected_eigenvalues
-            case0_t2_scores = np.sum(case0_t2_components, axis=1)
+            case_t2_components = (case_pc_scores_array ** 2) / selected_eigenvalues
+            case_t2_scores = np.sum(case_t2_components, axis=1)
             
-            case0_t2_summary_df = case0_pc_scores_df.copy()
-            case0_t2_summary_df['Hotelling_T2'] = case0_t2_scores
-            
-            p2_tab1, p2_tab2, p2_tab3, p2_tab4 = st.tabs([
-                "Case Data",
-                "Normalized Data",
-                "Principal Component Scores",
-                "Hotelling T2 Online Control Chart"
-            ])
-
-            with p2_tab1:
-                st.subheader("Phase 2 Raw Case Data")
-                st.dataframe(case0_raw_df, use_container_width=True)
+            case_t2_summary_df = case_pc_scores_df.copy()
+            case_t2_summary_df['Hotelling_T2'] = case_t2_scores
 
             with p2_tab2:
                 st.subheader("Phase 2 Normalized Data (Using Phase 1 Parameters)")
-                st.dataframe(case0_norm_df, use_container_width=True)
+                st.caption(f"Active Dataset: **{selected_case_name}**")
+                st.dataframe(case_norm_df, use_container_width=True)
 
             with p2_tab3:
                 st.subheader("Phase 2 Online PC Scores")
                 st.markdown("**PC Scores = Phase 2 Normalized Data × Phase 1 Selected Eigenvectors**")
-                st.dataframe(case0_pc_scores_df, use_container_width=True)
+                st.caption(f"Active Dataset: **{selected_case_name}**")
+                st.dataframe(case_pc_scores_df, use_container_width=True)
 
             with p2_tab4:
                 st.subheader("Phase 2 Hotelling T² Online Control Chart")
-                st.caption(f"Evaluated against Phase 1 Limits (Warning Limit: {t2_warning_limit:.4f} | Control Limit: {t2_control_limit:.4f})")
+                st.caption(f"Active Dataset: **{selected_case_name}** | Evaluated against Phase 1 Limits (Warning Limit: `{t2_warning_limit:.4f}` | Control Limit: `{t2_control_limit:.4f}`)")
                 
                 fig_online_t2 = go.Figure()
 
@@ -477,7 +495,7 @@ try:
 
                 fig_online_t2.add_trace(go.Scatter(
                     x=time_axis,
-                    y=case0_t2_scores,
+                    y=case_t2_scores,
                     mode='lines+markers',
                     name='Online Hotelling T²',
                     line=dict(color='#1F77B4', width=2),
@@ -546,17 +564,18 @@ try:
                 selected_sample_id = st.selectbox(
                     "Select Sample / Timestamp to Diagnose:",
                     options=sample_options,
-                    index=0
+                    index=0,
+                    key="p2_sample_diagnose"
                 )
 
-                N_samples = len(case0_norm_df)
+                N_samples = len(case_norm_df)
                 p_vars = len(numeric_df.columns)
                 
                 all_term_matrices = np.zeros((N_samples, num_components_selected, p_vars))
                 
                 for i in range(N_samples):
-                    s_i = case0_pc_scores_array[i]
-                    x_i = case0_norm_df.iloc[i].values
+                    s_i = case_pc_scores_array[i]
+                    x_i = case_norm_df.iloc[i].values
                     all_term_matrices[i] = (s_i[:, np.newaxis] / selected_eigenvalues[:, np.newaxis]) * \
                                            (x_i[np.newaxis, :] * selected_eigenvector_df.values.T)
 
@@ -614,7 +633,7 @@ try:
                 st.markdown("---")
                 st.markdown("**All Online Samples T² Summary**")
                 st.dataframe(
-                    case0_t2_summary_df.style.background_gradient(
+                    case_t2_summary_df.style.background_gradient(
                         subset=['Hotelling_T2'], 
                         cmap='YlOrRd'
                     ).format("{:.4f}"),
