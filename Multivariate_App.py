@@ -9,12 +9,8 @@ from sklearn.preprocessing import StandardScaler
 st.set_page_config(page_title="Multivariate PCA Analysis", layout="wide")
 st.title("Multivariate PCA Analysis")
 
-# Case Study Reference Image (Converted blob URL to raw.githubusercontent URL)
+# Case Study Reference Image
 IMAGE_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case.png"
-
-# Pop-out link directly below the title
-with st.popover("Case Study Reference"):
-    st.image(IMAGE_URL, caption="Case Study Reference Diagram", use_container_width=True)
 
 # Direct GitHub link
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv"
@@ -91,7 +87,8 @@ try:
     selected_eigenvector_df = eigenvector_df[selected_pc_names]
 
     # --- Streamlit Tabs Output ---
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "Case Study Reference",
         "Raw Data", 
         "Normalized Data", 
         "Correlation Matrix", 
@@ -99,6 +96,11 @@ try:
         "Cumulative eigen value distribution plot",
         "Selected Eigenvector matrix"
     ])
+
+    # Tab 0: Case Study Reference
+    with tab0:
+        st.subheader("Case Study Reference Diagram")
+        st.image(IMAGE_URL, use_container_width=True)
 
     # Tab 1: Raw Data
     with tab1:
