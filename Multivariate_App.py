@@ -86,6 +86,12 @@ try:
     selected_pc_names = pc_names[:num_components_selected]
     selected_eigenvector_df = eigenvector_df[selected_pc_names]
 
+    # Dynamic color mapping: Red for strictly <80% threshold, Blue for >=80%
+    bar_colors = [
+        '#EF553B' if val < 0.80 else '#636EFA' 
+        for val in cum_var_explained
+    ]
+
     # --- Streamlit Tabs Output ---
     tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "Case Study Reference",
@@ -117,7 +123,6 @@ try:
     with tab3:
         st.subheader("Correlation Matrix & Bivariate Parameter Inspection")
         
-        # Exact same layout ratio as Tab 4
         left_col_corr, right_col_corr = st.columns([1.4, 1])
         
         # Left Side: Correlation Heatmap
@@ -132,7 +137,6 @@ try:
                 zmin=-1, zmax=1,
                 text_auto=".2f"
             )
-            # Matching height and layout parameters to Tab 4
             fig_corr.update_layout(
                 font_family="Source Sans Pro, sans-serif",
                 xaxis_showgrid=False,
@@ -148,7 +152,6 @@ try:
             st.markdown("**Interactive Parameter Scatter Plot**")
             cols_list = list(numeric_df.columns)
             
-            # Selectors for X and Y axes
             c_x, c_y = st.columns(2)
             with c_x:
                 param_x = st.selectbox("X-Axis Parameter", cols_list, index=0)
@@ -156,11 +159,9 @@ try:
                 default_y_idx = 1 if len(cols_list) > 1 else 0
                 param_y = st.selectbox("Y-Axis Parameter", cols_list, index=default_y_idx)
 
-            # Calculate and display current correlation value
             current_corr = numeric_df[param_x].corr(numeric_df[param_y])
             st.caption(f"**Pearson Correlation ({param_x} vs {param_y}):** `{current_corr:.4f}`")
 
-            # Create Scatter Plot with native NumPy linear trendline
             fig_scatter = px.scatter(
                 numeric_df,
                 x=param_x,
@@ -169,7 +170,6 @@ try:
                 labels={param_x: param_x, param_y: param_y}
             )
 
-            # Fit OLS line manually using numpy
             valid_pts = numeric_df[[param_x, param_y]].dropna()
             if len(valid_pts) > 1:
                 x_vals = valid_pts[param_x]
@@ -189,7 +189,6 @@ try:
                     )
                 )
 
-            # Layout aligned height-wise with the left column
             fig_scatter.update_layout(
                 font_family="Source Sans Pro, sans-serif",
                 height=480,
@@ -201,7 +200,6 @@ try:
     with tab4:
         st.subheader("Eigenvalue Matrix & Cumulative Variance Analysis")
         
-        # Allocating ~58% column ratio to left side to widen the Eigenvalue Matrix
         left_col, right_col = st.columns([1.4, 1])
         
         # Left Side: Eigenvalue Matrix Heatmap & Table
@@ -215,7 +213,6 @@ try:
                 color_continuous_scale="Viridis",
                 text_auto=".3f"
             )
-            # Increased height and stripped horizontal margins for maximum display width
             fig_eigen_val.update_layout(
                 font_family="Source Sans Pro, sans-serif",
                 height=580,
@@ -229,22 +226,25 @@ try:
             st.markdown("**Cumulative Eigenvalue Distribution Plot**")
             fig_cum = go.Figure()
             
-            # Individual variance bar plot
+            # Individual variance bar plot with conditional color highlighting
             fig_cum.add_trace(go.Bar(
                 x=pc_names, 
                 y=var_explained.tolist(), 
-                name="Individual Variance"
+                name="Individual Variance",
+                marker_color=bar_colors
             ))
             
-            # Cumulative variance line plot
+            # Cumulative variance line plot with matching marker colors
             fig_cum.add_trace(go.Scatter(
                 x=pc_names, 
                 y=cum_var_explained.tolist(), 
                 name="Cumulative Variance", 
-                mode="lines+markers"
+                mode="lines+markers",
+                line=dict(color="#2CA02C", width=2),
+                marker=dict(color=bar_colors, size=8)
             ))
             
-            # 80% Threshold Line
+            # 80% Threshold Reference Line
             fig_cum.add_shape(
                 type="line",
                 x0=-0.5,
