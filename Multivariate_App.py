@@ -536,8 +536,79 @@ try:
                     margin=dict(l=0, r=0, t=30, b=0)
                 )
                 st.plotly_chart(fig_online_t2, use_container_width=True)
+
+                # ---------------------------------------------------------
+                # T² CONTRIBUTION PLOT FOR SELECTED SAMPLE (FAULT DIAGNOSIS)
+                # ---------------------------------------------------------
+                st.markdown("---")
+                st.subheader("Fault Diagnosis: Variable Contribution Analysis")
+
+                # Interactive selection of sample/time index to diagnose
+                selected_sample_id = st.selectbox(
+                    "Select Sample / Timestamp to Diagnose:",
+                    options=time_axis.tolist(),
+                    index=len(time_axis) - 1 # Defaults to the latest sample
+                )
+
+                # Extract normalized values for selected sample
+                sample_idx_loc = time_axis.tolist().index(selected_sample_id)
+                x_sample = case0_norm_df.iloc[sample_idx_loc].values # Normalized row vector (p,)
+
+                # Calculate per-variable contribution to T2 score
+                # Contributions matrix shape: (A_components, p_variables)
+                # Formula: t_a * x_j * p_ja / lambda_a
+                scores_sample = case0_pc_scores_array[sample_idx_loc] # (A,)
+
+                term_matrix = (scores_sample[:, np.newaxis] / selected_eigenvalues[:, np.newaxis]) * \
+                              (x_sample[np.newaxis, :] * selected_eigenvector_df.values.T)
+
+                # Sum contributions across selected principal components
+                variable_contributions = np.sum(term_matrix, axis=0) # Vector of length p
+
+                # Build DataFrame for ranking
+                contrib_df = pd.DataFrame({
+                    'Variable': numeric_df.columns,
+                    'Absolute_Contribution': np.abs(variable_contributions),
+                    'Directional_Contribution': variable_contributions
+                }).sort_values(by='Absolute_Contribution', ascending=False)
+
+                top_5_df = contrib_df.head(5)
+
+                # Layout for Top 5 Table & Bar Chart
+                col_top5_chart, col_top5_table = st.columns([1.3, 1])
+
+                with col_top5_chart:
+                    fig_contrib = px.bar(
+                        top_5_df,
+                        x='Absolute_Contribution',
+                        y='Variable',
+                        orientation='h',
+                        title=f"Top 5 Contributing Factors for Sample `{selected_sample_id}`",
+                        labels={'Absolute_Contribution': 'Absolute T² Contribution Score', 'Variable': 'Parameter'},
+                        color='Absolute_Contribution',
+                        color_continuous_scale='Reds'
+                    )
+                    fig_contrib.update_layout(
+                        font_family="Source Sans Pro, sans-serif",
+                        yaxis=dict(autorange="reversed"), # Top contributor at top
+                        height=380,
+                        margin=dict(l=0, r=0, t=40, b=0)
+                    )
+                    st.plotly_chart(fig_contrib, use_container_width=True)
+
+                with col_top5_table:
+                    st.markdown(f"**Top 5 Root-Cause Ranking (`{selected_sample_id}`)**")
+                    st.dataframe(
+                        top_5_df[['Variable', 'Absolute_Contribution', 'Directional_Contribution']].style.format({
+                            'Absolute_Contribution': '{:.4f}',
+                            'Directional_Contribution': '{:.4f}'
+                        }),
+                        use_container_width=True
+                    )
                 
                 # Show tabular T2 scores
+                st.markdown("---")
+                st.markdown("**All Online Samples T² Summary**")
                 st.dataframe(
                     case0_t2_summary_df.style.background_gradient(
                         subset=['Hotelling_T2'], 
