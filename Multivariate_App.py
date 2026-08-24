@@ -113,11 +113,11 @@ try:
         st.subheader("Normalized Data Table")
         st.dataframe(normalized_df, use_container_width=True)
 
-    # Tab 3: Correlation Matrix Analysis (Formatted identically to Tab 4)
+    # Tab 3: Correlation Matrix Analysis & Interactive Scatter Plot Side-by-Side
     with tab3:
-        st.subheader("Correlation Matrix Analysis")
+        st.subheader("Correlation Matrix & Bivariate Parameter Inspection")
         
-        # Exact same side-by-side column proportions as Tab 4
+        # Exact same layout ratio as Tab 4
         left_col_corr, right_col_corr = st.columns([1.4, 1])
         
         # Left Side: Correlation Heatmap
@@ -132,7 +132,7 @@ try:
                 zmin=-1, zmax=1,
                 text_auto=".2f"
             )
-            # Matching exact height (580px) and margin treatment from Tab 4
+            # Matching height and layout parameters to Tab 4
             fig_corr.update_layout(
                 font_family="Source Sans Pro, sans-serif",
                 xaxis_showgrid=False,
@@ -143,24 +143,59 @@ try:
             st.plotly_chart(fig_corr, use_container_width=True)
             st.dataframe(lower_corr, use_container_width=True)
 
-        # Right Side: Correlation Key Metrics & Parameter Table
+        # Right Side: Interactive Parameter Scatter Plot with Dropdown Selectors
         with right_col_corr:
-            st.markdown("**Correlation Summary & Feature Insights**")
+            st.markdown("**Interactive Parameter Scatter Plot**")
+            cols_list = list(numeric_df.columns)
             
-            # Extract off-diagonal correlations to compute statistics
-            off_diag_corrs = corr_matrix.values[np.tril_indices_from(corr_matrix.values, k=-1)]
-            
-            m1, m2 = st.columns(2)
-            with m1:
-                st.metric(label="Total Numeric Variables", value=len(numeric_df.columns))
-                st.metric(label="Max Positive Correlation", value=f"{np.max(off_diag_corrs):.3f}")
-            with m2:
-                st.metric(label="Average Absolute Correlation", value=f"{np.mean(np.abs(off_diag_corrs)):.3f}")
-                st.metric(label="Max Negative Correlation", value=f"{np.min(off_diag_corrs):.3f}")
+            # Selectors for X and Y axes
+            c_x, c_y = st.columns(2)
+            with c_x:
+                param_x = st.selectbox("X-Axis Parameter", cols_list, index=0)
+            with c_y:
+                default_y_idx = 1 if len(cols_list) > 1 else 0
+                param_y = st.selectbox("Y-Axis Parameter", cols_list, index=default_y_idx)
 
-            st.markdown("---")
-            st.markdown("**Full Correlation Matrix Values**")
-            st.dataframe(corr_matrix, height=350, use_container_width=True)
+            # Calculate and display current correlation value
+            current_corr = numeric_df[param_x].corr(numeric_df[param_y])
+            st.caption(f"**Pearson Correlation ({param_x} vs {param_y}):** `{current_corr:.4f}`")
+
+            # Create Scatter Plot with native NumPy linear trendline
+            fig_scatter = px.scatter(
+                numeric_df,
+                x=param_x,
+                y=param_y,
+                hover_data=[numeric_df.index],
+                labels={param_x: param_x, param_y: param_y}
+            )
+
+            # Fit OLS line manually using numpy
+            valid_pts = numeric_df[[param_x, param_y]].dropna()
+            if len(valid_pts) > 1:
+                x_vals = valid_pts[param_x]
+                y_vals = valid_pts[param_y]
+                slope, intercept = np.polyfit(x_vals, y_vals, 1)
+                
+                line_x = np.array([x_vals.min(), x_vals.max()])
+                line_y = slope * line_x + intercept
+                
+                fig_scatter.add_trace(
+                    go.Scatter(
+                        x=line_x, 
+                        y=line_y, 
+                        mode="lines", 
+                        name="Trendline", 
+                        line=dict(color="red", width=2)
+                    )
+                )
+
+            # Layout aligned height-wise with the left column
+            fig_scatter.update_layout(
+                font_family="Source Sans Pro, sans-serif",
+                height=480,
+                margin=dict(l=0, r=0, t=20, b=0)
+            )
+            st.plotly_chart(fig_scatter, use_container_width=True)
 
     # Tab 4: Combined Eigenvalue Matrix & Cumulative Distribution Plot Side-by-Side
     with tab4:
