@@ -381,7 +381,7 @@ try:
                             type="line",
                             x0=t2_summary_df.index.min(),
                             y0=t2_control_limit,
-                            x1=t2_summary_df.index.max(),
+                            x1=t2_control_limit,
                             y1=t2_control_limit,
                             line=dict(color="Red", width=2, dash="dash")
                         )
@@ -416,7 +416,7 @@ try:
         case0_raw_df = load_data(GITHUB_CASE0_URL)
         case0_raw_df.index = case0_raw_df.index + 1
         
-        # Determine index & feature set (handling Optional Timestamp vs 1-based index)
+        # Determine index & feature set
         if "Timestamp" in case0_raw_df.columns:
             time_axis = case0_raw_df["Timestamp"]
             numeric_case0_df = case0_raw_df.drop(columns=["Timestamp"]).select_dtypes(include=[np.number])
@@ -470,11 +470,9 @@ try:
                 
                 fig_online_t2 = go.Figure()
 
-                # Extract explicit start and end markers from time_axis index
                 x_start_p2 = time_axis.iloc[0]
                 x_end_p2 = time_axis.iloc[-1]
 
-                # Hotelling T2 Line mapping time_axis directly on x
                 fig_online_t2.add_trace(go.Scatter(
                     x=time_axis,
                     y=case0_t2_scores,
@@ -484,7 +482,6 @@ try:
                     marker=dict(size=6)
                 ))
 
-                # Phase 1 Warning Limit Line spanning x_start_p2 to x_end_p2
                 if not np.isnan(t2_warning_limit):
                     fig_online_t2.add_shape(
                         type="line",
@@ -503,7 +500,6 @@ try:
                         font=dict(color="Orange")
                     )
 
-                # Phase 1 Control Limit Line spanning x_start_p2 to x_end_p2
                 if not np.isnan(t2_control_limit):
                     fig_online_t2.add_shape(
                         type="line",
@@ -522,7 +518,6 @@ try:
                         font=dict(color="Red")
                     )
 
-                # Set categorical x-axis type if timestamp entries are strings
                 is_string_time = isinstance(x_start_p2, str)
 
                 fig_online_t2.update_layout(
@@ -538,32 +533,49 @@ try:
                 st.plotly_chart(fig_online_t2, use_container_width=True)
 
                 # ---------------------------------------------------------
-                # T² CONTRIBUTION PLOT FOR SELECTED SAMPLE (FAULT DIAGNOSIS)
+                # T² CONTRIBUTION PLOT FOR SELECTED SAMPLE OR TIMEFRAME AVERAGE
                 # ---------------------------------------------------------
                 st.markdown("---")
                 st.subheader("Fault Diagnosis: Variable Contribution Analysis")
 
-                # Interactive selection of sample/time index to diagnose
+                # Setup options list with "Average" as default (index 0)
+                AVG_LABEL = "Average (All Samples / Timeframe)"
+                sample_options = [AVG_LABEL] + time_axis.tolist()
+
                 selected_sample_id = st.selectbox(
                     "Select Sample / Timestamp to Diagnose:",
-                    options=time_axis.tolist(),
-                    index=len(time_axis) - 1 # Defaults to the latest sample
+                    options=sample_options,
+                    index=0 # Defaults to Average of whole timeframe
                 )
 
-                # Extract normalized values for selected sample
-                sample_idx_loc = time_axis.tolist().index(selected_sample_id)
-                x_sample = case0_norm_df.iloc[sample_idx_loc].values # Normalized row vector (p,)
+                # Calculate per-variable contributions across whole matrix
+                # Term matrix per sample (N, A, p):
+                # (scores_sa / lambda_a) * (x_sample * eigenvector_a)
+                N_samples = len(case0_norm_df)
+                p_vars = len(numeric_df.columns)
+                
+                # Matrix shape for all samples: (N, A, p)
+                all_term_matrices = np.zeros((N_samples, num_components_selected, p_vars))
+                
+                for i in range(N_samples):
+                    s_i = case0_pc_scores_array[i] # (A,)
+                    x_i = case0_norm_df.iloc[i].values # (p,)
+                    all_term_matrices[i] = (s_i[:, np.newaxis] / selected_eigenvalues[:, np.newaxis]) * \
+                                           (x_i[np.newaxis, :] * selected_eigenvector_df.values.T)
 
-                # Calculate per-variable contribution to T2 score
-                # Contributions matrix shape: (A_components, p_variables)
-                # Formula: t_a * x_j * p_ja / lambda_a
-                scores_sample = case0_pc_scores_array[sample_idx_loc] # (A,)
+                # Sum across PCs to get per-sample variable contribution matrix: (N, p)
+                all_sample_contributions = np.sum(all_term_matrices, axis=1)
 
-                term_matrix = (scores_sample[:, np.newaxis] / selected_eigenvalues[:, np.newaxis]) * \
-                              (x_sample[np.newaxis, :] * selected_eigenvector_df.values.T)
-
-                # Sum contributions across selected principal components
-                variable_contributions = np.sum(term_matrix, axis=0) # Vector of length p
+                # Route based on dropdown selection
+                if selected_sample_id == AVG_LABEL:
+                    variable_contributions = np.mean(all_sample_contributions, axis=0)
+                    plot_title = "Top 5 Contributing Factors (Average Across Entire Timeframe)"
+                    table_header = "**Top 5 Root-Cause Ranking (Timeframe Average)**"
+                else:
+                    sample_idx_loc = time_axis.tolist().index(selected_sample_id)
+                    variable_contributions = all_sample_contributions[sample_idx_loc]
+                    plot_title = f"Top 5 Contributing Factors for Sample `{selected_sample_id}`"
+                    table_header = f"**Top 5 Root-Cause Ranking (`{selected_sample_id}`)**"
 
                 # Build DataFrame for ranking
                 contrib_df = pd.DataFrame({
@@ -583,21 +595,21 @@ try:
                         x='Absolute_Contribution',
                         y='Variable',
                         orientation='h',
-                        title=f"Top 5 Contributing Factors for Sample `{selected_sample_id}`",
+                        title=plot_title,
                         labels={'Absolute_Contribution': 'Absolute T² Contribution Score', 'Variable': 'Parameter'},
                         color='Absolute_Contribution',
                         color_continuous_scale='Reds'
                     )
                     fig_contrib.update_layout(
                         font_family="Source Sans Pro, sans-serif",
-                        yaxis=dict(autorange="reversed"), # Top contributor at top
+                        yaxis=dict(autorange="reversed"),
                         height=380,
                         margin=dict(l=0, r=0, t=40, b=0)
                     )
                     st.plotly_chart(fig_contrib, use_container_width=True)
 
                 with col_top5_table:
-                    st.markdown(f"**Top 5 Root-Cause Ranking (`{selected_sample_id}`)**")
+                    st.markdown(table_header)
                     st.dataframe(
                         top_5_df[['Variable', 'Absolute_Contribution', 'Directional_Contribution']].style.format({
                             'Absolute_Contribution': '{:.4f}',
