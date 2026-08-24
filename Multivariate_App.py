@@ -10,10 +10,8 @@ from sklearn.preprocessing import StandardScaler
 st.set_page_config(page_title="Multivariate PCA Analysis", layout="wide")
 st.title("Multivariate PCA Analysis")
 
-# Case Study Reference Image
+# Case Study Reference Image & Data URLs
 IMAGE_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case.png"
-
-# Direct GitHub link
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv"
 
 @st.cache_data
@@ -34,25 +32,23 @@ try:
     raw_df.index = raw_df.index + 1
     
     # Keep numeric columns for PCA calculations
-    numeric_df = raw_df.select_dtypes(include=[np.number])
+    numeric_df = raw_df.select_dtypes(include=[np.number]).dropna()
 
-    # 3. Perform Normalization (StandardScaler: mean=0, std=1)
+    # 2. Perform Normalization (StandardScaler: mean=0, std=1)
     scaler = StandardScaler()
     normalized_array = scaler.fit_transform(numeric_df)
     normalized_df = pd.DataFrame(normalized_array, columns=numeric_df.columns, index=numeric_df.index)
 
-    # 4. Perform Correlation Matrix Analysis (Lower Triangle INCLUDING Diagonal)
+    # 3. Perform Correlation Matrix Analysis (Lower Triangle INCLUDING Diagonal)
     corr_matrix = normalized_df.corr()
     
-    # Mask strictly upper triangle (k=1 preserves diagonal 1s)
     mask_strictly_upper = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
     lower_corr = corr_matrix.copy()
     lower_corr[mask_strictly_upper] = np.nan
 
-    # 5. Transform Correlation Matrix into Eigenvector matrix and Eigenvalues
+    # 4. Transform Correlation Matrix into Eigenvector matrix and Eigenvalues
     raw_eigenvalues, raw_eigenvectors = np.linalg.eig(corr_matrix.values)
     
-    # Convert complex values to real numbers to avoid JSON serialization error
     eigenvalues = np.real(raw_eigenvalues)
     eigenvectors = np.real(raw_eigenvectors)
     
@@ -61,7 +57,6 @@ try:
     sorted_eigenvalues = eigenvalues[sorted_index]
     sorted_eigenvectors = eigenvectors[:, sorted_index]
     
-    # Full eigenvector matrix
     pc_names = [f"PC{i+1}" for i in range(len(sorted_eigenvalues))]
     eigenvector_df = pd.DataFrame(
         sorted_eigenvectors,
@@ -69,7 +64,6 @@ try:
         columns=pc_names
     )
 
-    # Create Diagonal Eigenvalue Matrix (Diagonal values only, others NaN/Null)
     diag_eigen_matrix = np.full((len(sorted_eigenvalues), len(sorted_eigenvalues)), np.nan)
     np.fill_diagonal(diag_eigen_matrix, sorted_eigenvalues)
     eigenvalue_matrix_df = pd.DataFrame(
@@ -78,24 +72,22 @@ try:
         columns=pc_names
     )
 
-    # 6. Cumulative Eigenvalue Calculation & Strictly Below 80% Threshold Filter
+    # 5. Cumulative Eigenvalue Calculation & Threshold Filter (< 80%)
     var_explained = sorted_eigenvalues / np.sum(sorted_eigenvalues)
     cum_var_explained = np.cumsum(var_explained)
 
-    # Select components strictly BELOW the 80% threshold (< 0.80)
     num_components_selected = int(np.sum(cum_var_explained < 0.80))
     selected_pc_names = pc_names[:num_components_selected]
     selected_eigenvectors = sorted_eigenvectors[:, :num_components_selected]
     selected_eigenvalues = sorted_eigenvalues[:num_components_selected]
     selected_eigenvector_df = eigenvector_df[selected_pc_names]
 
-    # Dynamic color mapping: Red for strictly <80% threshold, Blue for >=80%
     bar_colors = [
         '#EF553B' if val < 0.80 else '#636EFA' 
         for val in cum_var_explained
     ]
 
-    # 7. Matrix Multiplication: Normalized Data x Selected Eigenvectors
+    # 6. Matrix Multiplication & Hotelling T^2 Statistical Limits
     if num_components_selected > 0:
         pc_scores_array = np.dot(normalized_df.values, selected_eigenvector_df.values)
         pc_scores_df = pd.DataFrame(
@@ -104,42 +96,39 @@ try:
             index=normalized_df.index
         )
         
-        # --- Hotelling T^2 Computation ---
-        # Component-wise T2 terms: (t_ij^2) / lambda_j
+        # Hotelling T^2 Statistic per sample: sum_j (t_ij^2 / lambda_j)
         t2_components = (pc_scores_array ** 2) / selected_eigenvalues
-        
-        # T^2 Statistic per sample (Sum across selected PCs)
         t2_scores = np.sum(t2_components, axis=1)
         
-        # Combine PC Scores with T^2 Column
         t2_summary_df = pc_scores_df.copy()
         t2_summary_df['Hotelling_T2'] = t2_scores
         
-        # Parameters for Statistical Control Limits
-        n = len(normalized_df)
-        A = num_components_selected
-        df1 = A
-        df2 = n - A
+        # --- Exact Formula Variables ---
+        n = len(normalized_df)           # Sample size
+        A = num_components_selected       # Selected PCs
+        df1 = A                          # Numerator degrees of freedom
+        df2 = n - A                      # Denominator degrees of freedom
         
         if n > A:
-            # F values for alpha = 0.05 and alpha = 0.01
-            f_val_05 = f.ppf(1 - 0.05, df1, df2)
-            f_val_01 = f.ppf(1 - 0.01, df1, df2)
+            # Multiplier: A * (n - 1) / (n - A)
+            multiplier = (A * (n - 1)) / (n - A)
             
-            # Warning Limit (alpha = 0.05)
-            t2_warning_limit = (A * (n - 1) / (n - A)) * f_val_05
+            # Upper-tail critical values F_(A, n-A, alpha)
+            f_val_05 = f.ppf(1 - 0.05, df1, df2)  # Warning Limit (95%)
+            f_val_01 = f.ppf(1 - 0.01, df1, df2)  # Control Limit (99%)
             
-            # Control Limit (alpha = 0.01)
-            t2_control_limit = (A * (n - 1) / (n - A)) * f_val_01
+            # Final T^2 limits
+            t2_warning_limit = multiplier * f_val_05
+            t2_control_limit = multiplier * f_val_01
         else:
-            f_val_05 = f_val_01 = np.nan
+            multiplier = f_val_05 = f_val_01 = np.nan
             t2_warning_limit = t2_control_limit = np.nan
             
     else:
         pc_scores_df = pd.DataFrame()
         t2_summary_df = pd.DataFrame()
         t2_warning_limit = t2_control_limit = np.nan
-        df1 = df2 = n = A = 0
+        df1 = df2 = n = A = multiplier = 0
         f_val_05 = f_val_01 = np.nan
 
     # --- Streamlit Tabs Output ---
@@ -154,27 +143,22 @@ try:
         "Hotelling T2 Calculation"
     ])
 
-    # Tab 0: Case Study Reference
     with tab0:
         st.subheader("Case Study Reference Diagram")
         col1, col2, col3 = st.columns([1, 8, 1])
         with col2:
             st.image(IMAGE_URL, use_container_width=True)
 
-    # Tab 1: Raw Data
     with tab1:
         st.subheader("Raw Data Table")
         st.dataframe(raw_df, use_container_width=True)
 
-    # Tab 2: Normalized Data
     with tab2:
         st.subheader("Normalized Data Table")
         st.dataframe(normalized_df, use_container_width=True)
 
-    # Tab 3: Correlation Matrix Analysis & Interactive Scatter Plot Side-by-Side
     with tab3:
         st.subheader("Correlation Matrix & Bivariate Parameter Inspection")
-        
         left_col_corr, right_col_corr = st.columns([1.4, 1])
         
         with left_col_corr:
@@ -190,8 +174,6 @@ try:
             )
             fig_corr.update_layout(
                 font_family="Source Sans Pro, sans-serif",
-                xaxis_showgrid=False,
-                yaxis_showgrid=False,
                 height=580,
                 margin=dict(l=0, r=0, t=30, b=0)
             )
@@ -201,7 +183,6 @@ try:
         with right_col_corr:
             st.markdown("**Interactive Parameter Scatter Plot**")
             cols_list = list(numeric_df.columns)
-            
             c_x, c_y = st.columns(2)
             with c_x:
                 param_x = st.selectbox("X-Axis Parameter", cols_list, index=0)
@@ -216,28 +197,15 @@ try:
                 numeric_df,
                 x=param_x,
                 y=param_y,
-                hover_data=[numeric_df.index],
-                labels={param_x: param_x, param_y: param_y}
+                hover_data=[numeric_df.index]
             )
 
             valid_pts = numeric_df[[param_x, param_y]].dropna()
             if len(valid_pts) > 1:
-                x_vals = valid_pts[param_x]
-                y_vals = valid_pts[param_y]
-                slope, intercept = np.polyfit(x_vals, y_vals, 1)
-                
-                line_x = np.array([x_vals.min(), x_vals.max()])
+                slope, intercept = np.polyfit(valid_pts[param_x], valid_pts[param_y], 1)
+                line_x = np.array([valid_pts[param_x].min(), valid_pts[param_x].max()])
                 line_y = slope * line_x + intercept
-                
-                fig_scatter.add_trace(
-                    go.Scatter(
-                        x=line_x, 
-                        y=line_y, 
-                        mode="lines", 
-                        name="Trendline", 
-                        line=dict(color="red", width=2)
-                    )
-                )
+                fig_scatter.add_trace(go.Scatter(x=line_x, y=line_y, mode="lines", name="Trendline", line=dict(color="red", width=2)))
 
             fig_scatter.update_layout(
                 font_family="Source Sans Pro, sans-serif",
@@ -246,10 +214,8 @@ try:
             )
             st.plotly_chart(fig_scatter, use_container_width=True)
 
-    # Tab 4: Eigenvalue Matrix & Cumulative Distribution Plot Side-by-Side
     with tab4:
         st.subheader("Eigenvalue Matrix & Cumulative Variance Analysis")
-        
         left_col, right_col = st.columns([1.4, 1])
         
         with left_col:
@@ -273,31 +239,9 @@ try:
         with right_col:
             st.markdown("**Cumulative Eigenvalue Distribution Plot**")
             fig_cum = go.Figure()
-            
-            fig_cum.add_trace(go.Bar(
-                x=pc_names, 
-                y=var_explained.tolist(), 
-                name="Individual Variance",
-                marker_color=bar_colors
-            ))
-            
-            fig_cum.add_trace(go.Scatter(
-                x=pc_names, 
-                y=cum_var_explained.tolist(), 
-                name="Cumulative Variance", 
-                mode="lines+markers",
-                line=dict(color="#2CA02C", width=2),
-                marker=dict(color=bar_colors, size=8)
-            ))
-            
-            fig_cum.add_shape(
-                type="line",
-                x0=-0.5,
-                y0=0.8,
-                x1=len(pc_names)-0.5,
-                y1=0.8,
-                line=dict(color="Red", width=2, dash="dash")
-            )
+            fig_cum.add_trace(go.Bar(x=pc_names, y=var_explained.tolist(), name="Individual Variance", marker_color=bar_colors))
+            fig_cum.add_trace(go.Scatter(x=pc_names, y=cum_var_explained.tolist(), name="Cumulative Variance", mode="lines+markers", line=dict(color="#2CA02C", width=2), marker=dict(color=bar_colors, size=8)))
+            fig_cum.add_shape(type="line", x0=-0.5, y0=0.8, x1=len(pc_names)-0.5, y1=0.8, line=dict(color="Red", width=2, dash="dash"))
 
             fig_cum.update_layout(
                 font_family="Source Sans Pro, sans-serif",
@@ -309,9 +253,8 @@ try:
             )
             st.plotly_chart(fig_cum, use_container_width=True)
 
-    # Tab 5: Selected Eigenvector Matrix
     with tab5:
-        st.subheader(f"Selected Eigenvector Matrix ({num_components_selected} Components strictly <80% Cumulative Variance)")
+        st.subheader(f"Selected Eigenvector Matrix ({num_components_selected} Components <80% Cumulative Variance)")
         if num_components_selected > 0:
             fig_selected_eigen = px.imshow(
                 selected_eigenvector_df,
@@ -331,18 +274,9 @@ try:
         else:
             st.warning("No Principal Components are strictly below the 80% threshold.")
 
-    # Tab 6: Principal Component Computation
     with tab6:
         st.subheader("Principal Component Scores Computation")
-        
-        st.markdown(
-            """
-            <div style="font-family: 'Source Sans Pro', sans-serif; font-size: 1.1rem; margin-bottom: 1.2rem; color: #31333F;">
-                <strong>PC Scores</strong> = <strong>Normalized Data</strong> &times; <strong>Selected Eigenvectors</strong>
-            </div>
-            """, 
-            unsafe_allow_html=True
-        )
+        st.latex(r"\text{PC Scores} = \text{Normalized Data} \times \text{Selected Eigenvectors}")
         
         if num_components_selected > 0:
             left_col_pc, right_col_pc = st.columns([1.4, 1])
@@ -363,14 +297,11 @@ try:
                     margin=dict(l=0, r=0, t=30, b=0)
                 )
                 st.plotly_chart(fig_pc_scores, use_container_width=True)
-                
-                st.caption("Principal Component Scores Matrix Data Table")
                 st.dataframe(pc_scores_df, use_container_width=True)
             
             with right_col_pc:
                 st.markdown("**PC Scores Scatter Inspection**")
                 pc_cols = list(pc_scores_df.columns)
-                
                 c1_pc, c2_pc = st.columns(2)
                 with c1_pc:
                     pc_x = st.selectbox("X-Axis PC Score", pc_cols, index=0)
@@ -391,30 +322,18 @@ try:
                     margin=dict(l=0, r=0, t=30, b=0)
                 )
                 st.plotly_chart(fig_pc_scatter, use_container_width=True)
-        else:
-            st.warning("No Principal Components available (0 components strictly below the 80% cumulative threshold).")
 
-    # Tab 7: Hotelling T^2 Calculation
     with tab7:
-        st.subheader("Hotelling T² Calculation per Sample")
+        st.subheader("Hotelling T² Statistical Limits & Control Chart")
         
-        st.markdown(
-            """
-            <div style="font-family: 'Source Sans Pro', sans-serif; font-size: 1.05rem; margin-bottom: 1.2rem; color: #31333F;">
-                <strong>T² Limit Formula:</strong> &nbsp;
-                <em>T²<sub>&alpha;</sub> = [ A &times; (n - 1) / (n - A) ] &times; F<sub>(A, n-A, &alpha;)</sub></em>
-            </div>
-            """, 
-            unsafe_allow_html=True
-        )
+        # Display explicit mathematical formula
+        st.latex(r"T^2_{\alpha} = \frac{A(n-1)}{n-A} F_{A,\, n-A,\, \alpha}")
         
         if num_components_selected > 0:
-            left_col_t2, right_col_t2 = st.columns([1.3, 1])
+            left_col_t2, right_col_t2 = st.columns([1.2, 1.2])
             
-            # Left Side: Data Table with PC Scores and T2 Column
             with left_col_t2:
-                st.markdown("**PC Scores Matrix with Computed Hotelling T²**")
-                
+                st.markdown("**Sample Hotelling T² Scores**")
                 st.dataframe(
                     t2_summary_df.style.background_gradient(
                         subset=['Hotelling_T2'], 
@@ -423,18 +342,28 @@ try:
                     use_container_width=True
                 )
                 
-                if not np.isnan(t2_control_limit):
-                    st.caption(f"**Sample Count (n):** `{n}` | **Selected Components (A):** `{A}`")
-                    st.caption(f"**F({df1}, {df2}, 0.05):** `{f_val_05:.4f}` &nbsp;|&nbsp; **Warning Limit (95%):** `{t2_warning_limit:.4f}`")
-                    st.caption(f"**F({df1}, {df2}, 0.01):** `{f_val_01:.4f}` &nbsp;|&nbsp; **Control Limit (99%):** `{t2_control_limit:.4f}`")
+                st.markdown("---")
+                st.markdown("### Formula Breakdown & Calculated Metrics")
+                
+                metric_col1, metric_col2 = st.columns(2)
+                with metric_col1:
+                    st.write(f"**Samples ($n$):** `{n}`")
+                    st.write(f"**Components ($A$):** `{A}`")
+                    st.write(f"**Degrees of Freedom ($\nu_1, \nu_2$):** `({df1}, {df2})`")
+                    st.write(f"**Multiplier $\\left(\\frac{{A(n-1)}}{{n-A}}\\right)$:** `{multiplier:.4f}`")
+                
+                with metric_col2:
+                    st.write(f"**$F_{{{df1}, {df2}, 0.05}}$:** `{f_val_05:.4f}`")
+                    st.write(f"**$F_{{{df1}, {df2}, 0.01}}$:** `{f_val_01:.4f}`")
+                    st.write(f"**Warning Limit ($\alpha=0.05$):** `{t2_warning_limit:.4f}`")
+                    st.write(f"**Control Limit ($\alpha=0.01$):** `{t2_control_limit:.4f}`")
 
-            # Right Side: Hotelling T2 Chart with Warning & Control Limits
             with right_col_t2:
                 st.markdown("**Hotelling T² Control Chart**")
                 
                 fig_t2 = go.Figure()
                 
-                # T2 values line/scatter plot
+                # T2 Data Points
                 fig_t2.add_trace(go.Scatter(
                     x=t2_summary_df.index,
                     y=t2_summary_df['Hotelling_T2'],
@@ -452,7 +381,7 @@ try:
                         y0=t2_warning_limit,
                         x1=t2_summary_df.index.max(),
                         y1=t2_warning_limit,
-                        line=dict(color="Orange", width=2, dash="dot"),
+                        line=dict(color="Orange", width=2, dash="dot")
                     )
                     fig_t2.add_annotation(
                         x=t2_summary_df.index.max(),
@@ -471,7 +400,7 @@ try:
                         y0=t2_control_limit,
                         x1=t2_summary_df.index.max(),
                         y1=t2_control_limit,
-                        line=dict(color="Red", width=2, dash="dash"),
+                        line=dict(color="Red", width=2, dash="dash")
                     )
                     fig_t2.add_annotation(
                         x=t2_summary_df.index.max(),
@@ -486,13 +415,13 @@ try:
                     font_family="Source Sans Pro, sans-serif",
                     xaxis_title="Sample Index",
                     yaxis_title="Hotelling T² Score",
-                    height=520,
+                    height=580,
                     margin=dict(l=0, r=0, t=30, b=0)
                 )
                 st.plotly_chart(fig_t2, use_container_width=True)
 
         else:
-            st.warning("No Principal Components selected (<80% variance threshold) to calculate Hotelling T².")
+            st.warning("No Principal Components selected to compute Hotelling T².")
 
 except Exception as e:
-    st.error(f"Error loading data: {e}")
+    st.error(f"Error executing multivariate analysis: {e}")
