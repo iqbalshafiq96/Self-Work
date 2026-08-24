@@ -13,7 +13,12 @@ st.title("Multivariate Statistical Process Control (MSPC)")
 # Case Study Reference Image & Data URLs
 IMAGE_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case.png"
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv"
-GITHUB_CASE0_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"
+
+# Dataset Map for Phase 2 Cases
+CASE_URLS = {
+    "Case 0": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
+    "Case 10": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_10.csv"
+}
 
 @st.cache_data
 def load_data(url):
@@ -432,30 +437,38 @@ try:
     elif phase_selection == "Phase 2: Online Monitoring and Fault Detection":
         st.header("Phase 2: Real-time Online Fault Detection")
         
-        case0_raw_df = load_data(GITHUB_CASE0_URL)
-        case0_raw_df.index = case0_raw_df.index + 1
+        # Selectbox to pick between Case 0 and Case 10
+        selected_case_label = st.selectbox(
+            "Select Online Case Study Dataset:",
+            options=list(CASE_URLS.keys()),
+            index=0
+        )
         
-        if "Timestamp" in case0_raw_df.columns:
-            time_axis = case0_raw_df["Timestamp"]
-            numeric_case0_df = case0_raw_df.drop(columns=["Timestamp"]).select_dtypes(include=[np.number])
+        target_case_url = CASE_URLS[selected_case_label]
+        case_raw_df = load_data(target_case_url)
+        case_raw_df.index = case_raw_df.index + 1
+        
+        if "Timestamp" in case_raw_df.columns:
+            time_axis = case_raw_df["Timestamp"]
+            numeric_case_df = case_raw_df.drop(columns=["Timestamp"]).select_dtypes(include=[np.number])
         else:
-            time_axis = case0_raw_df.index
-            numeric_case0_df = case0_raw_df.select_dtypes(include=[np.number])
+            time_axis = case_raw_df.index
+            numeric_case_df = case_raw_df.select_dtypes(include=[np.number])
 
-        numeric_case0_df = numeric_case0_df[numeric_df.columns]
+        numeric_case_df = numeric_case_df[numeric_df.columns]
 
-        case0_norm_array = scaler.transform(numeric_case0_df)
-        case0_norm_df = pd.DataFrame(case0_norm_array, columns=numeric_df.columns, index=time_axis)
+        case_norm_array = scaler.transform(numeric_case_df)
+        case_norm_df = pd.DataFrame(case_norm_array, columns=numeric_df.columns, index=time_axis)
 
         if num_components_selected > 0:
-            case0_pc_scores_array = np.dot(case0_norm_df.values, selected_eigenvector_df.values)
-            case0_pc_scores_df = pd.DataFrame(case0_pc_scores_array, columns=selected_pc_names, index=time_axis)
+            case_pc_scores_array = np.dot(case_norm_df.values, selected_eigenvector_df.values)
+            case_pc_scores_df = pd.DataFrame(case_pc_scores_array, columns=selected_pc_names, index=time_axis)
             
-            case0_t2_components = (case0_pc_scores_array ** 2) / selected_eigenvalues
-            case0_t2_scores = np.sum(case0_t2_components, axis=1)
+            case_t2_components = (case_pc_scores_array ** 2) / selected_eigenvalues
+            case_t2_scores = np.sum(case_t2_components, axis=1)
             
-            case0_t2_summary_df = case0_pc_scores_df.copy()
-            case0_t2_summary_df['Hotelling_T2'] = case0_t2_scores
+            case_t2_summary_df = case_pc_scores_df.copy()
+            case_t2_summary_df['Hotelling_T2'] = case_t2_scores
             
             p2_tab1, p2_tab2, p2_tab3, p2_tab4 = st.tabs([
                 "Case Data",
@@ -465,20 +478,20 @@ try:
             ])
 
             with p2_tab1:
-                st.subheader("Phase 2 Raw Case Data")
-                st.dataframe(case0_raw_df, use_container_width=True)
+                st.subheader(f"Phase 2 Raw Data ({selected_case_label})")
+                st.dataframe(case_raw_df, use_container_width=True)
 
             with p2_tab2:
-                st.subheader("Phase 2 Normalized Data (Using Phase 1 Parameters)")
-                st.dataframe(case0_norm_df, use_container_width=True)
+                st.subheader(f"Phase 2 Normalized Data ({selected_case_label} - Using Phase 1 Parameters)")
+                st.dataframe(case_norm_df, use_container_width=True)
 
             with p2_tab3:
-                st.subheader("Phase 2 Online PC Scores")
+                st.subheader(f"Phase 2 Online PC Scores ({selected_case_label})")
                 st.markdown("**PC Scores = Phase 2 Normalized Data × Phase 1 Selected Eigenvectors**")
-                st.dataframe(case0_pc_scores_df, use_container_width=True)
+                st.dataframe(case_pc_scores_df, use_container_width=True)
 
             with p2_tab4:
-                st.subheader("Phase 2 Hotelling T² Online Control Chart")
+                st.subheader(f"Phase 2 Hotelling T² Online Control Chart ({selected_case_label})")
                 st.caption(f"Evaluated against Phase 1 Limits (Warning Limit: {t2_warning_limit:.4f} | Control Limit: {t2_control_limit:.4f})")
                 
                 fig_online_t2 = go.Figure()
@@ -488,7 +501,7 @@ try:
 
                 fig_online_t2.add_trace(go.Scatter(
                     x=time_axis,
-                    y=case0_t2_scores,
+                    y=case_t2_scores,
                     mode='lines+markers',
                     name='Online Hotelling T²',
                     line=dict(color='#1F77B4', width=2),
@@ -549,7 +562,7 @@ try:
                 # T² CONTRIBUTION PLOT FOR SELECTED SAMPLE OR TIMEFRAME AVERAGE
                 # ---------------------------------------------------------
                 st.markdown("---")
-                st.subheader("Fault Diagnosis: Variable Contribution Analysis")
+                st.subheader(f"Fault Diagnosis: Variable Contribution Analysis ({selected_case_label})")
 
                 AVG_LABEL = "Average (All Samples / Timeframe)"
                 sample_options = [AVG_LABEL] + time_axis.tolist()
@@ -560,14 +573,14 @@ try:
                     index=0
                 )
 
-                N_samples = len(case0_norm_df)
+                N_samples = len(case_norm_df)
                 p_vars = len(numeric_df.columns)
                 
                 all_term_matrices = np.zeros((N_samples, num_components_selected, p_vars))
                 
                 for i in range(N_samples):
-                    s_i = case0_pc_scores_array[i]
-                    x_i = case0_norm_df.iloc[i].values
+                    s_i = case_pc_scores_array[i]
+                    x_i = case_norm_df.iloc[i].values
                     all_term_matrices[i] = (s_i[:, np.newaxis] / selected_eigenvalues[:, np.newaxis]) * \
                                            (x_i[np.newaxis, :] * selected_eigenvector_df.values.T)
 
@@ -575,8 +588,8 @@ try:
 
                 if selected_sample_id == AVG_LABEL:
                     variable_contributions = np.mean(all_sample_contributions, axis=0)
-                    plot_title = "Top 5 Contributing Factors (Average Across Entire Timeframe)"
-                    table_header = "**Top 5 Root-Cause Ranking (Timeframe Average)**"
+                    plot_title = f"Top 5 Contributing Factors (Average Across {selected_case_label})"
+                    table_header = f"**Top 5 Root-Cause Ranking ({selected_case_label} Average)**"
                 else:
                     sample_idx_loc = time_axis.tolist().index(selected_sample_id)
                     variable_contributions = all_sample_contributions[sample_idx_loc]
@@ -623,9 +636,9 @@ try:
                     )
                 
                 st.markdown("---")
-                st.markdown("**All Online Samples T² Summary**")
+                st.markdown(f"**All Online Samples T² Summary ({selected_case_label})**")
                 st.dataframe(
-                    case0_t2_summary_df.style.background_gradient(
+                    case_t2_summary_df.style.background_gradient(
                         subset=['Hotelling_T2'], 
                         cmap='YlOrRd'
                     ).format("{:.4f}"),
