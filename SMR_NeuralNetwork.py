@@ -12,6 +12,9 @@ from pyvis.network import Network
 
 st.set_page_config(page_title="SMR Neural Net Configurator", layout="wide")
 st.title("Steam Methane Reforming (SMR) Neural Network Modeling")
+st.caption(
+    "Developed by Iqbal SHERPA 20260824. Contact me for further information"
+    " @iqbalshafiq96@gmail.com")
 
 # =====================================================================
 # 1. GITHUB DATA LOADING & PREPROCESSING (AUTOMATIC NORMALIZATION)
