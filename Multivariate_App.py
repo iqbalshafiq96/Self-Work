@@ -31,10 +31,13 @@ def load_data(url):
     return df
 
 # ---------------------------------------------------------
-# WORKFLOW NAVIGATION BELOW TITLE
+# WORKFLOW NAVIGATION & STATE INITIALIZATION
 # ---------------------------------------------------------
 if "phase_selection" not in st.session_state:
     st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
+
+if "phase2_subtab" not in st.session_state:
+    st.session_state.phase2_subtab = "Hotelling T2 Online Control Chart"
 
 p1_active = st.session_state.phase_selection.startswith("Phase 1")
 p2_active = st.session_state.phase_selection.startswith("Phase 2")
@@ -199,10 +202,10 @@ try:
                 cols_list = list(numeric_df.columns)
                 c_x, c_y = st.columns(2)
                 with c_x:
-                    param_x = st.selectbox("X-Axis Parameter", cols_list, index=0)
+                    param_x = st.selectbox("X-Axis Parameter", cols_list, index=0, key="p1_param_x")
                 with c_y:
                     default_y_idx = 1 if len(cols_list) > 1 else 0
-                    param_y = st.selectbox("Y-Axis Parameter", cols_list, index=default_y_idx)
+                    param_y = st.selectbox("Y-Axis Parameter", cols_list, index=default_y_idx, key="p1_param_y")
 
                 current_corr = numeric_df[param_x].corr(numeric_df[param_y])
                 st.caption(f"**Pearson Correlation ({param_x} vs {param_y}):** `{current_corr:.4f}`")
@@ -318,10 +321,10 @@ try:
                     pc_cols = list(pc_scores_df.columns)
                     c1_pc, c2_pc = st.columns(2)
                     with c1_pc:
-                        pc_x = st.selectbox("X-Axis PC Score", pc_cols, index=0)
+                        pc_x = st.selectbox("X-Axis PC Score", pc_cols, index=0, key="p1_pc_x")
                     with c2_pc:
                         default_pc_y = 1 if len(pc_cols) > 1 else 0
-                        pc_y = st.selectbox("Y-Axis PC Score", pc_cols, index=default_pc_y)
+                        pc_y = st.selectbox("Y-Axis PC Score", pc_cols, index=default_pc_y, key="p1_pc_y")
 
                     fig_pc_scatter = px.scatter(
                         pc_scores_df,
@@ -437,11 +440,11 @@ try:
     elif phase_selection == "Phase 2: Online Monitoring and Fault Detection":
         st.header("Phase 2: Real-time Online Fault Detection")
         
-        # Selectbox to pick between Case 0 and Case 10
+        # Selectbox to pick between Case 0 and Case 10 with Explicit Key
         selected_case_label = st.selectbox(
             "Select Online Case Study Dataset:",
             options=list(CASE_URLS.keys()),
-            index=0
+            key="phase2_case_select"
         )
         
         target_case_url = CASE_URLS[selected_case_label]
@@ -470,27 +473,35 @@ try:
             case_t2_summary_df = case_pc_scores_df.copy()
             case_t2_summary_df['Hotelling_T2'] = case_t2_scores
             
-            p2_tab1, p2_tab2, p2_tab3, p2_tab4 = st.tabs([
+            # Persistent Navigation for Phase 2 Sub-views
+            subtab_options = [
                 "Case Data",
                 "Normalized Data",
                 "Principal Component Scores",
                 "Hotelling T2 Online Control Chart"
-            ])
+            ]
+            
+            active_subtab = st.radio(
+                "Phase 2 View Mode:",
+                options=subtab_options,
+                horizontal=True,
+                key="phase2_subtab"
+            )
 
-            with p2_tab1:
+            if active_subtab == "Case Data":
                 st.subheader(f"Phase 2 Raw Data ({selected_case_label})")
                 st.dataframe(case_raw_df, use_container_width=True)
 
-            with p2_tab2:
+            elif active_subtab == "Normalized Data":
                 st.subheader(f"Phase 2 Normalized Data ({selected_case_label} - Using Phase 1 Parameters)")
                 st.dataframe(case_norm_df, use_container_width=True)
 
-            with p2_tab3:
+            elif active_subtab == "Principal Component Scores":
                 st.subheader(f"Phase 2 Online PC Scores ({selected_case_label})")
                 st.markdown("**PC Scores = Phase 2 Normalized Data × Phase 1 Selected Eigenvectors**")
                 st.dataframe(case_pc_scores_df, use_container_width=True)
 
-            with p2_tab4:
+            elif active_subtab == "Hotelling T2 Online Control Chart":
                 st.subheader(f"Phase 2 Hotelling T² Online Control Chart ({selected_case_label})")
                 st.caption(f"Evaluated against Phase 1 Limits (Warning Limit: {t2_warning_limit:.4f} | Control Limit: {t2_control_limit:.4f})")
                 
@@ -546,7 +557,7 @@ try:
 
                 is_string_time = isinstance(x_start_p2, str)
                 
-                # Set dynamic Y-axis maximum to 15% above the control limit
+                # Dynamic Y-axis upper limit (+15% above Control Limit)
                 y_max_limit = t2_control_limit * 1.15 if not np.isnan(t2_control_limit) else None
 
                 fig_online_t2.update_layout(
@@ -573,10 +584,11 @@ try:
                 AVG_LABEL = "Average (All Samples / Timeframe)"
                 sample_options = [AVG_LABEL] + time_axis.tolist()
 
+                # Explicit Session State Key to preserve selected timestamp
                 selected_sample_id = st.selectbox(
                     "Select Sample / Timestamp to Diagnose:",
                     options=sample_options,
-                    index=0
+                    key="selected_sample_id_key"
                 )
 
                 N_samples = len(case_norm_df)
