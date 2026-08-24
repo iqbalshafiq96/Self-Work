@@ -87,13 +87,12 @@ try:
     selected_eigenvector_df = eigenvector_df[selected_pc_names]
 
     # --- Streamlit Tabs Output ---
-    tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "Case Study Reference",
         "Raw Data", 
         "Normalized Data", 
         "Correlation Matrix", 
-        "Eigen value matrix", 
-        "Cumulative eigen value distribution plot",
+        "Eigenvalue Matrix", 
         "Selected Eigenvector matrix"
     ])
 
@@ -134,66 +133,71 @@ try:
         )
         st.plotly_chart(fig_corr, use_container_width=True)
 
-    # Tab 4: Eigenvalue Matrix (Diagonal only)
+    # Tab 4: Combined Eigenvalue Matrix & Cumulative Distribution Plot Side-by-Side
     with tab4:
-        st.subheader("Eigenvalue Matrix")
-        fig_eigen_val = px.imshow(
-            eigenvalue_matrix_df,
-            labels=dict(color="Eigenvalue"),
-            x=eigenvalue_matrix_df.columns,
-            y=eigenvalue_matrix_df.index,
-            color_continuous_scale="Viridis",
-            text_auto=".3f"
-        )
-        fig_eigen_val.update_layout(
-            font_family="Source Sans Pro, sans-serif",
-            height=600
-        )
-        st.plotly_chart(fig_eigen_val, use_container_width=True)
-        st.dataframe(eigenvalue_matrix_df, use_container_width=True)
+        st.subheader("Eigenvalue Matrix & Cumulative Variance Analysis")
+        
+        left_col, right_col = st.columns(2)
+        
+        # Left Side: Eigenvalue Matrix Heatmap & Table
+        with left_col:
+            st.markdown("**Eigenvalue Matrix (Diagonal Only)**")
+            fig_eigen_val = px.imshow(
+                eigenvalue_matrix_df,
+                labels=dict(color="Eigenvalue"),
+                x=eigenvalue_matrix_df.columns,
+                y=eigenvalue_matrix_df.index,
+                color_continuous_scale="Viridis",
+                text_auto=".3f"
+            )
+            fig_eigen_val.update_layout(
+                font_family="Source Sans Pro, sans-serif",
+                height=450
+            )
+            st.plotly_chart(fig_eigen_val, use_container_width=True)
+            st.dataframe(eigenvalue_matrix_df, use_container_width=True)
 
-    # Tab 5: Cumulative Eigenvalue Distribution Plot (80% Threshold)
+        # Right Side: Cumulative Eigenvalue Distribution Plot
+        with right_col:
+            st.markdown("**Cumulative Eigenvalue Distribution Plot**")
+            fig_cum = go.Figure()
+            
+            # Individual variance bar plot
+            fig_cum.add_trace(go.Bar(
+                x=pc_names, 
+                y=var_explained.tolist(), 
+                name="Individual Variance"
+            ))
+            
+            # Cumulative variance line plot
+            fig_cum.add_trace(go.Scatter(
+                x=pc_names, 
+                y=cum_var_explained.tolist(), 
+                name="Cumulative Variance", 
+                mode="lines+markers"
+            ))
+            
+            # 80% Threshold Line
+            fig_cum.add_shape(
+                type="line",
+                x0=-0.5,
+                y0=0.8,
+                x1=len(pc_names)-0.5,
+                y1=0.8,
+                line=dict(color="Red", width=2, dash="dash")
+            )
+
+            fig_cum.update_layout(
+                font_family="Source Sans Pro, sans-serif",
+                xaxis_title="Principal Components",
+                yaxis_title="Explained Variance Ratio",
+                yaxis=dict(range=[0, 1.05]),
+                height=450
+            )
+            st.plotly_chart(fig_cum, use_container_width=True)
+
+    # Tab 5: Selected Eigenvector Matrix (Strictly Below 80% Variance Threshold)
     with tab5:
-        st.subheader("Cumulative Eigenvalue Distribution Plot")
-        
-        fig_cum = go.Figure()
-        
-        # Individual variance bar plot
-        fig_cum.add_trace(go.Bar(
-            x=pc_names, 
-            y=var_explained.tolist(), 
-            name="Individual Variance"
-        ))
-        
-        # Cumulative variance line plot
-        fig_cum.add_trace(go.Scatter(
-            x=pc_names, 
-            y=cum_var_explained.tolist(), 
-            name="Cumulative Variance", 
-            mode="lines+markers"
-        ))
-        
-        # 80% Threshold Line
-        fig_cum.add_shape(
-            type="line",
-            x0=-0.5,
-            y0=0.8,
-            x1=len(pc_names)-0.5,
-            y1=0.8,
-            line=dict(color="Red", width=2, dash="dash")
-        )
-
-        fig_cum.update_layout(
-            font_family="Source Sans Pro, sans-serif",
-            xaxis_title="Principal Components",
-            yaxis_title="Explained Variance Ratio",
-            yaxis=dict(range=[0, 1.05]),
-            height=500
-        )
-        st.plotly_chart(fig_cum, use_container_width=True)
-
-    # Tab 6: Selected Eigenvector Matrix (Strictly Below 80% Variance Threshold)
-    with tab6:
         st.subheader(f"Selected Eigenvector Matrix ({num_components_selected} Components strictly <80% Cumulative Variance)")
         if num_components_selected > 0:
             fig_selected_eigen = px.imshow(
