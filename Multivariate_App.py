@@ -39,12 +39,6 @@ if "phase_selection" not in st.session_state:
 p1_active = st.session_state.phase_selection.startswith("Phase 1")
 p2_active = st.session_state.phase_selection.startswith("Phase 2")
 
-# Header displayed above the phase navigation bar
-if p1_active:
-    st.header("Phase 1: Offline Modelling and Monitoring Setup")
-elif p2_active:
-    st.header("Phase 2: Real-time Online Fault Detection")
-
 col_btn1, col_btn2, _ = st.columns([1, 1, 2])
 
 with col_btn1:
@@ -65,7 +59,15 @@ with col_btn2:
         st.session_state.phase_selection = "Phase 2: Online Monitoring and Fault Detection"
         st.rerun()
 
+# Gray horizontal bar
 st.markdown("---")
+
+# Header positioned below horizontal bar & above navigation tabs
+if p1_active:
+    st.header("Phase 1: Offline Modelling and Monitoring Setup")
+elif p2_active:
+    st.header("Phase 2: Real-time Online Fault Detection")
+
 phase_selection = st.session_state.phase_selection
 
 try:
