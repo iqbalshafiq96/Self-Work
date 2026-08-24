@@ -8,38 +8,12 @@ from sklearn.preprocessing import StandardScaler
 
 # Page configuration
 st.set_page_config(page_title="Multivariate PCA Analysis", layout="wide")
-
-# Header Title
 st.title("Multivariate Statistical Process Control (MSPC)")
-
-# ---------------------------------------------------------
-# TOP-LEVEL WORKFLOW NAVIGATION (Below MSPC Title)
-# ---------------------------------------------------------
-if "phase_selection" not in st.session_state:
-    st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
-
-# Horizontal navigation toggle using key-binding to avoid double-click issues
-phase_selection = st.segmented_control(
-    "Workflow Navigation",
-    options=[
-        "Phase 1: Offline Modelling and Monitoring Setup",
-        "Phase 2: Online Monitoring and Fault Detection"
-    ],
-    key="phase_selection",
-    label_visibility="collapsed"
-)
-
-st.markdown("---")
 
 # Case Study Reference Image & Data URLs
 IMAGE_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case.png"
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv"
-
-# Phase 2 Case Files Dictionary
-CASE_FILES = {
-    "Case 0 (Normal / Baseline Operation)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
-    "Case 10 (Fault Incident / Abnormal Operation)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_10.csv"
-}
+GITHUB_CASE0_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"
 
 @st.cache_data
 def load_data(url):
@@ -50,6 +24,60 @@ def load_data(url):
     df = pd.read_csv(url, sep=None, engine='python', encoding='utf-8-sig')
     df.columns = df.columns.astype(str).str.strip().str.replace('\ufeff', '')
     return df
+
+# ---------------------------------------------------------
+# MODERN SIDEBAR NAVIGATION (Session State + Custom CSS)
+# ---------------------------------------------------------
+st.markdown("""
+    <style>
+    /* Modern Nav Card Buttons in Sidebar */
+    div[data-testid="stSidebar"] div.stButton > button {
+        width: 100%;
+        border-radius: 8px;
+        border: 1px solid #dcdfe6;
+        padding: 10px 14px;
+        font-weight: 500;
+        transition: all 0.2s ease-in-out;
+        background-color: #ffffff;
+        color: #2c3e50;
+        margin-bottom: 4px;
+    }
+    
+    div[data-testid="stSidebar"] div.stButton > button:hover {
+        border-color: #1F77B4;
+        color: #1F77B4;
+        background-color: #f0f7fc;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+if "phase_selection" not in st.session_state:
+    st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
+
+st.sidebar.markdown("## ⚙️ Workflow Navigation")
+st.sidebar.caption("Switch between offline modeling and online monitoring:")
+
+p1_active = st.session_state.phase_selection.startswith("Phase 1")
+p2_active = st.session_state.phase_selection.startswith("Phase 2")
+
+if st.sidebar.button(
+    "📊 Phase 1: Offline Setup", 
+    type="primary" if p1_active else "secondary", 
+    use_container_width=True
+):
+    st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
+    st.rerun()
+
+if st.sidebar.button(
+    "🚨 Phase 2: Online Monitoring", 
+    type="primary" if p2_active else "secondary", 
+    use_container_width=True
+):
+    st.session_state.phase_selection = "Phase 2: Online Monitoring and Fault Detection"
+    st.rerun()
+
+st.sidebar.markdown("---")
+phase_selection = st.session_state.phase_selection
 
 try:
     # ---------------------------------------------------------
@@ -426,67 +454,54 @@ try:
     elif phase_selection == "Phase 2: Online Monitoring and Fault Detection":
         st.header("Phase 2: Real-time Online Fault Detection")
         
-        p2_tab1, p2_tab2, p2_tab3, p2_tab4 = st.tabs([
-            "Case Data",
-            "Normalized Data",
-            "Principal Component Scores",
-            "Hotelling T2 Online Control Chart"
-        ])
-
-        # Raw Data Tab - Case Selection Dropdown at top
-        with p2_tab1:
-            st.subheader("Phase 2 Raw Case Data")
-            selected_case_name = st.selectbox(
-                "Select Case File for Online Monitoring:",
-                options=list(CASE_FILES.keys()),
-                index=0,
-                key="phase2_case_selector"
-            )
-            selected_case_url = CASE_FILES[selected_case_name]
-            
-            case_raw_df = load_data(selected_case_url)
-            case_raw_df.index = case_raw_df.index + 1
-            st.dataframe(case_raw_df, use_container_width=True)
-
-        # Dynamic Computation based on Selected Case
-        if "Timestamp" in case_raw_df.columns:
-            time_axis = case_raw_df["Timestamp"]
-            numeric_case_df = case_raw_df.drop(columns=["Timestamp"]).select_dtypes(include=[np.number])
+        case0_raw_df = load_data(GITHUB_CASE0_URL)
+        case0_raw_df.index = case0_raw_df.index + 1
+        
+        if "Timestamp" in case0_raw_df.columns:
+            time_axis = case0_raw_df["Timestamp"]
+            numeric_case0_df = case0_raw_df.drop(columns=["Timestamp"]).select_dtypes(include=[np.number])
         else:
-            time_axis = case_raw_df.index
-            numeric_case_df = case_raw_df.select_dtypes(include=[np.number])
+            time_axis = case0_raw_df.index
+            numeric_case0_df = case0_raw_df.select_dtypes(include=[np.number])
 
-        numeric_case_df = numeric_case_df[numeric_df.columns]
+        numeric_case0_df = numeric_case0_df[numeric_df.columns]
 
-        # Standardize using Phase 1 Scaler
-        case_norm_array = scaler.transform(numeric_case_df)
-        case_norm_df = pd.DataFrame(case_norm_array, columns=numeric_df.columns, index=time_axis)
+        case0_norm_array = scaler.transform(numeric_case0_df)
+        case0_norm_df = pd.DataFrame(case0_norm_array, columns=numeric_df.columns, index=time_axis)
 
         if num_components_selected > 0:
-            # Compute Online PC Scores & Hotelling T²
-            case_pc_scores_array = np.dot(case_norm_df.values, selected_eigenvector_df.values)
-            case_pc_scores_df = pd.DataFrame(case_pc_scores_array, columns=selected_pc_names, index=time_axis)
+            case0_pc_scores_array = np.dot(case0_norm_df.values, selected_eigenvector_df.values)
+            case0_pc_scores_df = pd.DataFrame(case0_pc_scores_array, columns=selected_pc_names, index=time_axis)
             
-            case_t2_components = (case_pc_scores_array ** 2) / selected_eigenvalues
-            case_t2_scores = np.sum(case_t2_components, axis=1)
+            case0_t2_components = (case0_pc_scores_array ** 2) / selected_eigenvalues
+            case0_t2_scores = np.sum(case0_t2_components, axis=1)
             
-            case_t2_summary_df = case_pc_scores_df.copy()
-            case_t2_summary_df['Hotelling_T2'] = case_t2_scores
+            case0_t2_summary_df = case0_pc_scores_df.copy()
+            case0_t2_summary_df['Hotelling_T2'] = case0_t2_scores
+            
+            p2_tab1, p2_tab2, p2_tab3, p2_tab4 = st.tabs([
+                "Case Data",
+                "Normalized Data",
+                "Principal Component Scores",
+                "Hotelling T2 Online Control Chart"
+            ])
+
+            with p2_tab1:
+                st.subheader("Phase 2 Raw Case Data")
+                st.dataframe(case0_raw_df, use_container_width=True)
 
             with p2_tab2:
                 st.subheader("Phase 2 Normalized Data (Using Phase 1 Parameters)")
-                st.caption(f"Active Dataset: **{selected_case_name}**")
-                st.dataframe(case_norm_df, use_container_width=True)
+                st.dataframe(case0_norm_df, use_container_width=True)
 
             with p2_tab3:
                 st.subheader("Phase 2 Online PC Scores")
                 st.markdown("**PC Scores = Phase 2 Normalized Data × Phase 1 Selected Eigenvectors**")
-                st.caption(f"Active Dataset: **{selected_case_name}**")
-                st.dataframe(case_pc_scores_df, use_container_width=True)
+                st.dataframe(case0_pc_scores_df, use_container_width=True)
 
             with p2_tab4:
                 st.subheader("Phase 2 Hotelling T² Online Control Chart")
-                st.caption(f"Active Dataset: **{selected_case_name}** | Evaluated against Phase 1 Limits (Warning Limit: `{t2_warning_limit:.4f}` | Control Limit: `{t2_control_limit:.4f}`)")
+                st.caption(f"Evaluated against Phase 1 Limits (Warning Limit: {t2_warning_limit:.4f} | Control Limit: {t2_control_limit:.4f})")
                 
                 fig_online_t2 = go.Figure()
 
@@ -495,7 +510,7 @@ try:
 
                 fig_online_t2.add_trace(go.Scatter(
                     x=time_axis,
-                    y=case_t2_scores,
+                    y=case0_t2_scores,
                     mode='lines+markers',
                     name='Online Hotelling T²',
                     line=dict(color='#1F77B4', width=2),
@@ -564,18 +579,17 @@ try:
                 selected_sample_id = st.selectbox(
                     "Select Sample / Timestamp to Diagnose:",
                     options=sample_options,
-                    index=0,
-                    key="p2_sample_diagnose"
+                    index=0
                 )
 
-                N_samples = len(case_norm_df)
+                N_samples = len(case0_norm_df)
                 p_vars = len(numeric_df.columns)
                 
                 all_term_matrices = np.zeros((N_samples, num_components_selected, p_vars))
                 
                 for i in range(N_samples):
-                    s_i = case_pc_scores_array[i]
-                    x_i = case_norm_df.iloc[i].values
+                    s_i = case0_pc_scores_array[i]
+                    x_i = case0_norm_df.iloc[i].values
                     all_term_matrices[i] = (s_i[:, np.newaxis] / selected_eigenvalues[:, np.newaxis]) * \
                                            (x_i[np.newaxis, :] * selected_eigenvector_df.values.T)
 
@@ -633,7 +647,7 @@ try:
                 st.markdown("---")
                 st.markdown("**All Online Samples T² Summary**")
                 st.dataframe(
-                    case_t2_summary_df.style.background_gradient(
+                    case0_t2_summary_df.style.background_gradient(
                         subset=['Hotelling_T2'], 
                         cmap='YlOrRd'
                     ).format("{:.4f}"),
