@@ -17,7 +17,7 @@ st.caption(
 IMAGE_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case.png"
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv"
 
-# Dataset Map for Phase 2 Cases (Added Case 1, Case 2, and Case 3)
+# Dataset Map for Phase 2 Cases
 CASE_URLS = {
     "Case 0": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
     "Case 1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_1.csv",
@@ -123,11 +123,12 @@ try:
 
     bar_colors = ['#EF553B' if val < 0.80 else '#636EFA' for val in cum_var_explained]
 
-    # Phase 1 Scores & Static Limits
+    # Phase 1 Scores, Hotelling T2, and SPE Residual Calculations
     if num_components_selected > 0:
         pc_scores_array = np.dot(normalized_df.values, selected_eigenvector_df.values)
         pc_scores_df = pd.DataFrame(pc_scores_array, columns=selected_pc_names, index=normalized_df.index)
         
+        # Hotelling T2
         t2_components = (pc_scores_array ** 2) / selected_eigenvalues
         t2_scores = np.sum(t2_components, axis=1)
         
@@ -149,9 +150,24 @@ try:
         else:
             multiplier = f_val_05 = f_val_01 = np.nan
             t2_warning_limit = t2_control_limit = np.nan
+
+        # SPE Calculation: PVt = PC_scores * Transposed_Selected_Eigenvectors
+        pvt_array = np.dot(pc_scores_array, selected_eigenvector_df.values.T)
+        pvt_df = pd.DataFrame(pvt_array, columns=normalized_df.columns, index=normalized_df.index)
+
+        # Residual E Matrix: E = Normalized Data - PVt
+        e_matrix_df = normalized_df - pvt_df
+
+        # SPE is sum of squares of each row in E matrix
+        spe_scores = np.sum(e_matrix_df.values ** 2, axis=1)
+        spe_summary_df = pd.DataFrame({'SPE': spe_scores}, index=normalized_df.index)
+
     else:
         pc_scores_df = pd.DataFrame()
         t2_summary_df = pd.DataFrame()
+        e_matrix_df = pd.DataFrame()
+        pvt_df = pd.DataFrame()
+        spe_summary_df = pd.DataFrame()
         t2_warning_limit = t2_control_limit = np.nan
         df1 = df2 = n = A = multiplier = 0
         f_val_05 = f_val_01 = np.nan
@@ -160,7 +176,7 @@ try:
     # PHASE 1: OFFLINE MODELLING AND MONITORING SETUP
     # =========================================================
     if phase_selection == "Phase 1: Offline Modelling and Monitoring Setup":
-        tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
             "Case Study Reference",
             "Raw Data", 
             "Normalized Data", 
@@ -168,7 +184,8 @@ try:
             "Eigenvalue Matrix", 
             "Selected Eigenvector matrix",
             "Principal Component Computation",
-            "Hotelling T2 Calculation"
+            "Hotelling T2 Calculation",
+            "Squared Prediction Error (SPE)"
         ], key="phase1_tabs")
 
         with tab0:
@@ -444,6 +461,52 @@ try:
 
             else:
                 st.warning("No Principal Components selected to compute Hotelling T².")
+
+        with tab8:
+            st.subheader("Squared Prediction Error (SPE) & Residual E Matrix")
+            st.markdown(
+                "**Formulas:**  \n"
+                "• $PV^T = \\text{PC Scores} \\times P^T$ *(where $P$ is the Selected Eigenvector Matrix)*  \n"
+                "• $E = \\text{Normalized Data} - PV^T$  \n"
+                "• $\\text{SPE} = \\sum_{j=1}^{p} E_{ij}^2$ *(Row-wise sum of squared residual values)*"
+            )
+
+            if num_components_selected > 0:
+                col_e_table, col_spe_plot = st.columns([1.2, 1.2])
+
+                with col_e_table:
+                    st.markdown("**Residual $E$ Table (Normalized Data - $PV^T$)**")
+                    st.dataframe(
+                        e_matrix_df.style.background_gradient(cmap='vlag', axis=None).format("{:.4f}"),
+                        use_container_width=True
+                    )
+
+                with col_spe_plot:
+                    st.markdown("**Calculated SPE Scores & Baseline Control Chart**")
+                    st.dataframe(
+                        spe_summary_df.style.background_gradient(subset=['SPE'], cmap='Blues').format("{:.4f}"),
+                        use_container_width=True
+                    )
+
+                    fig_spe = go.Figure()
+                    fig_spe.add_trace(go.Scatter(
+                        x=spe_summary_df.index,
+                        y=spe_summary_df['SPE'],
+                        mode='lines+markers',
+                        name='SPE Score',
+                        line=dict(color='#2CA02C', width=2),
+                        marker=dict(size=6)
+                    ))
+                    fig_spe.update_layout(
+                        font_family="Source Sans Pro, sans-serif",
+                        xaxis_title="Sample Index",
+                        yaxis_title="SPE Score",
+                        height=420,
+                        margin=dict(l=0, r=0, t=30, b=0)
+                    )
+                    st.plotly_chart(fig_spe, use_container_width=True)
+            else:
+                st.warning("No Principal Components selected to compute Residual E Table and SPE.")
 
     # =========================================================
     # PHASE 2: ONLINE MONITORING AND FAULT DETECTION
