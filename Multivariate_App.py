@@ -21,19 +21,63 @@ def load_data(url):
     if "github.com" in url and "/blob/" in url:
         url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
     
-    # encoding='utf-8-sig' strips hidden \ufeff BOM characters
     df = pd.read_csv(url, sep=None, engine='python', encoding='utf-8-sig')
-    # Clean string column names (strip leftover whitespace/hidden chars)
     df.columns = df.columns.astype(str).str.strip().str.replace('\ufeff', '')
     return df
 
-# Sidebar Phase Navigation
-st.sidebar.title("Workflow Navigation")
-phase_selection = st.sidebar.radio(
-    "Select Workflow Phase:",
-    ["Phase 1: Offline Modelling and Monitoring Setup", 
-     "Phase 2: Online Monitoring and Fault Detection"]
-)
+# ---------------------------------------------------------
+# MODERN SIDEBAR NAVIGATION (Session State + Custom CSS)
+# ---------------------------------------------------------
+st.markdown("""
+    <style>
+    /* Modern Nav Card Buttons in Sidebar */
+    div[data-testid="stSidebar"] div.stButton > button {
+        width: 100%;
+        border-radius: 8px;
+        border: 1px solid #dcdfe6;
+        padding: 10px 14px;
+        font-weight: 500;
+        transition: all 0.2s ease-in-out;
+        background-color: #ffffff;
+        color: #2c3e50;
+        margin-bottom: 4px;
+    }
+    
+    div[data-testid="stSidebar"] div.stButton > button:hover {
+        border-color: #1F77B4;
+        color: #1F77B4;
+        background-color: #f0f7fc;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+if "phase_selection" not in st.session_state:
+    st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
+
+st.sidebar.markdown("## ⚙️ Workflow Navigation")
+st.sidebar.caption("Switch between offline modeling and online monitoring:")
+
+p1_active = st.session_state.phase_selection.startswith("Phase 1")
+p2_active = st.session_state.phase_selection.startswith("Phase 2")
+
+if st.sidebar.button(
+    "📊 Phase 1: Offline Setup", 
+    type="primary" if p1_active else "secondary", 
+    use_container_width=True
+):
+    st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
+    st.rerun()
+
+if st.sidebar.button(
+    "🚨 Phase 2: Online Monitoring", 
+    type="primary" if p2_active else "secondary", 
+    use_container_width=True
+):
+    st.session_state.phase_selection = "Phase 2: Online Monitoring and Fault Detection"
+    st.rerun()
+
+st.sidebar.markdown("---")
+phase_selection = st.session_state.phase_selection
 
 try:
     # ---------------------------------------------------------
@@ -312,7 +356,6 @@ try:
 
         with tab7:
             st.subheader("Hotelling T² Statistical Limits & Control Chart")
-            
             st.markdown("**T² Limit Formula:** T²_alpha = [ A * (n - 1) / (n - A) ] * F(A, n - A, alpha)")
             
             if num_components_selected > 0:
@@ -346,7 +389,6 @@ try:
 
                 with right_col_t2:
                     st.markdown("**Hotelling T² Control Chart**")
-                    
                     fig_t2 = go.Figure()
                     
                     fig_t2.add_trace(go.Scatter(
@@ -381,7 +423,7 @@ try:
                             type="line",
                             x0=t2_summary_df.index.min(),
                             y0=t2_control_limit,
-                            x1=t2_control_limit,
+                            x1=t2_summary_df.index.max(),
                             y1=t2_control_limit,
                             line=dict(color="Red", width=2, dash="dash")
                         )
@@ -412,11 +454,9 @@ try:
     elif phase_selection == "Phase 2: Online Monitoring and Fault Detection":
         st.header("Phase 2: Real-time Online Fault Detection")
         
-        # 1. Load Online Case Data
         case0_raw_df = load_data(GITHUB_CASE0_URL)
         case0_raw_df.index = case0_raw_df.index + 1
         
-        # Determine index & feature set
         if "Timestamp" in case0_raw_df.columns:
             time_axis = case0_raw_df["Timestamp"]
             numeric_case0_df = case0_raw_df.drop(columns=["Timestamp"]).select_dtypes(include=[np.number])
@@ -424,26 +464,21 @@ try:
             time_axis = case0_raw_df.index
             numeric_case0_df = case0_raw_df.select_dtypes(include=[np.number])
 
-        # Align columns to Phase 1 variables strictly
         numeric_case0_df = numeric_case0_df[numeric_df.columns]
 
-        # 2. Normalize Online Data using Phase 1 fitted Scaler
         case0_norm_array = scaler.transform(numeric_case0_df)
         case0_norm_df = pd.DataFrame(case0_norm_array, columns=numeric_df.columns, index=time_axis)
 
-        # 3. Calculate Online Principal Component Scores
         if num_components_selected > 0:
             case0_pc_scores_array = np.dot(case0_norm_df.values, selected_eigenvector_df.values)
             case0_pc_scores_df = pd.DataFrame(case0_pc_scores_array, columns=selected_pc_names, index=time_axis)
             
-            # 4. Compute Online Hotelling T² using Phase 1 Eigenvalues
             case0_t2_components = (case0_pc_scores_array ** 2) / selected_eigenvalues
             case0_t2_scores = np.sum(case0_t2_components, axis=1)
             
             case0_t2_summary_df = case0_pc_scores_df.copy()
             case0_t2_summary_df['Hotelling_T2'] = case0_t2_scores
             
-            # Tab Structure for Phase 2
             p2_tab1, p2_tab2, p2_tab3, p2_tab4 = st.tabs([
                 "Case Data",
                 "Normalized Data",
@@ -538,35 +573,28 @@ try:
                 st.markdown("---")
                 st.subheader("Fault Diagnosis: Variable Contribution Analysis")
 
-                # Setup options list with "Average" as default (index 0)
                 AVG_LABEL = "Average (All Samples / Timeframe)"
                 sample_options = [AVG_LABEL] + time_axis.tolist()
 
                 selected_sample_id = st.selectbox(
                     "Select Sample / Timestamp to Diagnose:",
                     options=sample_options,
-                    index=0 # Defaults to Average of whole timeframe
+                    index=0
                 )
 
-                # Calculate per-variable contributions across whole matrix
-                # Term matrix per sample (N, A, p):
-                # (scores_sa / lambda_a) * (x_sample * eigenvector_a)
                 N_samples = len(case0_norm_df)
                 p_vars = len(numeric_df.columns)
                 
-                # Matrix shape for all samples: (N, A, p)
                 all_term_matrices = np.zeros((N_samples, num_components_selected, p_vars))
                 
                 for i in range(N_samples):
-                    s_i = case0_pc_scores_array[i] # (A,)
-                    x_i = case0_norm_df.iloc[i].values # (p,)
+                    s_i = case0_pc_scores_array[i]
+                    x_i = case0_norm_df.iloc[i].values
                     all_term_matrices[i] = (s_i[:, np.newaxis] / selected_eigenvalues[:, np.newaxis]) * \
                                            (x_i[np.newaxis, :] * selected_eigenvector_df.values.T)
 
-                # Sum across PCs to get per-sample variable contribution matrix: (N, p)
                 all_sample_contributions = np.sum(all_term_matrices, axis=1)
 
-                # Route based on dropdown selection
                 if selected_sample_id == AVG_LABEL:
                     variable_contributions = np.mean(all_sample_contributions, axis=0)
                     plot_title = "Top 5 Contributing Factors (Average Across Entire Timeframe)"
@@ -577,7 +605,6 @@ try:
                     plot_title = f"Top 5 Contributing Factors for Sample `{selected_sample_id}`"
                     table_header = f"**Top 5 Root-Cause Ranking (`{selected_sample_id}`)**"
 
-                # Build DataFrame for ranking
                 contrib_df = pd.DataFrame({
                     'Variable': numeric_df.columns,
                     'Absolute_Contribution': np.abs(variable_contributions),
@@ -586,7 +613,6 @@ try:
 
                 top_5_df = contrib_df.head(5)
 
-                # Layout for Top 5 Table & Bar Chart
                 col_top5_chart, col_top5_table = st.columns([1.3, 1])
 
                 with col_top5_chart:
@@ -618,7 +644,6 @@ try:
                         use_container_width=True
                     )
                 
-                # Show tabular T2 scores
                 st.markdown("---")
                 st.markdown("**All Online Samples T² Summary**")
                 st.dataframe(
