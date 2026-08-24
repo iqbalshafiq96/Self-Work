@@ -74,12 +74,12 @@ try:
         columns=pc_names
     )
 
-    # 6. Cumulative Eigenvalue Calculation & 80% Threshold Filter
+    # 6. Cumulative Eigenvalue Calculation & Strictly Below 80% Threshold Filter
     var_explained = sorted_eigenvalues / np.sum(sorted_eigenvalues)
     cum_var_explained = np.cumsum(var_explained)
 
-    # Identify components needed to meet/exceed 80% threshold
-    num_components_selected = np.argmax(cum_var_explained >= 0.80) + 1
+    # Select components strictly BELOW the 80% threshold (< 0.80)
+    num_components_selected = int(np.sum(cum_var_explained < 0.80))
     selected_pc_names = pc_names[:num_components_selected]
     selected_eigenvector_df = eigenvector_df[selected_pc_names]
 
@@ -181,23 +181,26 @@ try:
         )
         st.plotly_chart(fig_cum, use_container_width=True)
 
-    # Tab 6: Selected Eigenvector Matrix (Meeting >= 80% Variance Threshold)
+    # Tab 6: Selected Eigenvector Matrix (Strictly Below 80% Variance Threshold)
     with tab6:
-        st.subheader(f"Selected Eigenvector Matrix ({num_components_selected} Components for ≥80% Variance)")
-        fig_selected_eigen = px.imshow(
-            selected_eigenvector_df,
-            labels=dict(color="Weight"),
-            x=selected_eigenvector_df.columns,
-            y=selected_eigenvector_df.index,
-            color_continuous_scale="Viridis",
-            text_auto=".3f"
-        )
-        fig_selected_eigen.update_layout(
-            font_family="Source Sans Pro, sans-serif",
-            height=600
-        )
-        st.plotly_chart(fig_selected_eigen, use_container_width=True)
-        st.dataframe(selected_eigenvector_df, use_container_width=True)
+        st.subheader(f"Selected Eigenvector Matrix ({num_components_selected} Components strictly <80% Cumulative Variance)")
+        if num_components_selected > 0:
+            fig_selected_eigen = px.imshow(
+                selected_eigenvector_df,
+                labels=dict(color="Weight"),
+                x=selected_eigenvector_df.columns,
+                y=selected_eigenvector_df.index,
+                color_continuous_scale="Viridis",
+                text_auto=".3f"
+            )
+            fig_selected_eigen.update_layout(
+                font_family="Source Sans Pro, sans-serif",
+                height=600
+            )
+            st.plotly_chart(fig_selected_eigen, use_container_width=True)
+            st.dataframe(selected_eigenvector_df, use_container_width=True)
+        else:
+            st.warning("No Principal Components are strictly below the 80% threshold (PC1 alone exceeds 80%).")
 
 except Exception as e:
     st.error(f"Error loading data: {e}")
