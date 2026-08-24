@@ -26,13 +26,16 @@ try:
     # 1. Load Data
     raw_df = load_data(GITHUB_CSV_URL)
     
+    # Set DataFrame index to start at 1 instead of 0
+    raw_df.index = raw_df.index + 1
+    
     # Keep numeric columns for PCA calculations
     numeric_df = raw_df.select_dtypes(include=[np.number])
 
     # 3. Perform Normalization (StandardScaler: mean=0, std=1)
     scaler = StandardScaler()
     normalized_array = scaler.fit_transform(numeric_df)
-    normalized_df = pd.DataFrame(normalized_array, columns=numeric_df.columns)
+    normalized_df = pd.DataFrame(normalized_array, columns=numeric_df.columns, index=numeric_df.index)
 
     # 4. Perform Correlation Matrix Analysis (Lower Triangle Only)
     corr_matrix = normalized_df.corr()
