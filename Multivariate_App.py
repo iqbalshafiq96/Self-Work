@@ -9,6 +9,9 @@ from sklearn.preprocessing import StandardScaler
 # Page configuration
 st.set_page_config(page_title="Multivariate PCA Analysis", layout="wide")
 st.title("Multivariate Statistical Process Control (MSPC)")
+st.caption(
+    "Developed by Iqbal SHERPA 20260818. Contact me for further information"
+    " @iqbalshafiq96@gmail.com")
 
 # Case Study Reference Image & Data URLs
 IMAGE_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case.png"
