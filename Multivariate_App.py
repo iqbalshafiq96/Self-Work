@@ -113,26 +113,54 @@ try:
         st.subheader("Normalized Data Table")
         st.dataframe(normalized_df, use_container_width=True)
 
-    # Tab 3: Interactive Correlation Matrix (Lower Triangle + Diagonal 1s)
+    # Tab 3: Correlation Matrix Analysis (Formatted identically to Tab 4)
     with tab3:
-        st.subheader("Correlation Matrix")
-        fig_corr = px.imshow(
-            lower_corr,
-            labels=dict(color="Correlation"),
-            x=lower_corr.columns,
-            y=lower_corr.index,
-            color_continuous_scale="RdBu",
-            zmin=-1, zmax=1,
-            text_auto=".2f"
-        )
-        fig_corr.update_layout(
-            font_family="Source Sans Pro, sans-serif",
-            xaxis_showgrid=False,
-            yaxis_showgrid=False,
-            height=600,
-            margin=dict(l=0, r=0, t=30, b=0)
-        )
-        st.plotly_chart(fig_corr, use_container_width=True)
+        st.subheader("Correlation Matrix Analysis")
+        
+        # Exact same side-by-side column proportions as Tab 4
+        left_col_corr, right_col_corr = st.columns([1.4, 1])
+        
+        # Left Side: Correlation Heatmap
+        with left_col_corr:
+            st.markdown("**Correlation Matrix (Lower Triangle & Diagonal)**")
+            fig_corr = px.imshow(
+                lower_corr,
+                labels=dict(color="Correlation"),
+                x=lower_corr.columns,
+                y=lower_corr.index,
+                color_continuous_scale="RdBu",
+                zmin=-1, zmax=1,
+                text_auto=".2f"
+            )
+            # Matching exact height (580px) and margin treatment from Tab 4
+            fig_corr.update_layout(
+                font_family="Source Sans Pro, sans-serif",
+                xaxis_showgrid=False,
+                yaxis_showgrid=False,
+                height=580,
+                margin=dict(l=0, r=0, t=30, b=0)
+            )
+            st.plotly_chart(fig_corr, use_container_width=True)
+            st.dataframe(lower_corr, use_container_width=True)
+
+        # Right Side: Correlation Key Metrics & Parameter Table
+        with right_col_corr:
+            st.markdown("**Correlation Summary & Feature Insights**")
+            
+            # Extract off-diagonal correlations to compute statistics
+            off_diag_corrs = corr_matrix.values[np.tril_indices_from(corr_matrix.values, k=-1)]
+            
+            m1, m2 = st.columns(2)
+            with m1:
+                st.metric(label="Total Numeric Variables", value=len(numeric_df.columns))
+                st.metric(label="Max Positive Correlation", value=f"{np.max(off_diag_corrs):.3f}")
+            with m2:
+                st.metric(label="Average Absolute Correlation", value=f"{np.mean(np.abs(off_diag_corrs)):.3f}")
+                st.metric(label="Max Negative Correlation", value=f"{np.min(off_diag_corrs):.3f}")
+
+            st.markdown("---")
+            st.markdown("**Full Correlation Matrix Values**")
+            st.dataframe(corr_matrix, height=350, use_container_width=True)
 
     # Tab 4: Combined Eigenvalue Matrix & Cumulative Distribution Plot Side-by-Side
     with tab4:
