@@ -8,7 +8,29 @@ from sklearn.preprocessing import StandardScaler
 
 # Page configuration
 st.set_page_config(page_title="Multivariate PCA Analysis", layout="wide")
+
+# Header Title
 st.title("Multivariate Statistical Process Control (MSPC)")
+
+# ---------------------------------------------------------
+# TOP-LEVEL WORKFLOW NAVIGATION (Below MSPC Title)
+# ---------------------------------------------------------
+if "phase_selection" not in st.session_state:
+    st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
+
+# Horizontal navigation toggle positioned directly under the title
+phase_selection = st.segmented_control(
+    "Workflow Navigation",
+    options=[
+        "Phase 1: Offline Modelling and Monitoring Setup",
+        "Phase 2: Online Monitoring and Fault Detection"
+    ],
+    default=st.session_state.phase_selection,
+    label_visibility="collapsed"
+)
+
+st.session_state.phase_selection = phase_selection
+st.markdown("---")
 
 # Case Study Reference Image & Data URLs
 IMAGE_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case.png"
@@ -24,60 +46,6 @@ def load_data(url):
     df = pd.read_csv(url, sep=None, engine='python', encoding='utf-8-sig')
     df.columns = df.columns.astype(str).str.strip().str.replace('\ufeff', '')
     return df
-
-# ---------------------------------------------------------
-# MODERN SIDEBAR NAVIGATION (Session State + Custom CSS)
-# ---------------------------------------------------------
-st.markdown("""
-    <style>
-    /* Modern Nav Card Buttons in Sidebar */
-    div[data-testid="stSidebar"] div.stButton > button {
-        width: 100%;
-        border-radius: 8px;
-        border: 1px solid #dcdfe6;
-        padding: 10px 14px;
-        font-weight: 500;
-        transition: all 0.2s ease-in-out;
-        background-color: #ffffff;
-        color: #2c3e50;
-        margin-bottom: 4px;
-    }
-    
-    div[data-testid="stSidebar"] div.stButton > button:hover {
-        border-color: #1F77B4;
-        color: #1F77B4;
-        background-color: #f0f7fc;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-if "phase_selection" not in st.session_state:
-    st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
-
-st.sidebar.markdown("## ⚙️ Workflow Navigation")
-st.sidebar.caption("Switch between offline modeling and online monitoring:")
-
-p1_active = st.session_state.phase_selection.startswith("Phase 1")
-p2_active = st.session_state.phase_selection.startswith("Phase 2")
-
-if st.sidebar.button(
-    "📊 Phase 1: Offline Setup", 
-    type="primary" if p1_active else "secondary", 
-    use_container_width=True
-):
-    st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
-    st.rerun()
-
-if st.sidebar.button(
-    "🚨 Phase 2: Online Monitoring", 
-    type="primary" if p2_active else "secondary", 
-    use_container_width=True
-):
-    st.session_state.phase_selection = "Phase 2: Online Monitoring and Fault Detection"
-    st.rerun()
-
-st.sidebar.markdown("---")
-phase_selection = st.session_state.phase_selection
 
 try:
     # ---------------------------------------------------------
