@@ -115,20 +115,32 @@ try:
         t2_summary_df = pc_scores_df.copy()
         t2_summary_df['Hotelling_T2'] = t2_scores
         
-        # Control Limit Calculation (UCL for T^2 via F-Distribution at alpha=0.05)
-        N = len(normalized_df)
+        # Parameters for Statistical Control Limits
+        n = len(normalized_df)
         A = num_components_selected
-        alpha = 0.05
+        df1 = A
+        df2 = n - A
         
-        if N > A:
-            ucl_t2 = ((A * (N - 1)) / (N - A)) * f.ppf(1 - alpha, A, N - A)
+        if n > A:
+            # F values for alpha = 0.05 and alpha = 0.01
+            f_val_05 = f.ppf(1 - 0.05, df1, df2)
+            f_val_01 = f.ppf(1 - 0.01, df1, df2)
+            
+            # Warning Limit (alpha = 0.05)
+            t2_warning_limit = (A * (n - 1) / (n - A)) * f_val_05
+            
+            # Control Limit (alpha = 0.01)
+            t2_control_limit = (A * (n - 1) / (n - A)) * f_val_01
         else:
-            ucl_t2 = np.nan
+            f_val_05 = f_val_01 = np.nan
+            t2_warning_limit = t2_control_limit = np.nan
             
     else:
         pc_scores_df = pd.DataFrame()
         t2_summary_df = pd.DataFrame()
-        ucl_t2 = np.nan
+        t2_warning_limit = t2_control_limit = np.nan
+        df1 = df2 = n = A = 0
+        f_val_05 = f_val_01 = np.nan
 
     # --- Streamlit Tabs Output ---
     tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
@@ -165,7 +177,6 @@ try:
         
         left_col_corr, right_col_corr = st.columns([1.4, 1])
         
-        # Left Side: Correlation Heatmap
         with left_col_corr:
             st.markdown("**Correlation Matrix (Lower Triangle & Diagonal)**")
             fig_corr = px.imshow(
@@ -187,7 +198,6 @@ try:
             st.plotly_chart(fig_corr, use_container_width=True)
             st.dataframe(lower_corr, use_container_width=True)
 
-        # Right Side: Interactive Parameter Scatter Plot
         with right_col_corr:
             st.markdown("**Interactive Parameter Scatter Plot**")
             cols_list = list(numeric_df.columns)
@@ -390,9 +400,9 @@ try:
         
         st.markdown(
             """
-            <div style="font-family: 'Source Sans Pro', sans-serif; font-size: 1.1rem; margin-bottom: 1.2rem; color: #31333F;">
-                <strong>T² Statistic Formula:</strong> &nbsp;
-                <em>T²<sub>i</sub> = &sum; ( PC<sub>j, i</sub>² / &lambda;<sub>j</sub> )</em>
+            <div style="font-family: 'Source Sans Pro', sans-serif; font-size: 1.05rem; margin-bottom: 1.2rem; color: #31333F;">
+                <strong>T² Limit Formula:</strong> &nbsp;
+                <em>T²<sub>&alpha;</sub> = [ A &times; (n - 1) / (n - A) ] &times; F<sub>(A, n-A, &alpha;)</sub></em>
             </div>
             """, 
             unsafe_allow_html=True
@@ -401,11 +411,10 @@ try:
         if num_components_selected > 0:
             left_col_t2, right_col_t2 = st.columns([1.3, 1])
             
-            # Left Side: Table of PC Scores + Hotelling T2 Column
+            # Left Side: Data Table with PC Scores and T2 Column
             with left_col_t2:
                 st.markdown("**PC Scores Matrix with Computed Hotelling T²**")
                 
-                # Highlight Hotelling T^2 column visually
                 st.dataframe(
                     t2_summary_df.style.background_gradient(
                         subset=['Hotelling_T2'], 
@@ -414,16 +423,18 @@ try:
                     use_container_width=True
                 )
                 
-                if not np.isnan(ucl_t2):
-                    st.caption(f"**95% Upper Control Limit (UCL):** `{ucl_t2:.4f}`")
+                if not np.isnan(t2_control_limit):
+                    st.caption(f"**Sample Count (n):** `{n}` | **Selected Components (A):** `{A}`")
+                    st.caption(f"**F({df1}, {df2}, 0.05):** `{f_val_05:.4f}` &nbsp;|&nbsp; **Warning Limit (95%):** `{t2_warning_limit:.4f}`")
+                    st.caption(f"**F({df1}, {df2}, 0.01):** `{f_val_01:.4f}` &nbsp;|&nbsp; **Control Limit (99%):** `{t2_control_limit:.4f}`")
 
-            # Right Side: Control Chart of Hotelling T^2 per Sample
+            # Right Side: Hotelling T2 Chart with Warning & Control Limits
             with right_col_t2:
                 st.markdown("**Hotelling T² Control Chart**")
                 
                 fig_t2 = go.Figure()
                 
-                # T2 values scatter/line plot
+                # T2 values line/scatter plot
                 fig_t2.add_trace(go.Scatter(
                     x=t2_summary_df.index,
                     y=t2_summary_df['Hotelling_T2'],
@@ -433,20 +444,39 @@ try:
                     marker=dict(size=6)
                 ))
                 
-                # Upper Control Limit Line
-                if not np.isnan(ucl_t2):
+                # Warning Limit Line (alpha = 0.05)
+                if not np.isnan(t2_warning_limit):
                     fig_t2.add_shape(
                         type="line",
                         x0=t2_summary_df.index.min(),
-                        y0=ucl_t2,
+                        y0=t2_warning_limit,
                         x1=t2_summary_df.index.max(),
-                        y1=ucl_t2,
+                        y1=t2_warning_limit,
+                        line=dict(color="Orange", width=2, dash="dot"),
+                    )
+                    fig_t2.add_annotation(
+                        x=t2_summary_df.index.max(),
+                        y=t2_warning_limit,
+                        text=f"Warning Limit (95%): {t2_warning_limit:.2f}",
+                        showarrow=False,
+                        yshift=10,
+                        font=dict(color="Orange")
+                    )
+
+                # Control Limit Line (alpha = 0.01)
+                if not np.isnan(t2_control_limit):
+                    fig_t2.add_shape(
+                        type="line",
+                        x0=t2_summary_df.index.min(),
+                        y0=t2_control_limit,
+                        x1=t2_summary_df.index.max(),
+                        y1=t2_control_limit,
                         line=dict(color="Red", width=2, dash="dash"),
                     )
                     fig_t2.add_annotation(
                         x=t2_summary_df.index.max(),
-                        y=ucl_t2,
-                        text=f"UCL (95%): {ucl_t2:.2f}",
+                        y=t2_control_limit,
+                        text=f"Control Limit (99%): {t2_control_limit:.2f}",
                         showarrow=False,
                         yshift=10,
                         font=dict(color="Red")
