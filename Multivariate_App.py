@@ -18,18 +18,17 @@ st.title("Multivariate Statistical Process Control (MSPC)")
 if "phase_selection" not in st.session_state:
     st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
 
-# Horizontal navigation toggle positioned directly under the title
+# Horizontal navigation toggle using key-binding to avoid double-click issues
 phase_selection = st.segmented_control(
     "Workflow Navigation",
     options=[
         "Phase 1: Offline Modelling and Monitoring Setup",
         "Phase 2: Online Monitoring and Fault Detection"
     ],
-    default=st.session_state.phase_selection,
+    key="phase_selection",
     label_visibility="collapsed"
 )
 
-st.session_state.phase_selection = phase_selection
 st.markdown("---")
 
 # Case Study Reference Image & Data URLs
