@@ -116,7 +116,7 @@ try:
 
     # Tab 3: Interactive Correlation Matrix (Lower Triangle + Diagonal 1s)
     with tab3:
-        st.subheader("Correlation Matrix (Lower Triangle including Diagonal)")
+        st.subheader("Correlation Matrix")
         fig_corr = px.imshow(
             lower_corr,
             labels=dict(color="Correlation"),
@@ -136,7 +136,7 @@ try:
 
     # Tab 4: Eigenvalue Matrix (Diagonal only)
     with tab4:
-        st.subheader("Eigenvalue Matrix (Diagonal Only)")
+        st.subheader("Eigenvalue Matrix")
         fig_eigen_val = px.imshow(
             eigenvalue_matrix_df,
             labels=dict(color="Eigenvalue"),
