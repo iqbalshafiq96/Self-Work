@@ -9,16 +9,16 @@ from sklearn.preprocessing import StandardScaler
 st.set_page_config(page_title="Multivariate PCA Analysis", layout="wide")
 st.title("Multivariate PCA Analysis")
 
-# Direct Raw URL of your GitHub CSV file
+# Direct GitHub link
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6.csv"
 
 @st.cache_data
 def load_data(url):
-    """Loads CSV data from GitHub, auto-converting URL and detecting delimiter (semicolon vs comma)."""
+    """Loads CSV data from GitHub, auto-converting URL and detecting delimiter."""
     if "github.com" in url and "/blob/" in url:
         url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
     
-    #sep=None with engine='python' auto-detects semicolons vs commas
+    # Auto-detect delimiters (handles semicolons vs commas)
     df = pd.read_csv(url, sep=None, engine='python')
     return df
 
@@ -43,7 +43,11 @@ try:
     lower_corr[mask_upper] = np.nan
 
     # 5. Transform Correlation Matrix into Eigenvector matrix and Eigenvalues
-    eigenvalues, eigenvectors = np.linalg.eig(corr_matrix)
+    raw_eigenvalues, raw_eigenvectors = np.linalg.eig(corr_matrix.values)
+    
+    # Convert complex values to real numbers to avoid JSON serialization error
+    eigenvalues = np.real(raw_eigenvalues)
+    eigenvectors = np.real(raw_eigenvectors)
     
     # Sort eigenvalues and eigenvectors in descending order
     sorted_index = np.argsort(eigenvalues)[::-1]
@@ -128,14 +132,14 @@ try:
         # Individual variance bar plot
         fig_cum.add_trace(go.Bar(
             x=components, 
-            y=var_explained, 
+            y=var_explained.tolist(), 
             name="Individual Variance"
         ))
         
         # Cumulative variance line plot
         fig_cum.add_trace(go.Scatter(
             x=components, 
-            y=cum_var_explained, 
+            y=cum_var_explained.tolist(), 
             name="Cumulative Variance", 
             mode="lines+markers"
         ))
@@ -147,8 +151,7 @@ try:
             y0=0.8,
             x1=len(components)-0.5,
             y1=0.8,
-            line=dict(color="Red", width=2, dash="dash"),
-            name="80% Threshold"
+            line=dict(color="Red", width=2, dash="dash")
         )
 
         fig_cum.update_layout(
