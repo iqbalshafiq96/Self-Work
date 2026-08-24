@@ -13,7 +13,7 @@ st.title("Multivariate Statistical Process Control (MSPC)")
 # Case Study Reference Image & Data URLs
 IMAGE_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case.png"
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv"
-GITHUB_CASE0_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case0.csv"
+GITHUB_CASE0_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"
 
 @st.cache_data
 def load_data(url):
