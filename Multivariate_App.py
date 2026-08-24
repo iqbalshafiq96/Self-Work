@@ -114,8 +114,8 @@ try:
             multiplier = (A * (n - 1)) / (n - A)
             
             # Upper-tail critical values F_(A, n-A, alpha)
-            f_val_05 = f.ppf(1 - 0.05, df1, df2)  # Warning Limit (alpha = 0.05)
-            f_val_01 = f.ppf(1 - 0.01, df1, df2)  # Control Limit (alpha = 0.01)
+            f_val_05 = f.ppf(1 - 0.05, df1, df2)  # Warning Limit (95%)
+            f_val_01 = f.ppf(1 - 0.01, df1, df2)  # Control Limit (99%)
             
             # Final T^2 limits
             t2_warning_limit = multiplier * f_val_05
@@ -276,7 +276,7 @@ try:
 
     with tab6:
         st.subheader("Principal Component Scores Computation")
-        st.markdown("**PC Scores = Normalized Data * Selected Eigenvectors**")
+        st.latex(r"\text{PC Scores} = \text{Normalized Data} \times \text{Selected Eigenvectors}")
         
         if num_components_selected > 0:
             left_col_pc, right_col_pc = st.columns([1.4, 1])
@@ -326,7 +326,8 @@ try:
     with tab7:
         st.subheader("Hotelling T² Statistical Limits & Control Chart")
         
-        st.markdown("**T² Limit Formula:** T²_alpha = [ A * (n - 1) / (n - A) ] * F(A, n - A, alpha)")
+        # Display explicit mathematical formula
+        st.latex(r"T^2_{\alpha} = \frac{A(n-1)}{n-A} F_{A,\, n-A,\, \alpha}")
         
         if num_components_selected > 0:
             left_col_t2, right_col_t2 = st.columns([1.2, 1.2])
@@ -346,16 +347,16 @@ try:
                 
                 metric_col1, metric_col2 = st.columns(2)
                 with metric_col1:
-                    st.write(f"**Samples (n):** `{n}`")
-                    st.write(f"**Components (A):** `{A}`")
-                    st.write(f"**Degrees of Freedom (df1, df2):** `({df1}, {df2})`")
-                    st.write(f"**Multiplier [A(n-1)/(n-A)]:** `{multiplier:.4f}`")
+                    st.write(f"**Samples ($n$):** `{n}`")
+                    st.write(f"**Components ($A$):** `{A}`")
+                    st.write(f"**Degrees of Freedom ($\nu_1, \nu_2$):** `({df1}, {df2})`")
+                    st.write(f"**Multiplier $\\left(\\frac{{A(n-1)}}{{n-A}}\\right)$:** `{multiplier:.4f}`")
                 
                 with metric_col2:
-                    st.write(f"**F({df1}, {df2}, 0.05):** `{f_val_05:.4f}`")
-                    st.write(f"**F({df1}, {df2}, 0.01):** `{f_val_01:.4f}`")
-                    st.write(f"**Warning Limit (alpha = 0.05):** `{t2_warning_limit:.4f}`")
-                    st.write(f"**Control Limit (alpha = 0.01):** `{t2_control_limit:.4f}`")
+                    st.write(f"**$F_{{{df1}, {df2}, 0.05}}$:** `{f_val_05:.4f}`")
+                    st.write(f"**$F_{{{df1}, {df2}, 0.01}}$:** `{f_val_01:.4f}`")
+                    st.write(f"**Warning Limit (alpha=0.05):** `{t2_warning_limit:.4f}`")
+                    st.write(f"**Control Limit (alpha=0.01):** `{t2_control_limit:.4f}`")
 
             with right_col_t2:
                 st.markdown("**Hotelling T² Control Chart**")
@@ -385,7 +386,7 @@ try:
                     fig_t2.add_annotation(
                         x=t2_summary_df.index.max(),
                         y=t2_warning_limit,
-                        text=f"Warning Limit (alpha=0.05): {t2_warning_limit:.2f}",
+                        text=f"Warning Limit (95%): {t2_warning_limit:.2f}",
                         showarrow=False,
                         yshift=10,
                         font=dict(color="Orange")
@@ -404,7 +405,7 @@ try:
                     fig_t2.add_annotation(
                         x=t2_summary_df.index.max(),
                         y=t2_control_limit,
-                        text=f"Control Limit (alpha=0.01): {t2_control_limit:.2f}",
+                        text=f"Control Limit (99%): {t2_control_limit:.2f}",
                         showarrow=False,
                         yshift=10,
                         font=dict(color="Red")
