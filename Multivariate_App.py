@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from scipy.stats import f
 from sklearn.preprocessing import StandardScaler
 
 # Page configuration
@@ -84,6 +85,8 @@ try:
     # Select components strictly BELOW the 80% threshold (< 0.80)
     num_components_selected = int(np.sum(cum_var_explained < 0.80))
     selected_pc_names = pc_names[:num_components_selected]
+    selected_eigenvectors = sorted_eigenvectors[:, :num_components_selected]
+    selected_eigenvalues = sorted_eigenvalues[:num_components_selected]
     selected_eigenvector_df = eigenvector_df[selected_pc_names]
 
     # Dynamic color mapping: Red for strictly <80% threshold, Blue for >=80%
@@ -100,21 +103,46 @@ try:
             columns=selected_pc_names,
             index=normalized_df.index
         )
+        
+        # --- Hotelling T^2 Computation ---
+        # Component-wise T2 terms: (t_ij^2) / lambda_j
+        t2_components = (pc_scores_array ** 2) / selected_eigenvalues
+        
+        # T^2 Statistic per sample (Sum across selected PCs)
+        t2_scores = np.sum(t2_components, axis=1)
+        
+        # Combine PC Scores with T^2 Column
+        t2_summary_df = pc_scores_df.copy()
+        t2_summary_df['Hotelling_T2'] = t2_scores
+        
+        # Control Limit Calculation (UCL for T^2 via F-Distribution at alpha=0.05)
+        N = len(normalized_df)
+        A = num_components_selected
+        alpha = 0.05
+        
+        if N > A:
+            ucl_t2 = ((A * (N - 1)) / (N - A)) * f.ppf(1 - alpha, A, N - A)
+        else:
+            ucl_t2 = np.nan
+            
     else:
         pc_scores_df = pd.DataFrame()
+        t2_summary_df = pd.DataFrame()
+        ucl_t2 = np.nan
 
     # --- Streamlit Tabs Output ---
-    tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "Case Study Reference",
         "Raw Data", 
         "Normalized Data", 
         "Correlation Matrix", 
         "Eigenvalue Matrix", 
         "Selected Eigenvector matrix",
-        "Principal Component Computation"
+        "Principal Component Computation",
+        "Hotelling T2 Calculation"
     ])
 
-    # Tab 0: Case Study Reference (Scaled to 80% width centered)
+    # Tab 0: Case Study Reference
     with tab0:
         st.subheader("Case Study Reference Diagram")
         col1, col2, col3 = st.columns([1, 8, 1])
@@ -159,7 +187,7 @@ try:
             st.plotly_chart(fig_corr, use_container_width=True)
             st.dataframe(lower_corr, use_container_width=True)
 
-        # Right Side: Interactive Parameter Scatter Plot with Dropdown Selectors
+        # Right Side: Interactive Parameter Scatter Plot
         with right_col_corr:
             st.markdown("**Interactive Parameter Scatter Plot**")
             cols_list = list(numeric_df.columns)
@@ -208,13 +236,12 @@ try:
             )
             st.plotly_chart(fig_scatter, use_container_width=True)
 
-    # Tab 4: Combined Eigenvalue Matrix & Cumulative Distribution Plot Side-by-Side
+    # Tab 4: Eigenvalue Matrix & Cumulative Distribution Plot Side-by-Side
     with tab4:
         st.subheader("Eigenvalue Matrix & Cumulative Variance Analysis")
         
         left_col, right_col = st.columns([1.4, 1])
         
-        # Left Side: Eigenvalue Matrix Heatmap & Table
         with left_col:
             st.markdown("**Eigenvalue Matrix (Diagonal Only)**")
             fig_eigen_val = px.imshow(
@@ -233,12 +260,10 @@ try:
             st.plotly_chart(fig_eigen_val, use_container_width=True)
             st.dataframe(eigenvalue_matrix_df, use_container_width=True)
 
-        # Right Side: Cumulative Eigenvalue Distribution Plot
         with right_col:
             st.markdown("**Cumulative Eigenvalue Distribution Plot**")
             fig_cum = go.Figure()
             
-            # Individual variance bar plot with conditional color highlighting
             fig_cum.add_trace(go.Bar(
                 x=pc_names, 
                 y=var_explained.tolist(), 
@@ -246,7 +271,6 @@ try:
                 marker_color=bar_colors
             ))
             
-            # Cumulative variance line plot with matching marker colors
             fig_cum.add_trace(go.Scatter(
                 x=pc_names, 
                 y=cum_var_explained.tolist(), 
@@ -256,7 +280,6 @@ try:
                 marker=dict(color=bar_colors, size=8)
             ))
             
-            # 80% Threshold Reference Line
             fig_cum.add_shape(
                 type="line",
                 x0=-0.5,
@@ -276,7 +299,7 @@ try:
             )
             st.plotly_chart(fig_cum, use_container_width=True)
 
-    # Tab 5: Selected Eigenvector Matrix (Strictly Below 80% Variance Threshold)
+    # Tab 5: Selected Eigenvector Matrix
     with tab5:
         st.subheader(f"Selected Eigenvector Matrix ({num_components_selected} Components strictly <80% Cumulative Variance)")
         if num_components_selected > 0:
@@ -298,11 +321,10 @@ try:
         else:
             st.warning("No Principal Components are strictly below the 80% threshold.")
 
-    # Tab 6: Principal Component Computation (Matrix Multiplication Result)
+    # Tab 6: Principal Component Computation
     with tab6:
         st.subheader("Principal Component Scores Computation")
         
-        # Streamlit Native Typography Styled Formula
         st.markdown(
             """
             <div style="font-family: 'Source Sans Pro', sans-serif; font-size: 1.1rem; margin-bottom: 1.2rem; color: #31333F;">
@@ -315,7 +337,6 @@ try:
         if num_components_selected > 0:
             left_col_pc, right_col_pc = st.columns([1.4, 1])
             
-            # Heatmap Visualization of Computed PC Scores
             with left_col_pc:
                 st.markdown("**Principal Component Scores Matrix**")
                 fig_pc_scores = px.imshow(
@@ -333,11 +354,9 @@ try:
                 )
                 st.plotly_chart(fig_pc_scores, use_container_width=True)
                 
-                # Native Streamlit Styled Dataframe Label
                 st.caption("Principal Component Scores Matrix Data Table")
                 st.dataframe(pc_scores_df, use_container_width=True)
             
-            # Interactive Scatter/Biplot of Selected Principal Components
             with right_col_pc:
                 st.markdown("**PC Scores Scatter Inspection**")
                 pc_cols = list(pc_scores_df.columns)
@@ -364,6 +383,86 @@ try:
                 st.plotly_chart(fig_pc_scatter, use_container_width=True)
         else:
             st.warning("No Principal Components available (0 components strictly below the 80% cumulative threshold).")
+
+    # Tab 7: Hotelling T^2 Calculation
+    with tab7:
+        st.subheader("Hotelling T² Calculation per Sample")
+        
+        st.markdown(
+            """
+            <div style="font-family: 'Source Sans Pro', sans-serif; font-size: 1.1rem; margin-bottom: 1.2rem; color: #31333F;">
+                <strong>T² Statistic Formula:</strong> &nbsp;
+                <em>T²<sub>i</sub> = &sum; ( PC<sub>j, i</sub>² / &lambda;<sub>j</sub> )</em>
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
+        
+        if num_components_selected > 0:
+            left_col_t2, right_col_t2 = st.columns([1.3, 1])
+            
+            # Left Side: Table of PC Scores + Hotelling T2 Column
+            with left_col_t2:
+                st.markdown("**PC Scores Matrix with Computed Hotelling T²**")
+                
+                # Highlight Hotelling T^2 column visually
+                st.dataframe(
+                    t2_summary_df.style.background_gradient(
+                        subset=['Hotelling_T2'], 
+                        cmap='YlOrRd'
+                    ).format("{:.4f}"),
+                    use_container_width=True
+                )
+                
+                if not np.isnan(ucl_t2):
+                    st.caption(f"**95% Upper Control Limit (UCL):** `{ucl_t2:.4f}`")
+
+            # Right Side: Control Chart of Hotelling T^2 per Sample
+            with right_col_t2:
+                st.markdown("**Hotelling T² Control Chart**")
+                
+                fig_t2 = go.Figure()
+                
+                # T2 values scatter/line plot
+                fig_t2.add_trace(go.Scatter(
+                    x=t2_summary_df.index,
+                    y=t2_summary_df['Hotelling_T2'],
+                    mode='lines+markers',
+                    name='Hotelling T²',
+                    line=dict(color='#1F77B4', width=2),
+                    marker=dict(size=6)
+                ))
+                
+                # Upper Control Limit Line
+                if not np.isnan(ucl_t2):
+                    fig_t2.add_shape(
+                        type="line",
+                        x0=t2_summary_df.index.min(),
+                        y0=ucl_t2,
+                        x1=t2_summary_df.index.max(),
+                        y1=ucl_t2,
+                        line=dict(color="Red", width=2, dash="dash"),
+                    )
+                    fig_t2.add_annotation(
+                        x=t2_summary_df.index.max(),
+                        y=ucl_t2,
+                        text=f"UCL (95%): {ucl_t2:.2f}",
+                        showarrow=False,
+                        yshift=10,
+                        font=dict(color="Red")
+                    )
+
+                fig_t2.update_layout(
+                    font_family="Source Sans Pro, sans-serif",
+                    xaxis_title="Sample Index",
+                    yaxis_title="Hotelling T² Score",
+                    height=520,
+                    margin=dict(l=0, r=0, t=30, b=0)
+                )
+                st.plotly_chart(fig_t2, use_container_width=True)
+
+        else:
+            st.warning("No Principal Components selected (<80% variance threshold) to calculate Hotelling T².")
 
 except Exception as e:
     st.error(f"Error loading data: {e}")
