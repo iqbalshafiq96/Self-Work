@@ -91,7 +91,7 @@ try:
         "Case Study Reference",
         "Raw Data", 
         "Normalized Data", 
-        "Correlation Analysis", 
+        "Correlation Matrix", 
         "Eigenvalue Matrix", 
         "Selected Eigenvector matrix"
     ])
@@ -113,69 +113,35 @@ try:
         st.subheader("Normalized Data Table")
         st.dataframe(normalized_df, use_container_width=True)
 
-    # Tab 3: Interactive Correlation Analysis (Heatmap + Scatter Plot Subtabs)
+    # Tab 3: Interactive Correlation Matrix (Lower Triangle + Diagonal 1s)
     with tab3:
-        st.subheader("Correlation Analysis")
-        sub_tab_corr, sub_tab_scatter = st.tabs(["Correlation Matrix Heatmap", "Parameter Pair Scatter Plot"])
+        st.subheader("Correlation Matrix")
+        fig_corr = px.imshow(
+            lower_corr,
+            labels=dict(color="Correlation"),
+            x=lower_corr.columns,
+            y=lower_corr.index,
+            color_continuous_scale="RdBu",
+            zmin=-1, zmax=1,
+            text_auto=".2f"
+        )
+        fig_corr.update_layout(
+            font_family="Source Sans Pro, sans-serif",
+            xaxis_showgrid=False,
+            yaxis_showgrid=False,
+            height=600,
+            margin=dict(l=0, r=0, t=30, b=0)
+        )
+        st.plotly_chart(fig_corr, use_container_width=True)
 
-        with sub_tab_corr:
-            fig_corr = px.imshow(
-                lower_corr,
-                labels=dict(color="Correlation"),
-                x=lower_corr.columns,
-                y=lower_corr.index,
-                color_continuous_scale="RdBu",
-                zmin=-1, zmax=1,
-                text_auto=".2f"
-            )
-            fig_corr.update_layout(
-                font_family="Source Sans Pro, sans-serif",
-                xaxis_showgrid=False,
-                yaxis_showgrid=False,
-                height=650,
-                margin=dict(l=20, r=20, t=30, b=20)
-            )
-            st.plotly_chart(fig_corr, use_container_width=True)
-
-        with sub_tab_scatter:
-            st.markdown("**Bivariate Parameter Scatter Inspection**")
-            cols_list = list(numeric_df.columns)
-            
-            c1, c2, c3 = st.columns([2, 2, 2])
-            with c1:
-                param_x = st.selectbox("Select Parameter X (Horizontal Axis)", cols_list, index=0)
-            with c2:
-                # Default parameter Y to second item if available
-                default_y = 1 if len(cols_list) > 1 else 0
-                param_y = st.selectbox("Select Parameter Y (Vertical Axis)", cols_list, index=default_y)
-            with c3:
-                calc_corr = numeric_df[param_x].corr(numeric_df[param_y])
-                st.metric(label=f"Pearson Correlation ({param_x} vs {param_y})", value=f"{calc_corr:.4f}")
-
-            fig_scatter = px.scatter(
-                numeric_df,
-                x=param_x,
-                y=param_y,
-                trendline="ols",
-                trendline_color_override="red",
-                title=f"Scatter Plot: {param_x} vs {param_y}",
-                hover_data=[numeric_df.index]
-            )
-            fig_scatter.update_layout(
-                font_family="Source Sans Pro, sans-serif",
-                height=550,
-                margin=dict(l=20, r=20, t=40, b=20)
-            )
-            st.plotly_chart(fig_scatter, use_container_width=True)
-
-    # Tab 4: Expanded Eigenvalue Matrix & Cumulative Distribution Plot Side-by-Side
+    # Tab 4: Combined Eigenvalue Matrix & Cumulative Distribution Plot Side-by-Side
     with tab4:
         st.subheader("Eigenvalue Matrix & Cumulative Variance Analysis")
         
-        # [1.3, 1] column ratio gives larger footprint to the Eigenvalue matrix
-        left_col, right_col = st.columns([1.3, 1])
+        # Allocating ~58% column ratio to left side to widen the Eigenvalue Matrix
+        left_col, right_col = st.columns([1.4, 1])
         
-        # Left Side: Expanded Eigenvalue Matrix (Padding minimized)
+        # Left Side: Eigenvalue Matrix Heatmap & Table
         with left_col:
             st.markdown("**Eigenvalue Matrix (Diagonal Only)**")
             fig_eigen_val = px.imshow(
@@ -186,10 +152,11 @@ try:
                 color_continuous_scale="Viridis",
                 text_auto=".3f"
             )
+            # Increased height and stripped horizontal margins for maximum display width
             fig_eigen_val.update_layout(
                 font_family="Source Sans Pro, sans-serif",
-                height=550,
-                margin=dict(l=10, r=10, t=30, b=10) # Reduced padding to maximize chart display area
+                height=580,
+                margin=dict(l=0, r=0, t=30, b=0)
             )
             st.plotly_chart(fig_eigen_val, use_container_width=True)
             st.dataframe(eigenvalue_matrix_df, use_container_width=True)
@@ -229,8 +196,8 @@ try:
                 xaxis_title="Principal Components",
                 yaxis_title="Explained Variance Ratio",
                 yaxis=dict(range=[0, 1.05]),
-                height=550,
-                margin=dict(l=10, r=10, t=30, b=10)
+                height=580,
+                margin=dict(l=0, r=0, t=30, b=0)
             )
             st.plotly_chart(fig_cum, use_container_width=True)
 
@@ -249,7 +216,7 @@ try:
             fig_selected_eigen.update_layout(
                 font_family="Source Sans Pro, sans-serif",
                 height=600,
-                margin=dict(l=20, r=20, t=30, b=20)
+                margin=dict(l=0, r=0, t=30, b=0)
             )
             st.plotly_chart(fig_selected_eigen, use_container_width=True)
             st.dataframe(selected_eigenvector_df, use_container_width=True)
