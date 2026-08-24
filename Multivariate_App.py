@@ -412,31 +412,39 @@ try:
     elif phase_selection == "Phase 2: Online Monitoring and Fault Detection":
         st.header("Phase 2: Real-time Online Fault Detection")
         
-        # 1. Load Online Case Data with BOM Fix & Offset Index starting at 1
+        # 1. Load Online Case Data with BOM Fix
         case0_raw_df = load_data(GITHUB_CASE0_URL)
-        case0_raw_df.index = case0_raw_df.index + 1
         
-        # Determine index & feature set (handling Optional Timestamp vs 1-based index)
-        if "Timestamp" in case0_raw_df.columns:
-            time_axis = case0_raw_df["Timestamp"]
-            numeric_case0_df = case0_raw_df.drop(columns=["Timestamp"]).select_dtypes(include=[np.number])
+        # 2. Extract Time-Based Index or create clean Sample Index
+        time_col = None
+        for col in case0_raw_df.columns:
+            if any(t_name in col.lower() for t_name in ['time', 'date', 'timestamp']):
+                time_col = col
+                break
+
+        if time_col is not None:
+            time_axis = pd.to_datetime(case0_raw_df[time_col], errors='ignore')
+            numeric_case0_df = case0_raw_df.drop(columns=[time_col]).select_dtypes(include=[np.number])
+            x_label = f"Time ({time_col})"
         else:
+            # Shift index starting at 1 if numeric index
+            case0_raw_df.index = case0_raw_df.index + 1
             time_axis = case0_raw_df.index
             numeric_case0_df = case0_raw_df.select_dtypes(include=[np.number])
+            x_label = "Sample Index"
 
-        # Align columns to Phase 1 variables strictly
+        # Align variables strictly with Phase 1
         numeric_case0_df = numeric_case0_df[numeric_df.columns]
 
-        # 2. Normalize Online Data using Phase 1 fitted Scaler
+        # 3. Normalize Online Data using Phase 1 fitted Scaler
         case0_norm_array = scaler.transform(numeric_case0_df)
         case0_norm_df = pd.DataFrame(case0_norm_array, columns=numeric_df.columns, index=time_axis)
 
-        # 3. Calculate Online Principal Component Scores
+        # 4. Compute Online PC Scores & Hotelling T² using Phase 1 parameters
         if num_components_selected > 0:
             case0_pc_scores_array = np.dot(case0_norm_df.values, selected_eigenvector_df.values)
             case0_pc_scores_df = pd.DataFrame(case0_pc_scores_array, columns=selected_pc_names, index=time_axis)
             
-            # 4. Compute Online Hotelling T² using Phase 1 Eigenvalues
             case0_t2_components = (case0_pc_scores_array ** 2) / selected_eigenvalues
             case0_t2_scores = np.sum(case0_t2_components, axis=1)
             
@@ -470,14 +478,15 @@ try:
                 
                 fig_online_t2 = go.Figure()
 
-                # Hotelling T2 Line
+                # Hotelling T2 Dynamic Trend Line
                 fig_online_t2.add_trace(go.Scatter(
                     x=time_axis,
                     y=case0_t2_scores,
                     mode='lines+markers',
                     name='Online Hotelling T²',
                     line=dict(color='#1F77B4', width=2),
-                    marker=dict(size=6)
+                    marker=dict(size=6, color='#1F77B4'),
+                    hovertemplate=f"<b>{x_label}:</b> %{{x}}<br><b>T² Score:</b> %{{y:.4f}}<extra></extra>"
                 ))
 
                 # Phase 1 Warning Limit Line
@@ -495,8 +504,8 @@ try:
                         y=t2_warning_limit,
                         text=f"Phase 1 Warning Limit (0.05): {t2_warning_limit:.2f}",
                         showarrow=False,
-                        yshift=10,
-                        font=dict(color="Orange")
+                        yshift=12,
+                        font=dict(color="Orange", size=11)
                     )
 
                 # Phase 1 Control Limit Line
@@ -514,20 +523,37 @@ try:
                         y=t2_control_limit,
                         text=f"Phase 1 Control Limit (0.01): {t2_control_limit:.2f}",
                         showarrow=False,
-                        yshift=10,
-                        font=dict(color="Red")
+                        yshift=12,
+                        font=dict(color="Red", size=11)
                     )
 
+                # Professional Spacing & Styling Layout for X-Axis
                 fig_online_t2.update_layout(
                     font_family="Source Sans Pro, sans-serif",
-                    xaxis_title="Sample Index",
-                    yaxis_title="Hotelling T² Score",
+                    xaxis=dict(
+                        title=x_label,
+                        showgrid=True,
+                        gridcolor="#EBF0F5",
+                        nticks=15,             # Prevents dense clustering of text labels
+                        tickangle=-30,         # Slightly tilts labels for high clarity
+                        showline=True,
+                        linecolor="#CCCCCC"
+                    ),
+                    yaxis=dict(
+                        title="Hotelling T² Score",
+                        showgrid=True,
+                        gridcolor="#EBF0F5",
+                        showline=True,
+                        linecolor="#CCCCCC"
+                    ),
                     height=580,
-                    margin=dict(l=0, r=0, t=30, b=0)
+                    margin=dict(l=40, r=40, t=30, b=60),
+                    hovermode="x unified"
                 )
+                
                 st.plotly_chart(fig_online_t2, use_container_width=True)
                 
-                # Show tabular T2 scores
+                # Tabular view of T2 scores
                 st.dataframe(
                     case0_t2_summary_df.style.background_gradient(
                         subset=['Hotelling_T2'], 
