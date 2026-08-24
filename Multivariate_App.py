@@ -14,9 +14,12 @@ st.title("Multivariate Statistical Process Control (MSPC)")
 IMAGE_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case.png"
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv"
 
-# Dataset Map for Phase 2 Cases
+# Dataset Map for Phase 2 Cases (Added Case 1, Case 2, and Case 3)
 CASE_URLS = {
     "Case 0": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
+    "Case 1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_1.csv",
+    "Case 2": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_2.csv",
+    "Case 3": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_3.csv",
     "Case 10": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_10.csv"
 }
 
@@ -444,7 +447,7 @@ try:
     # =========================================================
     elif phase_selection == "Phase 2: Online Monitoring and Fault Detection":
         
-        # Selectbox to pick between Case 0 and Case 10 with Explicit Key
+        # Selectbox to pick between registered Online Cases
         selected_case_label = st.selectbox(
             "Select Online Case Study Dataset:",
             options=list(CASE_URLS.keys()),
