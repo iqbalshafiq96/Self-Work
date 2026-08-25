@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from scipy.stats import f
+from scipy.stats import f, norm
 from sklearn.preprocessing import StandardScaler
 
 # Page configuration
@@ -163,6 +163,37 @@ try:
         spe_scores = np.sum(e_matrix_df.values ** 2, axis=1)
         spe_summary_df = pd.DataFrame({'SPE': spe_scores}, index=normalized_df.index)
 
+        # ---------------------------------------------------------
+        # SPE THRESHOLD (Jackson & Mudholkar Approximation via Z-Table)
+        # ---------------------------------------------------------
+        unselected_eigenvalues = sorted_eigenvalues[num_components_selected:]
+
+        if len(unselected_eigenvalues) > 0:
+            theta1 = np.sum(unselected_eigenvalues ** 1)
+            theta2 = np.sum(unselected_eigenvalues ** 2)
+            theta3 = np.sum(unselected_eigenvalues ** 3)
+
+            if theta1 > 0 and theta2 > 0:
+                h0 = 1 - (2 * theta1 * theta3) / (3 * (theta2 ** 2))
+                
+                # Z-values from Standard Normal Distribution
+                z_val_05 = norm.ppf(1 - 0.05)  # 1.6449 (95%)
+                z_val_01 = norm.ppf(1 - 0.01)  # 2.3263 (99%)
+
+                def calc_spe_limit(z_score):
+                    term1 = (z_score * np.sqrt(2 * theta2 * (h0 ** 2))) / theta1
+                    term2 = (theta2 * h0 * (h0 - 1)) / (theta1 ** 2)
+                    return theta1 * ((1 + term1 + term2) ** (1 / h0))
+
+                spe_warning_limit = calc_spe_limit(z_val_05)
+                spe_control_limit = calc_spe_limit(z_val_01)
+            else:
+                theta1 = theta2 = theta3 = h0 = z_val_05 = z_val_01 = np.nan
+                spe_warning_limit = spe_control_limit = np.nan
+        else:
+            theta1 = theta2 = theta3 = h0 = z_val_05 = z_val_01 = np.nan
+            spe_warning_limit = spe_control_limit = 0.0
+
     else:
         pc_scores_df = pd.DataFrame()
         t2_summary_df = pd.DataFrame()
@@ -170,6 +201,8 @@ try:
         pvt_df = pd.DataFrame()
         spe_summary_df = pd.DataFrame()
         t2_warning_limit = t2_control_limit = np.nan
+        spe_warning_limit = spe_control_limit = np.nan
+        theta1 = theta2 = theta3 = h0 = z_val_05 = z_val_01 = np.nan
         df1 = df2 = n = A = multiplier = 0
         f_val_05 = f_val_01 = np.nan
 
@@ -464,32 +497,51 @@ try:
                 st.warning("No Principal Components selected to compute Hotelling T².")
 
         with tab8:
-            st.subheader("Squared Prediction Error (SPE) & Residual E Matrix")
+            st.subheader("Squared Prediction Error (SPE) Statistical Limits & Control Chart")
             st.markdown(
                 "**Formulas:**  \n"
-                "• $PV^T = \\text{PC Scores} \\times P^T$ *(where $P$ is the Selected Eigenvector Matrix)*  \n"
+                "• $PV^T = \\text{PC Scores} \\times P^T$ *(where $P$ is Selected Eigenvector Matrix)*  \n"
                 "• $E = \\text{Normalized Data} - PV^T$  \n"
-                "• $\\text{SPE} = \\sum_{j=1}^{p} E_{ij}^2$ *(Row-wise sum of squared residual values)*"
+                "• $\\text{SPE} = \\sum_{j=1}^{p} E_{ij}^2$ *(Row-wise sum of squared residuals)*  \n"
+                "• **Jackson-Mudholkar Limit Formula:**  \n"
+                "  $Q_{\\alpha} = \\theta_1 \\left[ 1 + \\frac{z_{\\alpha} \\sqrt{2 \\theta_2 h_0^2}}{\\theta_1} + \\frac{\\theta_2 h_0 (h_0 - 1)}{\\theta_1^2} \\right]^{\\frac{1}{h_0}}$  \n"
+                "  *(where $\\theta_i = \\sum_{j=A+1}^{p} \\lambda_j^i$ for non-selected eigenvalues, $h_0 = 1 - \\frac{2 \\theta_1 \\theta_3}{3 \\theta_2^2}$)*"
             )
 
             if num_components_selected > 0:
-                col_e_table, col_spe_plot = st.columns([1.2, 1.2])
+                left_col_spe, right_col_spe = st.columns([1.2, 1.2])
 
-                with col_e_table:
-                    st.markdown("**Residual $E$ Table (Normalized Data - $PV^T$)**")
+                with left_col_spe:
+                    st.markdown("**Sample SPE Scores & Residual Matrix $E$**")
                     st.dataframe(
-                        e_matrix_df.style.format("{:.4f}"),
+                        spe_summary_df.style.background_gradient(
+                            subset=['SPE'], 
+                            cmap='YlOrRd'
+                        ).format("{:.4f}"),
                         use_container_width=True
                     )
+                    
+                    st.markdown("---")
+                    st.markdown("### Formula Breakdown & Calculated Metrics")
+                    
+                    spe_metric_col1, spe_metric_col2 = st.columns(2)
+                    with spe_metric_col1:
+                        st.write(f"**Unselected Eigenvalues (p - A):** `{len(unselected_eigenvalues)}`")
+                        st.write(f"**Theta 1 (θ₁):** `{theta1:.4f}`")
+                        st.write(f"**Theta 2 (θ₂):** `{theta2:.4f}`")
+                        st.write(f"**Theta 3 (θ₃):** `{theta3:.4f}`")
+                        st.write(f"**Exponent (h₀):** `{h0:.4f}`")
+                    
+                    with spe_metric_col2:
+                        st.write(f"**Z(0.05) [95%]:** `{z_val_05:.4f}`")
+                        st.write(f"**Z(0.01) [99%]:** `{z_val_01:.4f}`")
+                        st.write(f"**Warning Limit (alpha = 0.05):** `{spe_warning_limit:.4f}`")
+                        st.write(f"**Control Limit (alpha = 0.01):** `{spe_control_limit:.4f}`")
 
-                with col_spe_plot:
-                    st.markdown("**Calculated SPE Scores & Baseline Control Chart**")
-                    st.dataframe(
-                        spe_summary_df.style.format("{:.4f}"),
-                        use_container_width=True
-                    )
-
+                with right_col_spe:
+                    st.markdown("**SPE Control Chart**")
                     fig_spe = go.Figure()
+                    
                     fig_spe.add_trace(go.Scatter(
                         x=spe_summary_df.index,
                         y=spe_summary_df['SPE'],
@@ -498,14 +550,52 @@ try:
                         line=dict(color='#2CA02C', width=2),
                         marker=dict(size=6)
                     ))
+
+                    if not np.isnan(spe_warning_limit):
+                        fig_spe.add_shape(
+                            type="line",
+                            x0=spe_summary_df.index.min(),
+                            y0=spe_warning_limit,
+                            x1=spe_summary_df.index.max(),
+                            y1=spe_warning_limit,
+                            line=dict(color="Orange", width=2, dash="dot")
+                        )
+                        fig_spe.add_annotation(
+                            x=spe_summary_df.index.max(),
+                            y=spe_warning_limit,
+                            text=f"Warning Limit (alpha=0.05): {spe_warning_limit:.2f}",
+                            showarrow=False,
+                            yshift=10,
+                            font=dict(color="Orange")
+                        )
+
+                    if not np.isnan(spe_control_limit):
+                        fig_spe.add_shape(
+                            type="line",
+                            x0=spe_summary_df.index.min(),
+                            y0=spe_control_limit,
+                            x1=spe_summary_df.index.max(),
+                            y1=spe_control_limit,
+                            line=dict(color="Red", width=2, dash="dash")
+                        )
+                        fig_spe.add_annotation(
+                            x=spe_summary_df.index.max(),
+                            y=spe_control_limit,
+                            text=f"Control Limit (alpha=0.01): {spe_control_limit:.2f}",
+                            showarrow=False,
+                            yshift=10,
+                            font=dict(color="Red")
+                        )
+
                     fig_spe.update_layout(
                         font_family="Source Sans Pro, sans-serif",
                         xaxis_title="Sample Index",
                         yaxis_title="SPE Score",
-                        height=420,
+                        height=580,
                         margin=dict(l=0, r=0, t=30, b=0)
                     )
                     st.plotly_chart(fig_spe, use_container_width=True)
+
             else:
                 st.warning("No Principal Components selected to compute Residual E Table and SPE.")
 
