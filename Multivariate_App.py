@@ -224,20 +224,27 @@ try:
 
         with tab0:
             st.subheader("Case Study Reference Diagram")
+            st.caption("Process schematic detailing sensor tag locations across the system.")
             col1, col2, col3 = st.columns([1, 8, 1])
             with col2:
                 st.image(IMAGE_URL, use_container_width=True)
 
         with tab1:
             st.subheader("Raw Data Table")
+            st.caption("Baseline Normal Operating Conditions (NOC) training dataset collected from historical plant operation.")
             st.dataframe(raw_df, use_container_width=True)
 
         with tab2:
             st.subheader("Normalized Data Table")
+            st.caption("Auto-scaled dataset with zero mean and unit variance ($Z = \\frac{X - \\mu}{\\sigma}$) to eliminate parameter unit biases.")
             st.dataframe(normalized_df, use_container_width=True)
 
         with tab3:
             st.subheader("Correlation Matrix & Bivariate Parameter Inspection")
+            st.markdown(
+                "The **Correlation Matrix** displays linear interactions between operating parameters. "
+                "Values near **+1.0** indicate strong positive linear correlation, **-1.0** indicate strong negative correlation, and **0.0** indicate no linear relationship."
+            )
             left_col_corr, right_col_corr = st.columns([1.4, 1])
             
             with left_col_corr:
@@ -295,6 +302,10 @@ try:
 
         with tab4:
             st.subheader("Eigenvalue Matrix & Cumulative Variance Analysis")
+            st.markdown(
+                "An **Eigenvalue** ($\lambda$) represents the variance captured along its corresponding **Eigenvector** (the new principal component axis shift). "
+                "Formula: $\\mathbf{R}\\mathbf{v} = \\lambda \\mathbf{v}$, where $\\mathbf{R}$ is the correlation matrix and $\\mathbf{v}$ is the eigenvector."
+            )
             left_col, right_col = st.columns([1.4, 1])
             
             with left_col:
@@ -334,6 +345,7 @@ try:
 
         with tab5:
             st.subheader(f"Selected Eigenvector Matrix ({num_components_selected} Components <80% Cumulative Variance)")
+            st.caption("Directional loading vectors ($P$) defining the coordinate rotation from original variable space into the principal component subspace.")
             if num_components_selected > 0:
                 fig_selected_eigen = px.imshow(
                     selected_eigenvector_df,
@@ -355,7 +367,10 @@ try:
 
         with tab6:
             st.subheader("Principal Component Scores Computation")
-            st.markdown("**PC Scores = Normalized Data * Selected Eigenvectors**")
+            st.markdown(
+                "**PC Scores** ($T$) represent the transformed coordinates of process samples projected onto the lower-dimensional principal component subspace.  \n"
+                "Formula: $T = Z \\cdot P_A$ *(where $Z$ is Normalized Data and $P_A$ is the Selected Eigenvector Matrix)*"
+            )
             
             if num_components_selected > 0:
                 left_col_pc, right_col_pc = st.columns([1.4, 1])
@@ -404,7 +419,12 @@ try:
 
         with tab7:
             st.subheader("Hotelling T² Statistical Limits & Control Chart")
-            st.markdown("**T² Limit Formula:** T²_alpha = [ A * (n - 1) / (n - A) ] * F(A, n - A, alpha)")
+            st.markdown(
+                "**Hotelling $T^2$** measures the **distance of sample points from the coordinate center (origin) within the PC model subspace**. "
+                "It detects systematic, systemic shifts in process operation.  \n"
+                "Formulas: $T^2_i = \\sum_{a=1}^{A} \\frac{t_{ia}^2}{\\lambda_a}$ | "
+                "Upper Control Limit: $T^2_{\\alpha} = \\frac{A(n-1)}{n-A} F_{A, n-A, \\alpha}$"
+            )
             
             if num_components_selected > 0:
                 left_col_t2, right_col_t2 = st.columns([1.2, 1.2])
@@ -499,13 +519,15 @@ try:
         with tab8:
             st.subheader("Squared Prediction Error (SPE) Statistical Limits & Control Chart")
             st.markdown(
+                "**Squared Prediction Error (SPE / Q-statistic)** measures the **consistency of correlation structure** by evaluating residuals perpendicular to the model subspace. "
+                "It detects abnormal events or new disturbances that break baseline parameter correlations.  \n"
                 "**Formulas:**  \n"
-                "• $PV^T = \\text{PC Scores} \\times P^T$ *(where $P$ is Selected Eigenvector Matrix)*  \n"
-                "• $E = \\text{Normalized Data} - PV^T$  \n"
-                "• $\\text{SPE} = \\sum_{j=1}^{p} E_{ij}^2$ *(Row-wise sum of squared residuals)*  \n"
+                "• $PV^T = T \\cdot P_A^T$ *(Reconstructed Normal Data)*  \n"
+                "• $E = Z - PV^T$ *(Residual Matrix)*  \n"
+                "• $\\text{SPE}_i = \\sum_{j=1}^{p} E_{ij}^2$ *(Row-wise sum of squared residuals)*  \n"
                 "• **Jackson-Mudholkar Limit Formula:**  \n"
                 "  $Q_{\\alpha} = \\theta_1 \\left[ 1 + \\frac{z_{\\alpha} \\sqrt{2 \\theta_2 h_0^2}}{\\theta_1} + \\frac{\\theta_2 h_0 (h_0 - 1)}{\\theta_1^2} \\right]^{\\frac{1}{h_0}}$  \n"
-                "  *(where $\\theta_i = \\sum_{j=A+1}^{p} \\lambda_j^i$ for non-selected eigenvalues, $h_0 = 1 - \\frac{2 \\theta_1 \\theta_3}{3 \\theta_2^2}$)*"
+                "  *(where $\\theta_i = \\sum_{j=A+1}^{p} \\lambda_j^i$ for unselected eigenvalues, $h_0 = 1 - \\frac{2 \\theta_1 \\theta_3}{3 \\theta_2^2}$)*"
             )
 
             if num_components_selected > 0:
@@ -647,15 +669,20 @@ try:
 
             with p2_tab1:
                 st.subheader(f"Phase 2 Raw Data ({selected_case_label})")
+                st.caption("Real-time incoming plant data points under evaluation for potential operational anomalies.")
                 st.dataframe(case_raw_df, use_container_width=True)
 
             with p2_tab2:
                 st.subheader(f"Phase 2 Normalized Data ({selected_case_label} - Using Phase 1 Parameters)")
+                st.caption("Online process data scaled using Phase 1 historical mean ($\mu_1$) and standard deviation ($\sigma_1$).")
                 st.dataframe(case_norm_df, use_container_width=True)
 
             with p2_tab3:
                 st.subheader(f"Phase 2 Online PC Scores ({selected_case_label})")
-                st.markdown("**PC Scores = Phase 2 Normalized Data × Phase 1 Selected Eigenvectors**")
+                st.markdown(
+                    "Real-time projections of online operational state onto Phase 1 principal directions.  \n"
+                    "Formula: $T_{\\text{new}} = Z_{\\text{new}} \\cdot P_{\\text{Phase 1}}$"
+                )
                 st.dataframe(case_pc_scores_df, use_container_width=True)
 
             with p2_tab4:
@@ -737,6 +764,7 @@ try:
                 # ---------------------------------------------------------
                 st.markdown("---")
                 st.subheader(f"Fault Diagnosis: Variable Contribution Analysis ({selected_case_label})")
+                st.caption("Decomposes out-of-control $T^2$ excursions back to individual original process variables to identify root causes.")
 
                 AVG_LABEL = "Average (All Samples / Timeframe)"
                 sample_options = [AVG_LABEL] + time_axis.tolist()
