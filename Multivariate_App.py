@@ -367,8 +367,9 @@ try:
 
         with tab6:
             st.subheader("Principal Component Scores Computation")
+            st.markdown("\n\n")
             st.markdown(
-                "**PC Scores** ($T$) represent the transformed coordinates of process samples projected onto the lower-dimensional principal component subspace.  \n"
+                "**PC Scores** ($T$) represent the transformed coordinates of process samples projected onto the lower-dimensional principal component subspace.  \n\n"
                 "Formula: $T = Z \\cdot P_A$ *(where $Z$ is Normalized Data and $P_A$ is the Selected Eigenvector Matrix)*"
             )
             
@@ -419,9 +420,10 @@ try:
 
         with tab7:
             st.subheader("Hotelling T² Statistical Limits & Control Chart")
+            st.markdown("\n\n")
             st.markdown(
                 "**Hotelling $T^2$** measures the **distance of sample points from the coordinate center (origin) within the PC model subspace**. "
-                "It detects systematic, systemic shifts in process operation.  \n"
+                "It detects systematic, systemic shifts in process operation.  \n\n"
                 "Formulas: $T^2_i = \\sum_{a=1}^{A} \\frac{t_{ia}^2}{\\lambda_a}$ | "
                 "Upper Control Limit: $T^2_{\\alpha} = \\frac{A(n-1)}{n-A} F_{A, n-A, \\alpha}$"
             )
@@ -518,9 +520,10 @@ try:
 
         with tab8:
             st.subheader("Squared Prediction Error (SPE) Statistical Limits & Control Chart")
+            st.markdown("\n\n")
             st.markdown(
                 "**Squared Prediction Error (SPE / Q-statistic)** measures the **consistency of correlation structure** by evaluating residuals perpendicular to the model subspace. "
-                "It detects abnormal events or new disturbances that break baseline parameter correlations.  \n"
+                "It detects abnormal events or new disturbances that break baseline parameter correlations.  \n\n"
                 "**Formulas:**  \n"
                 "• $PV^T = T \\cdot P_A^T$ *(Reconstructed Normal Data)*  \n"
                 "• $E = Z - PV^T$ *(Residual Matrix)*  \n"
