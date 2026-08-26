@@ -37,6 +37,10 @@ NOC_DATASET_URLS = {
         "https://raw.githubusercontent.com/"
         "iqbalshafiq96/Self-Work/main/Multivariate_NOC_Chiller.csv"
     ),
+    "NOC_Turbine": (
+        "https://raw.githubusercontent.com/"
+        "iqbalshafiq96/Self-Work/main/Multivariate_NOC_Turbine.csv"
+    ),
 }
 
 # ---------------------------------------------------------
@@ -45,7 +49,9 @@ NOC_DATASET_URLS = {
 # Any dataset label listed here will require the user to enter the correct
 # password before the app loads, computes, or displays anything using it.
 # Add more labels to this set later if additional datasets need restricting.
-RESTRICTED_NOC_DATASETS = {"NOC_Chiller"}
+# NOTE: NOC_Turbine shares the same access password as NOC_Chiller (see the
+# single shared secret lookup in the password gate block below).
+RESTRICTED_NOC_DATASETS = {"NOC_Chiller", "NOC_Turbine"}
 
 # Dataset Map for Phase 2 Cases
 CASE_URLS = {
@@ -171,24 +177,21 @@ with sel_col1:
         help="Choose which Normal Operating Condition dataset is used to build the Phase 1 baseline model. "
              "Switching this recalculates the correlation matrix, eigen decomposition, PC scores, "
              "Hotelling T² / SPE limits for Phase 1, and all Phase 2 online monitoring results. "
-             "Note: some datasets (e.g. NOC_Chiller) are password-protected."
+             "Note: some datasets (e.g. NOC_Chiller, NOC_Turbine) are password-protected."
     )
 
 selected_noc_label = st.session_state.noc_dataset_selection
 is_restricted = selected_noc_label in RESTRICTED_NOC_DATASETS
 is_unlocked = selected_noc_label in st.session_state.unlocked_datasets
 
+# ---------------------------------------------------------
+# ACTIVE BASELINE INDICATOR (SOURCE URL INTENTIONALLY HIDDEN)
+# ---------------------------------------------------------
+# Only the active baseline dataset label is displayed. The underlying
+# source URL is never shown to the end user, regardless of whether the
+# dataset is restricted or not.
 with sel_col2:
-    if is_restricted and not is_unlocked:
-        st.caption(
-            f"Currently active baseline: **{selected_noc_label}**  \n"
-            f"Source: 🔒 *Restricted — password required to view source and data.*"
-        )
-    else:
-        st.caption(
-            f"Currently active baseline: **{selected_noc_label}**  \n"
-            f"Source: `{NOC_DATASET_URLS[selected_noc_label]}`"
-        )
+    st.caption(f"Currently active baseline: **{selected_noc_label}**")
 
 st.markdown("---")
 
@@ -213,12 +216,13 @@ if is_restricted and not is_unlocked:
         )
         submit_password = st.button("Unlock Dataset", key=f"unlock_btn_{selected_noc_label}")
 
-    # Retrieve the correct password from Streamlit secrets. Configure this in
-    # .streamlit/secrets.toml as:
-    #   noc_chiller_password = "YourStrongPasswordHere"
+    # Retrieve the correct password from Streamlit secrets. Both NOC_Chiller
+    # and NOC_Turbine share the SAME password, configured via a single secret
+    # key. Configure this in .streamlit/secrets.toml as:
+    #   noc_restricted_password = "YourStrongPasswordHere"
     # A fallback default is provided only so the app doesn't crash if secrets
     # haven't been configured yet — replace/remove the fallback in production.
-    correct_password = st.secrets.get("noc_chiller_password", "Kuantan@1234")
+    correct_password = st.secrets.get("noc_restricted_password", "Kuantan@1234")
 
     if submit_password or entered_password:
         if entered_password == correct_password and entered_password != "":
