@@ -39,6 +39,14 @@ NOC_DATASET_URLS = {
     ),
 }
 
+# ---------------------------------------------------------
+# RESTRICTED (PASSWORD-PROTECTED) BASELINE DATASETS
+# ---------------------------------------------------------
+# Any dataset label listed here will require the user to enter the correct
+# password before the app loads, computes, or displays anything using it.
+# Add more labels to this set later if additional datasets need restricting.
+RESTRICTED_NOC_DATASETS = {"NOC_Chiller"}
+
 # Dataset Map for Phase 2 Cases
 CASE_URLS = {
     "Case 0": (
@@ -113,6 +121,9 @@ if "phase_selection" not in st.session_state:
 if "noc_dataset_selection" not in st.session_state:
     st.session_state.noc_dataset_selection = "NOC6_1 (Default)"
 
+if "unlocked_datasets" not in st.session_state:
+    st.session_state.unlocked_datasets = set()
+
 p1_active = st.session_state.phase_selection.startswith("Phase 1")
 p2_active = st.session_state.phase_selection.startswith("Phase 2")
 
@@ -159,18 +170,67 @@ with sel_col1:
         key="noc_dataset_selection",
         help="Choose which Normal Operating Condition dataset is used to build the Phase 1 baseline model. "
              "Switching this recalculates the correlation matrix, eigen decomposition, PC scores, "
-             "Hotelling T² / SPE limits for Phase 1, and all Phase 2 online monitoring results."
+             "Hotelling T² / SPE limits for Phase 1, and all Phase 2 online monitoring results. "
+             "Note: some datasets (e.g. NOC_Chiller) are password-protected."
     )
+
+selected_noc_label = st.session_state.noc_dataset_selection
+is_restricted = selected_noc_label in RESTRICTED_NOC_DATASETS
+is_unlocked = selected_noc_label in st.session_state.unlocked_datasets
+
 with sel_col2:
-    st.caption(
-        f"Currently active baseline: **{st.session_state.noc_dataset_selection}**  \n"
-        f"Source: `{NOC_DATASET_URLS[st.session_state.noc_dataset_selection]}`"
-    )
+    if is_restricted and not is_unlocked:
+        st.caption(
+            f"Currently active baseline: **{selected_noc_label}**  \n"
+            f"Source: 🔒 *Restricted — password required to view source and data.*"
+        )
+    else:
+        st.caption(
+            f"Currently active baseline: **{selected_noc_label}**  \n"
+            f"Source: `{NOC_DATASET_URLS[selected_noc_label]}`"
+        )
 
 st.markdown("---")
 
+# ---------------------------------------------------------
+# PASSWORD GATE FOR RESTRICTED BASELINE DATASETS
+# ---------------------------------------------------------
+# If the currently selected NOC dataset is restricted and has not yet been
+# unlocked in this session, prompt for a password and halt further execution
+# (no data loading, no calculations, no tabs) until it is entered correctly.
+if is_restricted and not is_unlocked:
+    st.warning(
+        f"🔒 **{selected_noc_label}** is a restricted baseline dataset. "
+        "Please enter the access password to continue."
+    )
+
+    pwd_col1, pwd_col2 = st.columns([2, 3])
+    with pwd_col1:
+        entered_password = st.text_input(
+            "Enter Password:",
+            type="password",
+            key=f"password_input_{selected_noc_label}"
+        )
+        submit_password = st.button("Unlock Dataset", key=f"unlock_btn_{selected_noc_label}")
+
+    # Retrieve the correct password from Streamlit secrets. Configure this in
+    # .streamlit/secrets.toml as:
+    #   noc_chiller_password = "YourStrongPasswordHere"
+    # A fallback default is provided only so the app doesn't crash if secrets
+    # haven't been configured yet — replace/remove the fallback in production.
+    correct_password = st.secrets.get("noc_chiller_password", "changeme123")
+
+    if submit_password or entered_password:
+        if entered_password == correct_password and entered_password != "":
+            st.session_state.unlocked_datasets.add(selected_noc_label)
+            st.success(f"✅ Access granted for **{selected_noc_label}**.")
+            st.rerun()
+        elif submit_password:
+            st.error("❌ Incorrect password. Please try again.")
+
+    st.stop()
+
 phase_selection = st.session_state.phase_selection
-selected_noc_label = st.session_state.noc_dataset_selection
 selected_noc_url = NOC_DATASET_URLS[selected_noc_label]
 
 try:
@@ -373,9 +433,7 @@ try:
 
             with left_col_corr:
                 st.markdown("**Correlation Matrix (Lower Triangle & Diagonal)**")
-                st.caption(
-                    "Hover over a cell to see the full variable names."
-                )
+                st.caption("Hover over a cell to see the full variable names.")
 
                 fig_corr = px.imshow(
                     corr_display,
