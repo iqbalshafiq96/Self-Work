@@ -33,7 +33,7 @@ NOC_DATASET_URLS = {
         "https://raw.githubusercontent.com/"
         "iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv"
     ),
-    "NOC_Z3700": (
+    "NOC_Chiller": (
         "https://raw.githubusercontent.com/"
         "iqbalshafiq96/Self-Work/main/Multivariate_NOC_Chiller.csv"
     ),
@@ -374,8 +374,7 @@ try:
             with left_col_corr:
                 st.markdown("**Correlation Matrix (Lower Triangle & Diagonal)**")
                 st.caption(
-                    "Compact labels (Z1.., Z2.., Z3.. ...) are used so long process-tag names don't shrink the "
-                    "matrix. Hover over a cell to see the full variable names."
+                    "Hover over a cell to see the full variable names."
                 )
 
                 fig_corr = px.imshow(
