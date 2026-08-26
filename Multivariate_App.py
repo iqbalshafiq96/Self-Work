@@ -35,7 +35,7 @@ NOC_DATASET_URLS = {
     ),
     "NOC_Z3700": (
         "https://raw.githubusercontent.com/"
-        "iqbalshafiq96/Self-Work/main/Multivariate_NOC_Z3700.csv"
+        "iqbalshafiq96/Self-Work/main/Multivariate_NOC_Chiller.csv"
     ),
 }
 
