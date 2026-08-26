@@ -218,7 +218,7 @@ if is_restricted and not is_unlocked:
     #   noc_chiller_password = "YourStrongPasswordHere"
     # A fallback default is provided only so the app doesn't crash if secrets
     # haven't been configured yet — replace/remove the fallback in production.
-    correct_password = st.secrets.get("noc_chiller_password", "changeme123")
+    correct_password = st.secrets.get("noc_chiller_password", "Kuantan@1234")
 
     if submit_password or entered_password:
         if entered_password == correct_password and entered_password != "":
