@@ -661,25 +661,13 @@ try:
             
             case_t2_summary_df = case_pc_scores_df.copy()
             case_t2_summary_df['Hotelling_T2'] = case_t2_scores
-
-            # SPE Calculation (Phase 2 Online): PVt = PC_scores * Transposed_Selected_Eigenvectors
-            case_pvt_array = np.dot(case_pc_scores_array, selected_eigenvector_df.values.T)
-            case_pvt_df = pd.DataFrame(case_pvt_array, columns=numeric_df.columns, index=time_axis)
-
-            # Residual E Matrix: E = Normalized Case Data - PVt
-            case_e_matrix_df = case_norm_df - case_pvt_df
-
-            # SPE is sum of squares of each row in E matrix
-            case_spe_scores = np.sum(case_e_matrix_df.values ** 2, axis=1)
-            case_spe_summary_df = pd.DataFrame({'SPE': case_spe_scores}, index=time_axis)
             
             # Native Streamlit tabs matching Phase 1 structure with key persistence
-            p2_tab1, p2_tab2, p2_tab3, p2_tab4, p2_tab5 = st.tabs([
+            p2_tab1, p2_tab2, p2_tab3, p2_tab4 = st.tabs([
                 "Case Data",
                 "Normalized Data",
                 "Principal Component Scores",
-                "Hotelling T2 Online Control Chart",
-                "SPE Online Control Chart"
+                "Hotelling T2 Online Control Chart"
             ], key="phase2_tabs")
 
             with p2_tab1:
@@ -858,159 +846,6 @@ try:
                 st.dataframe(
                     case_t2_summary_df.style.background_gradient(
                         subset=['Hotelling_T2'], 
-                        cmap='YlOrRd'
-                    ).format("{:.4f}"),
-                    use_container_width=True
-                )
-
-            with p2_tab5:
-                st.subheader(f"Phase 2 SPE Online Control Chart ({selected_case_label})")
-                st.caption(f"Evaluated against Phase 1 Limits (Warning Limit: {spe_warning_limit:.4f} | Control Limit: {spe_control_limit:.4f})")
-
-                fig_online_spe = go.Figure()
-
-                x_start_p2_spe = time_axis.iloc[0]
-                x_end_p2_spe = time_axis.iloc[-1]
-
-                fig_online_spe.add_trace(go.Scatter(
-                    x=time_axis,
-                    y=case_spe_scores,
-                    mode='lines+markers',
-                    name='Online SPE',
-                    line=dict(color='#2CA02C', width=2),
-                    marker=dict(size=6)
-                ))
-
-                if not np.isnan(spe_warning_limit):
-                    fig_online_spe.add_shape(
-                        type="line",
-                        x0=x_start_p2_spe,
-                        y0=spe_warning_limit,
-                        x1=x_end_p2_spe,
-                        y1=spe_warning_limit,
-                        line=dict(color="Orange", width=2, dash="dot")
-                    )
-                    fig_online_spe.add_annotation(
-                        x=x_end_p2_spe,
-                        y=spe_warning_limit,
-                        text=f"Phase 1 Warning Limit (0.05): {spe_warning_limit:.2f}",
-                        showarrow=False,
-                        yshift=10,
-                        font=dict(color="Orange")
-                    )
-
-                if not np.isnan(spe_control_limit):
-                    fig_online_spe.add_shape(
-                        type="line",
-                        x0=x_start_p2_spe,
-                        y0=spe_control_limit,
-                        x1=x_end_p2_spe,
-                        y1=spe_control_limit,
-                        line=dict(color="Red", width=2, dash="dash")
-                    )
-                    fig_online_spe.add_annotation(
-                        x=x_end_p2_spe,
-                        y=spe_control_limit,
-                        text=f"Phase 1 Control Limit (0.01): {spe_control_limit:.2f}",
-                        showarrow=False,
-                        yshift=10,
-                        font=dict(color="Red")
-                    )
-
-                is_string_time_spe = isinstance(x_start_p2_spe, str)
-
-                # Dynamic Y-axis upper limit (+15% above Control Limit)
-                y_max_limit_spe = spe_control_limit * 1.15 if not np.isnan(spe_control_limit) else None
-
-                fig_online_spe.update_layout(
-                    font_family="Source Sans Pro, sans-serif",
-                    xaxis=dict(
-                        title="Sample Time / Timestamp Index",
-                        type='category' if is_string_time_spe else None
-                    ),
-                    yaxis=dict(
-                        title="SPE Score",
-                        range=[0, y_max_limit_spe] if y_max_limit_spe else None
-                    ),
-                    height=580,
-                    margin=dict(l=0, r=0, t=30, b=0)
-                )
-                st.plotly_chart(fig_online_spe, use_container_width=True)
-
-                # ---------------------------------------------------------
-                # SPE RESIDUAL CONTRIBUTION PLOT FOR SELECTED SAMPLE OR TIMEFRAME AVERAGE
-                # ---------------------------------------------------------
-                st.markdown("---")
-                st.subheader(f"Fault Diagnosis: SPE Residual Contribution Analysis ({selected_case_label})")
-                st.caption("Decomposes out-of-control SPE excursions back to individual original process variables to identify root causes.")
-
-                AVG_LABEL_SPE = "Average (All Samples / Timeframe)"
-                sample_options_spe = [AVG_LABEL_SPE] + time_axis.tolist()
-
-                # Explicit Session State Key to preserve selected timestamp
-                selected_sample_id_spe = st.selectbox(
-                    "Select Sample / Timestamp to Diagnose:",
-                    options=sample_options_spe,
-                    key="selected_sample_id_key_spe"
-                )
-
-                # Residual contribution per variable = E_ij^2, since SPE_i = sum_j E_ij^2
-                all_spe_contributions = case_e_matrix_df.values ** 2
-
-                if selected_sample_id_spe == AVG_LABEL_SPE:
-                    spe_variable_contributions = np.mean(all_spe_contributions, axis=0)
-                    plot_title_spe = f"Top 5 Contributing Factors (Average Across {selected_case_label})"
-                    table_header_spe = f"**Top 5 Root-Cause Ranking ({selected_case_label} Average)**"
-                else:
-                    sample_idx_loc_spe = time_axis.tolist().index(selected_sample_id_spe)
-                    spe_variable_contributions = all_spe_contributions[sample_idx_loc_spe]
-                    plot_title_spe = f"Top 5 Contributing Factors for Sample `{selected_sample_id_spe}`"
-                    table_header_spe = f"**Top 5 Root-Cause Ranking (`{selected_sample_id_spe}`)**"
-
-                contrib_df_spe = pd.DataFrame({
-                    'Variable': numeric_df.columns,
-                    'Absolute_Contribution': np.abs(spe_variable_contributions),
-                    'Directional_Contribution': case_e_matrix_df.mean(axis=0).values if selected_sample_id_spe == AVG_LABEL_SPE else case_e_matrix_df.iloc[sample_idx_loc_spe].values
-                }).sort_values(by='Absolute_Contribution', ascending=False)
-
-                top_5_df_spe = contrib_df_spe.head(5)
-
-                col_top5_chart_spe, col_top5_table_spe = st.columns([1.3, 1])
-
-                with col_top5_chart_spe:
-                    fig_contrib_spe = px.bar(
-                        top_5_df_spe,
-                        x='Absolute_Contribution',
-                        y='Variable',
-                        orientation='h',
-                        title=plot_title_spe,
-                        labels={'Absolute_Contribution': 'Absolute SPE Contribution Score', 'Variable': 'Parameter'},
-                        color='Absolute_Contribution',
-                        color_continuous_scale='Greens'
-                    )
-                    fig_contrib_spe.update_layout(
-                        font_family="Source Sans Pro, sans-serif",
-                        yaxis=dict(autorange="reversed"),
-                        height=380,
-                        margin=dict(l=0, r=0, t=40, b=0)
-                    )
-                    st.plotly_chart(fig_contrib_spe, use_container_width=True)
-
-                with col_top5_table_spe:
-                    st.markdown(table_header_spe)
-                    st.dataframe(
-                        top_5_df_spe[['Variable', 'Absolute_Contribution', 'Directional_Contribution']].style.format({
-                            'Absolute_Contribution': '{:.4f}',
-                            'Directional_Contribution': '{:.4f}'
-                        }),
-                        use_container_width=True
-                    )
-
-                st.markdown("---")
-                st.markdown(f"**All Online Samples SPE Summary ({selected_case_label})**")
-                st.dataframe(
-                    case_spe_summary_df.style.background_gradient(
-                        subset=['SPE'], 
                         cmap='YlOrRd'
                     ).format("{:.4f}"),
                     use_container_width=True
