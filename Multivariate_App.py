@@ -16,7 +16,19 @@ st.caption(
 
 # Case Study Reference Image & Data URLs
 IMAGE_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case.png"
-GITHUB_CSV_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv"
+
+# ---------------------------------------------------------
+# PHASE 1 - SELECTABLE BASELINE (NOC) DATASETS
+# ---------------------------------------------------------
+# Users can pick which Normal Operating Condition (NOC) dataset is used to
+# build the Phase 1 baseline model. Everything downstream (normalization,
+# correlation, eigen decomposition, PC scores, Hotelling T2 / SPE limits,
+# and consequently ALL of Phase 2 online monitoring) is recalculated from
+# whichever dataset is selected here.
+NOC_DATASET_URLS = {
+    "NOC6_1 (Default)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
+    "NOC_Z3700": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Z3700.csv",
+}
 
 # Dataset Map for Phase 2 Cases
 CASE_URLS = {
@@ -24,7 +36,7 @@ CASE_URLS = {
     "Case 1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_1.csv",
     "Case 2": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_2.csv",
     "Case 3": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_3.csv",
-    "Case 10": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_10.csv"
+    "Case 10": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_10.csv",
 }
 
 @st.cache_data
@@ -42,6 +54,9 @@ def load_data(url):
 # ---------------------------------------------------------
 if "phase_selection" not in st.session_state:
     st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
+
+if "noc_dataset_selection" not in st.session_state:
+    st.session_state.noc_dataset_selection = "NOC6_1 (Default)"
 
 p1_active = st.session_state.phase_selection.startswith("Phase 1")
 p2_active = st.session_state.phase_selection.startswith("Phase 2")
@@ -75,13 +90,39 @@ if p1_active:
 elif p2_active:
     st.header("Phase 2: Real-time Online Fault Detection")
 
+# ---------------------------------------------------------
+# BASELINE (NOC) DATASET SELECTOR
+# ---------------------------------------------------------
+# Placed above the shared core calculation block (and visible regardless of
+# phase) so that switching it recomputes the Phase 1 baseline model AND
+# propagates through to Phase 2 online monitoring automatically.
+sel_col1, sel_col2 = st.columns([1.4, 2.6])
+with sel_col1:
+    st.selectbox(
+        "📂 Phase 1 Baseline (NOC) Dataset:",
+        options=list(NOC_DATASET_URLS.keys()),
+        key="noc_dataset_selection",
+        help="Choose which Normal Operating Condition dataset is used to build the Phase 1 baseline model. "
+             "Switching this recalculates the correlation matrix, eigen decomposition, PC scores, "
+             "Hotelling T² / SPE limits for Phase 1, and all Phase 2 online monitoring results."
+    )
+with sel_col2:
+    st.caption(
+        f"Currently active baseline: **{st.session_state.noc_dataset_selection}**  \n"
+        f"Source: `{NOC_DATASET_URLS[st.session_state.noc_dataset_selection]}`"
+    )
+
+st.markdown("---")
+
 phase_selection = st.session_state.phase_selection
+selected_noc_label = st.session_state.noc_dataset_selection
+selected_noc_url = NOC_DATASET_URLS[selected_noc_label]
 
 try:
     # ---------------------------------------------------------
     # SHARED CORE CALCULATION (Phase 1 Baseline Model Setup)
     # ---------------------------------------------------------
-    raw_df = load_data(GITHUB_CSV_URL)
+    raw_df = load_data(selected_noc_url)
     raw_df.index = raw_df.index + 1
     numeric_df = raw_df.select_dtypes(include=[np.number]).dropna()
 
@@ -231,7 +272,10 @@ try:
 
         with tab1:
             st.subheader("Raw Data Table")
-            st.caption("Baseline Normal Operating Conditions (NOC) training dataset collected from historical plant operation.")
+            st.caption(
+                f"Baseline Normal Operating Conditions (NOC) training dataset collected from historical plant operation. "
+                f"Active dataset: **{selected_noc_label}**."
+            )
             st.dataframe(raw_df, use_container_width=True)
 
         with tab2:
@@ -628,7 +672,9 @@ try:
     # PHASE 2: ONLINE MONITORING AND FAULT DETECTION
     # =========================================================
     elif phase_selection == "Phase 2: Online Monitoring and Fault Detection":
-        
+
+        st.caption(f"Phase 2 model is derived from the Phase 1 baseline dataset: **{selected_noc_label}**.")
+
         # Selectbox to pick between registered Online Cases
         selected_case_label = st.selectbox(
             "Select Online Case Study Dataset:",
