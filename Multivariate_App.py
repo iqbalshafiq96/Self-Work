@@ -649,34 +649,31 @@ try:
 
         numeric_case_df = numeric_case_df[numeric_df.columns]
 
-        # Standardize using Phase 1 fitted scaler parameters (mean, std)
         case_norm_array = scaler.transform(numeric_case_df)
         case_norm_df = pd.DataFrame(case_norm_array, columns=numeric_df.columns, index=time_axis)
 
         if num_components_selected > 0:
-            # 1. Project Phase 2 Data onto Phase 1 Selected Eigenvectors
             case_pc_scores_array = np.dot(case_norm_df.values, selected_eigenvector_df.values)
             case_pc_scores_df = pd.DataFrame(case_pc_scores_array, columns=selected_pc_names, index=time_axis)
             
-            # 2. Hotelling T2 Calculation
             case_t2_components = (case_pc_scores_array ** 2) / selected_eigenvalues
             case_t2_scores = np.sum(case_t2_components, axis=1)
             
             case_t2_summary_df = case_pc_scores_df.copy()
             case_t2_summary_df['Hotelling_T2'] = case_t2_scores
 
-            # 3. SPE (Q-statistic) Calculation
-            # PVt_new = PC_scores_new * Transposed_Selected_Eigenvectors_Phase1
+            # SPE Calculation (Phase 2 Online): PVt = PC_scores * Transposed_Selected_Eigenvectors
             case_pvt_array = np.dot(case_pc_scores_array, selected_eigenvector_df.values.T)
-            
-            # E_new = Z_new - PVt_new
-            case_e_matrix_df = case_norm_df - case_pvt_array
-            
-            # SPE_new = sum of squared residuals per row
+            case_pvt_df = pd.DataFrame(case_pvt_array, columns=numeric_df.columns, index=time_axis)
+
+            # Residual E Matrix: E = Normalized Case Data - PVt
+            case_e_matrix_df = case_norm_df - case_pvt_df
+
+            # SPE is sum of squares of each row in E matrix
             case_spe_scores = np.sum(case_e_matrix_df.values ** 2, axis=1)
             case_spe_summary_df = pd.DataFrame({'SPE': case_spe_scores}, index=time_axis)
-
-            # Native Streamlit tabs in Phase 2
+            
+            # Native Streamlit tabs matching Phase 1 structure with key persistence
             p2_tab1, p2_tab2, p2_tab3, p2_tab4, p2_tab5 = st.tabs([
                 "Case Data",
                 "Normalized Data",
@@ -758,7 +755,9 @@ try:
                     )
 
                 is_string_time = isinstance(x_start_p2, str)
-                y_max_limit_t2 = t2_control_limit * 1.15 if not np.isnan(t2_control_limit) else None
+                
+                # Dynamic Y-axis upper limit (+15% above Control Limit)
+                y_max_limit = t2_control_limit * 1.15 if not np.isnan(t2_control_limit) else None
 
                 fig_online_t2.update_layout(
                     font_family="Source Sans Pro, sans-serif",
@@ -768,7 +767,7 @@ try:
                     ),
                     yaxis=dict(
                         title="Hotelling T² Score",
-                        range=[0, max(y_max_limit_t2, max(case_t2_scores)*1.05)] if y_max_limit_t2 else None
+                        range=[0, y_max_limit] if y_max_limit else None
                     ),
                     height=580,
                     margin=dict(l=0, r=0, t=30, b=0)
@@ -779,16 +778,17 @@ try:
                 # T² CONTRIBUTION PLOT FOR SELECTED SAMPLE OR TIMEFRAME AVERAGE
                 # ---------------------------------------------------------
                 st.markdown("---")
-                st.subheader(f"Fault Diagnosis: T² Variable Contribution Analysis ({selected_case_label})")
+                st.subheader(f"Fault Diagnosis: Variable Contribution Analysis ({selected_case_label})")
                 st.caption("Decomposes out-of-control $T^2$ excursions back to individual original process variables to identify root causes.")
 
                 AVG_LABEL = "Average (All Samples / Timeframe)"
                 sample_options = [AVG_LABEL] + time_axis.tolist()
 
-                selected_sample_id_t2 = st.selectbox(
-                    "Select Sample / Timestamp to Diagnose T²:",
+                # Explicit Session State Key to preserve selected timestamp
+                selected_sample_id = st.selectbox(
+                    "Select Sample / Timestamp to Diagnose:",
                     options=sample_options,
-                    key="selected_sample_id_t2_key"
+                    key="selected_sample_id_key"
                 )
 
                 N_samples = len(case_norm_df)
@@ -802,65 +802,75 @@ try:
                     all_term_matrices[i] = (s_i[:, np.newaxis] / selected_eigenvalues[:, np.newaxis]) * \
                                            (x_i[np.newaxis, :] * selected_eigenvector_df.values.T)
 
-                all_sample_contributions_t2 = np.sum(all_term_matrices, axis=1)
+                all_sample_contributions = np.sum(all_term_matrices, axis=1)
 
-                if selected_sample_id_t2 == AVG_LABEL:
-                    variable_contributions_t2 = np.mean(all_sample_contributions_t2, axis=0)
-                    plot_title_t2 = f"Top 5 T² Contributing Factors (Average Across {selected_case_label})"
-                    table_header_t2 = f"**Top 5 Root-Cause Ranking ({selected_case_label} Average)**"
+                if selected_sample_id == AVG_LABEL:
+                    variable_contributions = np.mean(all_sample_contributions, axis=0)
+                    plot_title = f"Top 5 Contributing Factors (Average Across {selected_case_label})"
+                    table_header = f"**Top 5 Root-Cause Ranking ({selected_case_label} Average)**"
                 else:
-                    sample_idx_loc = time_axis.tolist().index(selected_sample_id_t2)
-                    variable_contributions_t2 = all_sample_contributions_t2[sample_idx_loc]
-                    plot_title_t2 = f"Top 5 T² Contributing Factors for Sample `{selected_sample_id_t2}`"
-                    table_header_t2 = f"**Top 5 Root-Cause Ranking (`{selected_sample_id_t2}`)**"
+                    sample_idx_loc = time_axis.tolist().index(selected_sample_id)
+                    variable_contributions = all_sample_contributions[sample_idx_loc]
+                    plot_title = f"Top 5 Contributing Factors for Sample `{selected_sample_id}`"
+                    table_header = f"**Top 5 Root-Cause Ranking (`{selected_sample_id}`)**"
 
-                contrib_df_t2 = pd.DataFrame({
+                contrib_df = pd.DataFrame({
                     'Variable': numeric_df.columns,
-                    'Absolute_Contribution': np.abs(variable_contributions_t2),
-                    'Directional_Contribution': variable_contributions_t2
+                    'Absolute_Contribution': np.abs(variable_contributions),
+                    'Directional_Contribution': variable_contributions
                 }).sort_values(by='Absolute_Contribution', ascending=False)
 
-                top_5_df_t2 = contrib_df_t2.head(5)
+                top_5_df = contrib_df.head(5)
 
-                col_top5_chart_t2, col_top5_table_t2 = st.columns([1.3, 1])
+                col_top5_chart, col_top5_table = st.columns([1.3, 1])
 
-                with col_top5_chart_t2:
-                    fig_contrib_t2 = px.bar(
-                        top_5_df_t2,
+                with col_top5_chart:
+                    fig_contrib = px.bar(
+                        top_5_df,
                         x='Absolute_Contribution',
                         y='Variable',
                         orientation='h',
-                        title=plot_title_t2,
+                        title=plot_title,
                         labels={'Absolute_Contribution': 'Absolute T² Contribution Score', 'Variable': 'Parameter'},
                         color='Absolute_Contribution',
                         color_continuous_scale='Reds'
                     )
-                    fig_contrib_t2.update_layout(
+                    fig_contrib.update_layout(
                         font_family="Source Sans Pro, sans-serif",
                         yaxis=dict(autorange="reversed"),
                         height=380,
                         margin=dict(l=0, r=0, t=40, b=0)
                     )
-                    st.plotly_chart(fig_contrib_t2, use_container_width=True)
+                    st.plotly_chart(fig_contrib, use_container_width=True)
 
-                with col_top5_table_t2:
-                    st.markdown(table_header_t2)
+                with col_top5_table:
+                    st.markdown(table_header)
                     st.dataframe(
-                        top_5_df_t2[['Variable', 'Absolute_Contribution', 'Directional_Contribution']].style.format({
+                        top_5_df[['Variable', 'Absolute_Contribution', 'Directional_Contribution']].style.format({
                             'Absolute_Contribution': '{:.4f}',
                             'Directional_Contribution': '{:.4f}'
                         }),
                         use_container_width=True
                     )
+                
+                st.markdown("---")
+                st.markdown(f"**All Online Samples T² Summary ({selected_case_label})**")
+                st.dataframe(
+                    case_t2_summary_df.style.background_gradient(
+                        subset=['Hotelling_T2'], 
+                        cmap='YlOrRd'
+                    ).format("{:.4f}"),
+                    use_container_width=True
+                )
 
             with p2_tab5:
-                st.subheader(f"Phase 2 SPE (Q-Statistic) Online Control Chart ({selected_case_label})")
+                st.subheader(f"Phase 2 SPE Online Control Chart ({selected_case_label})")
                 st.caption(f"Evaluated against Phase 1 Limits (Warning Limit: {spe_warning_limit:.4f} | Control Limit: {spe_control_limit:.4f})")
-                
+
                 fig_online_spe = go.Figure()
 
-                x_start_p2 = time_axis.iloc[0]
-                x_end_p2 = time_axis.iloc[-1]
+                x_start_p2_spe = time_axis.iloc[0]
+                x_end_p2_spe = time_axis.iloc[-1]
 
                 fig_online_spe.add_trace(go.Scatter(
                     x=time_axis,
@@ -874,14 +884,14 @@ try:
                 if not np.isnan(spe_warning_limit):
                     fig_online_spe.add_shape(
                         type="line",
-                        x0=x_start_p2,
+                        x0=x_start_p2_spe,
                         y0=spe_warning_limit,
-                        x1=x_end_p2,
+                        x1=x_end_p2_spe,
                         y1=spe_warning_limit,
                         line=dict(color="Orange", width=2, dash="dot")
                     )
                     fig_online_spe.add_annotation(
-                        x=x_end_p2,
+                        x=x_end_p2_spe,
                         y=spe_warning_limit,
                         text=f"Phase 1 Warning Limit (0.05): {spe_warning_limit:.2f}",
                         showarrow=False,
@@ -892,14 +902,14 @@ try:
                 if not np.isnan(spe_control_limit):
                     fig_online_spe.add_shape(
                         type="line",
-                        x0=x_start_p2,
+                        x0=x_start_p2_spe,
                         y0=spe_control_limit,
-                        x1=x_end_p2,
+                        x1=x_end_p2_spe,
                         y1=spe_control_limit,
                         line=dict(color="Red", width=2, dash="dash")
                     )
                     fig_online_spe.add_annotation(
-                        x=x_end_p2,
+                        x=x_end_p2_spe,
                         y=spe_control_limit,
                         text=f"Phase 1 Control Limit (0.01): {spe_control_limit:.2f}",
                         showarrow=False,
@@ -907,18 +917,20 @@ try:
                         font=dict(color="Red")
                     )
 
-                is_string_time = isinstance(x_start_p2, str)
+                is_string_time_spe = isinstance(x_start_p2_spe, str)
+
+                # Dynamic Y-axis upper limit (+15% above Control Limit)
                 y_max_limit_spe = spe_control_limit * 1.15 if not np.isnan(spe_control_limit) else None
 
                 fig_online_spe.update_layout(
                     font_family="Source Sans Pro, sans-serif",
                     xaxis=dict(
                         title="Sample Time / Timestamp Index",
-                        type='category' if is_string_time else None
+                        type='category' if is_string_time_spe else None
                     ),
                     yaxis=dict(
                         title="SPE Score",
-                        range=[0, max(y_max_limit_spe, max(case_spe_scores)*1.05)] if y_max_limit_spe else None
+                        range=[0, y_max_limit_spe] if y_max_limit_spe else None
                     ),
                     height=580,
                     margin=dict(l=0, r=0, t=30, b=0)
@@ -926,46 +938,40 @@ try:
                 st.plotly_chart(fig_online_spe, use_container_width=True)
 
                 # ---------------------------------------------------------
-                # SPE CONTRIBUTION PLOT FOR SELECTED SAMPLE OR TIMEFRAME AVERAGE
+                # SPE RESIDUAL CONTRIBUTION PLOT FOR SELECTED SAMPLE OR TIMEFRAME AVERAGE
                 # ---------------------------------------------------------
                 st.markdown("---")
-                st.subheader(f"Fault Diagnosis: SPE Variable Contribution Analysis ({selected_case_label})")
-                st.caption("Decomposes out-of-control SPE residual spikes back to individual variables ($e_{ij}^2$) to locate structural parameter breaks.")
+                st.subheader(f"Fault Diagnosis: SPE Residual Contribution Analysis ({selected_case_label})")
+                st.caption("Decomposes out-of-control SPE excursions back to individual original process variables to identify root causes.")
 
-                AVG_LABEL = "Average (All Samples / Timeframe)"
-                sample_options = [AVG_LABEL] + time_axis.tolist()
+                AVG_LABEL_SPE = "Average (All Samples / Timeframe)"
+                sample_options_spe = [AVG_LABEL_SPE] + time_axis.tolist()
 
+                # Explicit Session State Key to preserve selected timestamp
                 selected_sample_id_spe = st.selectbox(
-                    "Select Sample / Timestamp to Diagnose SPE:",
-                    options=sample_options,
-                    key="selected_sample_id_spe_key"
+                    "Select Sample / Timestamp to Diagnose:",
+                    options=sample_options_spe,
+                    key="selected_sample_id_key_spe"
                 )
 
-                # SPE Contribution per variable is e_ij^2 (squared residual for each variable)
-                spe_contributions_matrix = case_e_matrix_df.values ** 2
+                # Residual contribution per variable = E_ij^2, since SPE_i = sum_j E_ij^2
+                all_spe_contributions = case_e_matrix_df.values ** 2
 
-                if selected_sample_id_spe == AVG_LABEL:
-                    variable_contributions_spe = np.mean(spe_contributions_matrix, axis=0)
-                    plot_title_spe = f"Top 5 SPE Contributing Factors (Average Across {selected_case_label})"
+                if selected_sample_id_spe == AVG_LABEL_SPE:
+                    spe_variable_contributions = np.mean(all_spe_contributions, axis=0)
+                    plot_title_spe = f"Top 5 Contributing Factors (Average Across {selected_case_label})"
                     table_header_spe = f"**Top 5 Root-Cause Ranking ({selected_case_label} Average)**"
                 else:
-                    sample_idx_loc = time_axis.tolist().index(selected_sample_id_spe)
-                    variable_contributions_spe = spe_contributions_matrix[sample_idx_loc]
-                    plot_title_spe = f"Top 5 SPE Contributing Factors for Sample `{selected_sample_id_spe}`"
+                    sample_idx_loc_spe = time_axis.tolist().index(selected_sample_id_spe)
+                    spe_variable_contributions = all_spe_contributions[sample_idx_loc_spe]
+                    plot_title_spe = f"Top 5 Contributing Factors for Sample `{selected_sample_id_spe}`"
                     table_header_spe = f"**Top 5 Root-Cause Ranking (`{selected_sample_id_spe}`)**"
-
-                # Directional contribution is residual value e_ij (showing if variable is higher or lower than model expectation)
-                if selected_sample_id_spe == AVG_LABEL:
-                    directional_e = np.mean(case_e_matrix_df.values, axis=0)
-                else:
-                    sample_idx_loc = time_axis.tolist().index(selected_sample_id_spe)
-                    directional_e = case_e_matrix_df.values[sample_idx_loc]
 
                 contrib_df_spe = pd.DataFrame({
                     'Variable': numeric_df.columns,
-                    'Squared_Residual_Contribution': variable_contributions_spe,
-                    'Residual_Direction_e': directional_e
-                }).sort_values(by='Squared_Residual_Contribution', ascending=False)
+                    'Absolute_Contribution': np.abs(spe_variable_contributions),
+                    'Directional_Contribution': case_e_matrix_df.mean(axis=0).values if selected_sample_id_spe == AVG_LABEL_SPE else case_e_matrix_df.iloc[sample_idx_loc_spe].values
+                }).sort_values(by='Absolute_Contribution', ascending=False)
 
                 top_5_df_spe = contrib_df_spe.head(5)
 
@@ -974,12 +980,12 @@ try:
                 with col_top5_chart_spe:
                     fig_contrib_spe = px.bar(
                         top_5_df_spe,
-                        x='Squared_Residual_Contribution',
+                        x='Absolute_Contribution',
                         y='Variable',
                         orientation='h',
                         title=plot_title_spe,
-                        labels={'Squared_Residual_Contribution': 'Squared Residual Score (e²)', 'Variable': 'Parameter'},
-                        color='Squared_Residual_Contribution',
+                        labels={'Absolute_Contribution': 'Absolute SPE Contribution Score', 'Variable': 'Parameter'},
+                        color='Absolute_Contribution',
                         color_continuous_scale='Greens'
                     )
                     fig_contrib_spe.update_layout(
@@ -993,13 +999,22 @@ try:
                 with col_top5_table_spe:
                     st.markdown(table_header_spe)
                     st.dataframe(
-                        top_5_df_spe[['Variable', 'Squared_Residual_Contribution', 'Residual_Direction_e']].style.format({
-                            'Squared_Residual_Contribution': '{:.4f}',
-                            'Residual_Direction_e': '{:.4f}'
+                        top_5_df_spe[['Variable', 'Absolute_Contribution', 'Directional_Contribution']].style.format({
+                            'Absolute_Contribution': '{:.4f}',
+                            'Directional_Contribution': '{:.4f}'
                         }),
                         use_container_width=True
                     )
 
+                st.markdown("---")
+                st.markdown(f"**All Online Samples SPE Summary ({selected_case_label})**")
+                st.dataframe(
+                    case_spe_summary_df.style.background_gradient(
+                        subset=['SPE'], 
+                        cmap='YlOrRd'
+                    ).format("{:.4f}"),
+                    use_container_width=True
+                )
         else:
             st.warning("No Principal Components were retained from Phase 1 setup.")
 
