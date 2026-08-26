@@ -15,7 +15,10 @@ st.caption(
 )
 
 # Case Study Reference Image & Data URLs
-IMAGE_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case.png"
+IMAGE_URL = (
+    "https://raw.githubusercontent.com/"
+    "iqbalshafiq96/Self-Work/main/Multivariate_Case.png"
+)
 
 # ---------------------------------------------------------
 # PHASE 1 - SELECTABLE BASELINE (NOC) DATASETS
@@ -26,28 +29,80 @@ IMAGE_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Mult
 # and consequently ALL of Phase 2 online monitoring) is recalculated from
 # whichever dataset is selected here.
 NOC_DATASET_URLS = {
-    "NOC6_1 (Default)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
-    "NOC_Z3700": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Z3700.csv",
+    "NOC6_1 (Default)": (
+        "https://raw.githubusercontent.com/"
+        "iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv"
+    ),
+    "NOC_Z3700": (
+        "https://raw.githubusercontent.com/"
+        "iqbalshafiq96/Self-Work/main/Multivariate_NOC_Z3700.csv"
+    ),
 }
 
 # Dataset Map for Phase 2 Cases
 CASE_URLS = {
-    "Case 0": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
-    "Case 1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_1.csv",
-    "Case 2": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_2.csv",
-    "Case 3": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_3.csv",
-    "Case 10": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_10.csv",
+    "Case 0": (
+        "https://raw.githubusercontent.com/"
+        "iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"
+    ),
+    "Case 1": (
+        "https://raw.githubusercontent.com/"
+        "iqbalshafiq96/Self-Work/main/Multivariate_Case_1.csv"
+    ),
+    "Case 2": (
+        "https://raw.githubusercontent.com/"
+        "iqbalshafiq96/Self-Work/main/Multivariate_Case_2.csv"
+    ),
+    "Case 3": (
+        "https://raw.githubusercontent.com/"
+        "iqbalshafiq96/Self-Work/main/Multivariate_Case_3.csv"
+    ),
+    "Case 10": (
+        "https://raw.githubusercontent.com/"
+        "iqbalshafiq96/Self-Work/main/Multivariate_Case_10.csv"
+    ),
 }
+
 
 @st.cache_data
 def load_data(url):
     """Loads CSV data from GitHub, auto-converting URL, handling BOM, and detecting delimiter."""
     if "github.com" in url and "/blob/" in url:
         url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
-    
+
     df = pd.read_csv(url, sep=None, engine='python', encoding='utf-8-sig')
     df.columns = df.columns.astype(str).str.strip().str.replace('\ufeff', '')
     return df
+
+
+def create_variable_aliases(variable_names, prefix="Z"):
+    """
+    Creates compact display aliases for long process-variable names so that
+    dense matrices (e.g. the correlation matrix) don't shrink when variable
+    tag names are long.
+
+    Example:
+        Compressor Discharge Pressure -> Z1..
+        Compressor Suction Temperature -> Z2..
+
+    Returns:
+        short_labels: List of abbreviated labels, one per variable.
+        alias_lookup: Dictionary mapping short labels to full variable names.
+        alias_df: DataFrame suitable for display as a reference table.
+    """
+    variable_names = [str(name) for name in variable_names]
+
+    short_labels = [f"{prefix}{i + 1}.." for i in range(len(variable_names))]
+
+    alias_lookup = dict(zip(short_labels, variable_names))
+
+    alias_df = pd.DataFrame({
+        "Matrix Label": short_labels,
+        "Full Variable Name": variable_names
+    })
+
+    return short_labels, alias_lookup, alias_df
+
 
 # ---------------------------------------------------------
 # WORKFLOW NAVIGATION & STATE INITIALIZATION
@@ -65,8 +120,8 @@ col_btn1, col_btn2, _ = st.columns([1, 1, 2])
 
 with col_btn1:
     if st.button(
-        "📊 Phase 1: Offline Setup", 
-        type="primary" if p1_active else "secondary", 
+        "📊 Phase 1: Offline Setup",
+        type="primary" if p1_active else "secondary",
         use_container_width=True
     ):
         st.session_state.phase_selection = "Phase 1: Offline Modelling and Monitoring Setup"
@@ -74,8 +129,8 @@ with col_btn1:
 
 with col_btn2:
     if st.button(
-        "🚨 Phase 2: Online Monitoring", 
-        type="primary" if p2_active else "secondary", 
+        "🚨 Phase 2: Online Monitoring",
+        type="primary" if p2_active else "secondary",
         use_container_width=True
     ):
         st.session_state.phase_selection = "Phase 2: Online Monitoring and Fault Detection"
@@ -141,11 +196,11 @@ try:
     raw_eigenvalues, raw_eigenvectors = np.linalg.eig(corr_matrix.values)
     eigenvalues = np.real(raw_eigenvalues)
     eigenvectors = np.real(raw_eigenvectors)
-    
+
     sorted_index = np.argsort(eigenvalues)[::-1]
     sorted_eigenvalues = eigenvalues[sorted_index]
     sorted_eigenvectors = eigenvectors[:, sorted_index]
-    
+
     pc_names = [f"PC{i+1}" for i in range(len(sorted_eigenvalues))]
     eigenvector_df = pd.DataFrame(sorted_eigenvectors, index=numeric_df.columns, columns=pc_names)
 
@@ -169,24 +224,24 @@ try:
     if num_components_selected > 0:
         pc_scores_array = np.dot(normalized_df.values, selected_eigenvector_df.values)
         pc_scores_df = pd.DataFrame(pc_scores_array, columns=selected_pc_names, index=normalized_df.index)
-        
+
         # Hotelling T2
         t2_components = (pc_scores_array ** 2) / selected_eigenvalues
         t2_scores = np.sum(t2_components, axis=1)
-        
+
         t2_summary_df = pc_scores_df.copy()
         t2_summary_df['Hotelling_T2'] = t2_scores
-        
+
         n = len(normalized_df)
         A = num_components_selected
         df1 = A
         df2 = n - A
-        
+
         if n > A:
             multiplier = (A * (n - 1)) / (n - A)
             f_val_05 = f.ppf(1 - 0.05, df1, df2)
             f_val_01 = f.ppf(1 - 0.01, df1, df2)
-            
+
             t2_warning_limit = multiplier * f_val_05
             t2_control_limit = multiplier * f_val_01
         else:
@@ -216,7 +271,7 @@ try:
 
             if theta1 > 0 and theta2 > 0:
                 h0 = 1 - (2 * theta1 * theta3) / (3 * (theta2 ** 2))
-                
+
                 # Z-values from Standard Normal Distribution
                 z_val_05 = norm.ppf(1 - 0.05)  # 1.6449 (95%)
                 z_val_01 = norm.ppf(1 - 0.01)  # 2.3263 (99%)
@@ -253,15 +308,15 @@ try:
     if phase_selection == "Phase 1: Offline Modelling and Monitoring Setup":
         tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
             "Case Study Reference",
-            "Raw Data", 
-            "Normalized Data", 
-            "Correlation Matrix", 
-            "Eigenvalue Matrix", 
+            "Raw Data",
+            "Normalized Data",
+            "Correlation Matrix",
+            "Eigenvalue Matrix",
             "Selected Eigenvector matrix",
             "Principal Component Computation",
             "Hotelling T2 Calculation",
             "Squared Prediction Error (SPE)"
-        ], key="phase1_tabs")
+        ])
 
         with tab0:
             st.subheader("Case Study Reference Diagram")
@@ -289,25 +344,68 @@ try:
                 "The **Correlation Matrix** displays linear interactions between operating parameters. "
                 "Values near **+1.0** indicate strong positive linear correlation, **-1.0** indicate strong negative correlation, and **0.0** indicate no linear relationship."
             )
+
+            # ---------------------------------------------------------
+            # GENERATE SHORT VARIABLE LABELS FOR THE CORRELATION MATRIX
+            # ---------------------------------------------------------
+            # Long process-tag names shrink the heatmap. We display compact
+            # aliases (Z1.., Z2.., Z3.. etc.) on the axes and reveal the full
+            # variable name on hover, plus a reference table below.
+            short_corr_labels, corr_alias_lookup, corr_alias_df = create_variable_aliases(
+                variable_names=lower_corr.columns,
+                prefix="Z"
+            )
+
+            corr_display = lower_corr.copy()
+            corr_display.columns = short_corr_labels
+            corr_display.index = short_corr_labels
+
+            # customdata holds [row short, row full, col short, col full] per cell
+            hover_matrix = np.empty((len(lower_corr.index), len(lower_corr.columns), 4), dtype=object)
+            for row_index, full_row_name in enumerate(lower_corr.index):
+                for column_index, full_column_name in enumerate(lower_corr.columns):
+                    hover_matrix[row_index, column_index, 0] = short_corr_labels[row_index]
+                    hover_matrix[row_index, column_index, 1] = str(full_row_name)
+                    hover_matrix[row_index, column_index, 2] = short_corr_labels[column_index]
+                    hover_matrix[row_index, column_index, 3] = str(full_column_name)
+
             left_col_corr, right_col_corr = st.columns([1.4, 1])
-            
+
             with left_col_corr:
                 st.markdown("**Correlation Matrix (Lower Triangle & Diagonal)**")
+                st.caption(
+                    "Compact labels (Z1.., Z2.., Z3.. ...) are used so long process-tag names don't shrink the "
+                    "matrix. Hover over a cell to see the full variable names."
+                )
+
                 fig_corr = px.imshow(
-                    lower_corr,
+                    corr_display,
                     labels=dict(color="Correlation"),
-                    x=lower_corr.columns,
-                    y=lower_corr.index,
+                    x=short_corr_labels,
+                    y=short_corr_labels,
                     color_continuous_scale="RdBu",
                     zmin=-1, zmax=1,
                     text_auto=".2f"
                 )
+
+                fig_corr.data[0].customdata = hover_matrix
+                fig_corr.data[0].hovertemplate = (
+                    "<b>Y Variable:</b> %{customdata[0]} — %{customdata[1]}<br>"
+                    "<b>X Variable:</b> %{customdata[2]} — %{customdata[3]}<br>"
+                    "<b>Correlation:</b> %{z:.4f}"
+                    "<extra></extra>"
+                )
+
                 fig_corr.update_layout(
                     font_family="Source Sans Pro, sans-serif",
                     height=580,
                     margin=dict(l=0, r=0, t=30, b=0)
                 )
                 st.plotly_chart(fig_corr, use_container_width=True)
+
+                with st.expander("View Matrix Label Reference (Short Label → Full Variable Name)", expanded=False):
+                    st.dataframe(corr_alias_df, use_container_width=True, hide_index=True)
+
                 st.dataframe(lower_corr, use_container_width=True)
 
             with right_col_corr:
@@ -347,11 +445,11 @@ try:
         with tab4:
             st.subheader("Eigenvalue Matrix & Cumulative Variance Analysis")
             st.markdown(
-                "An **Eigenvalue** ($\lambda$) represents the variance captured along its corresponding **Eigenvector** (the new principal component axis shift). "
+                "An **Eigenvalue** ($\\lambda$) represents the variance captured along its corresponding **Eigenvector** (the new principal component axis shift). "
                 "Formula: $\\mathbf{R}\\mathbf{v} = \\lambda \\mathbf{v}$, where $\\mathbf{R}$ is the correlation matrix and $\\mathbf{v}$ is the eigenvector."
             )
             left_col, right_col = st.columns([1.4, 1])
-            
+
             with left_col:
                 st.markdown("**Eigenvalue Matrix (Diagonal Only)**")
                 fig_eigen_val = px.imshow(
@@ -416,10 +514,10 @@ try:
                 "**PC Scores** ($T$) represent the transformed coordinates of process samples projected onto the lower-dimensional principal component subspace.  \n\n"
                 "Formula: $T = Z \\cdot P_A$ *(where $Z$ is Normalized Data and $P_A$ is the Selected Eigenvector Matrix)*"
             )
-            
+
             if num_components_selected > 0:
                 left_col_pc, right_col_pc = st.columns([1.4, 1])
-                
+
                 with left_col_pc:
                     st.markdown("**Principal Component Scores Matrix**")
                     fig_pc_scores = px.imshow(
@@ -437,7 +535,7 @@ try:
                     )
                     st.plotly_chart(fig_pc_scores, use_container_width=True)
                     st.dataframe(pc_scores_df, use_container_width=True)
-                
+
                 with right_col_pc:
                     st.markdown("**PC Scores Scatter Inspection**")
                     pc_cols = list(pc_scores_df.columns)
@@ -471,30 +569,30 @@ try:
                 "Formulas: $T^2_i = \\sum_{a=1}^{A} \\frac{t_{ia}^2}{\\lambda_a}$ | "
                 "Upper Control Limit: $T^2_{\\alpha} = \\frac{A(n-1)}{n-A} F_{A, n-A, \\alpha}$"
             )
-            
+
             if num_components_selected > 0:
                 left_col_t2, right_col_t2 = st.columns([1.2, 1.2])
-                
+
                 with left_col_t2:
                     st.markdown("**Sample Hotelling T² Scores**")
                     st.dataframe(
                         t2_summary_df.style.background_gradient(
-                            subset=['Hotelling_T2'], 
+                            subset=['Hotelling_T2'],
                             cmap='YlOrRd'
                         ).format("{:.4f}"),
                         use_container_width=True
                     )
-                    
+
                     st.markdown("---")
                     st.markdown("### Formula Breakdown & Calculated Metrics")
-                    
+
                     metric_col1, metric_col2 = st.columns(2)
                     with metric_col1:
                         st.write(f"**Samples (n):** `{n}`")
                         st.write(f"**Components (A):** `{A}`")
                         st.write(f"**Degrees of Freedom (df1, df2):** `({df1}, {df2})`")
                         st.write(f"**Multiplier [A(n-1)/(n-A)]:** `{multiplier:.4f}`")
-                    
+
                     with metric_col2:
                         st.write(f"**F({df1}, {df2}, 0.05):** `{f_val_05:.4f}`")
                         st.write(f"**F({df1}, {df2}, 0.01):** `{f_val_01:.4f}`")
@@ -504,7 +602,7 @@ try:
                 with right_col_t2:
                     st.markdown("**Hotelling T² Control Chart**")
                     fig_t2 = go.Figure()
-                    
+
                     fig_t2.add_trace(go.Scatter(
                         x=t2_summary_df.index,
                         y=t2_summary_df['Hotelling_T2'],
@@ -513,7 +611,7 @@ try:
                         line=dict(color='#1F77B4', width=2),
                         marker=dict(size=6)
                     ))
-                    
+
                     if not np.isnan(t2_warning_limit):
                         fig_t2.add_shape(
                             type="line",
@@ -584,15 +682,15 @@ try:
                     st.markdown("**Sample SPE Scores & Residual Matrix $E$**")
                     st.dataframe(
                         spe_summary_df.style.background_gradient(
-                            subset=['SPE'], 
+                            subset=['SPE'],
                             cmap='YlOrRd'
                         ).format("{:.4f}"),
                         use_container_width=True
                     )
-                    
+
                     st.markdown("---")
                     st.markdown("### Formula Breakdown & Calculated Metrics")
-                    
+
                     spe_metric_col1, spe_metric_col2 = st.columns(2)
                     with spe_metric_col1:
                         st.write(f"**Unselected Eigenvalues (p - A):** `{len(unselected_eigenvalues)}`")
@@ -600,7 +698,7 @@ try:
                         st.write(f"**Theta 2 (θ₂):** `{theta2:.4f}`")
                         st.write(f"**Theta 3 (θ₃):** `{theta3:.4f}`")
                         st.write(f"**Exponent (h₀):** `{h0:.4f}`")
-                    
+
                     with spe_metric_col2:
                         st.write(f"**Z(0.05) [95%]:** `{z_val_05:.4f}`")
                         st.write(f"**Z(0.01) [99%]:** `{z_val_01:.4f}`")
@@ -610,7 +708,7 @@ try:
                 with right_col_spe:
                     st.markdown("**SPE Control Chart**")
                     fig_spe = go.Figure()
-                    
+
                     fig_spe.add_trace(go.Scatter(
                         x=spe_summary_df.index,
                         y=spe_summary_df['SPE'],
@@ -681,11 +779,11 @@ try:
             options=list(CASE_URLS.keys()),
             key="phase2_case_select"
         )
-        
+
         target_case_url = CASE_URLS[selected_case_label]
         case_raw_df = load_data(target_case_url)
         case_raw_df.index = case_raw_df.index + 1
-        
+
         if "Timestamp" in case_raw_df.columns:
             time_axis = case_raw_df["Timestamp"]
             numeric_case_df = case_raw_df.drop(columns=["Timestamp"]).select_dtypes(include=[np.number])
@@ -701,10 +799,10 @@ try:
         if num_components_selected > 0:
             case_pc_scores_array = np.dot(case_norm_df.values, selected_eigenvector_df.values)
             case_pc_scores_df = pd.DataFrame(case_pc_scores_array, columns=selected_pc_names, index=time_axis)
-            
+
             case_t2_components = (case_pc_scores_array ** 2) / selected_eigenvalues
             case_t2_scores = np.sum(case_t2_components, axis=1)
-            
+
             case_t2_summary_df = case_pc_scores_df.copy()
             case_t2_summary_df['Hotelling_T2'] = case_t2_scores
 
@@ -718,15 +816,15 @@ try:
             # SPE is sum of squares of each row in E matrix
             case_spe_scores = np.sum(case_e_matrix_df.values ** 2, axis=1)
             case_spe_summary_df = pd.DataFrame({'SPE': case_spe_scores}, index=time_axis)
-            
-            # Native Streamlit tabs matching Phase 1 structure with key persistence
+
+            # Native Streamlit tabs matching Phase 1 structure
             p2_tab1, p2_tab2, p2_tab3, p2_tab4, p2_tab5 = st.tabs([
                 "Case Data",
                 "Normalized Data",
                 "Principal Component Scores",
                 "Hotelling T2 Online Control Chart",
                 "SPE Online Control Chart"
-            ], key="phase2_tabs")
+            ])
 
             with p2_tab1:
                 st.subheader(f"Phase 2 Raw Data ({selected_case_label})")
@@ -735,7 +833,7 @@ try:
 
             with p2_tab2:
                 st.subheader(f"Phase 2 Normalized Data ({selected_case_label} - Using Phase 1 Parameters)")
-                st.caption("Online process data scaled using Phase 1 historical mean ($\mu_1$) and standard deviation ($\sigma_1$).")
+                st.caption("Online process data scaled using Phase 1 historical mean ($\\mu_1$) and standard deviation ($\\sigma_1$).")
                 st.dataframe(case_norm_df, use_container_width=True)
 
             with p2_tab3:
@@ -749,7 +847,7 @@ try:
             with p2_tab4:
                 st.subheader(f"Phase 2 Hotelling T² Online Control Chart ({selected_case_label})")
                 st.caption(f"Evaluated against Phase 1 Limits (Warning Limit: {t2_warning_limit:.4f} | Control Limit: {t2_control_limit:.4f})")
-                
+
                 fig_online_t2 = go.Figure()
 
                 x_start_p2 = time_axis.iloc[0]
@@ -801,7 +899,7 @@ try:
                     )
 
                 is_string_time = isinstance(x_start_p2, str)
-                
+
                 # Dynamic Y-axis upper limit (+15% above Control Limit)
                 y_max_limit = t2_control_limit * 1.15 if not np.isnan(t2_control_limit) else None
 
@@ -830,7 +928,6 @@ try:
                 AVG_LABEL = "Average (All Samples / Timeframe)"
                 sample_options = [AVG_LABEL] + time_axis.tolist()
 
-                # Explicit Session State Key to preserve selected timestamp
                 selected_sample_id = st.selectbox(
                     "Select Sample / Timestamp to Diagnose:",
                     options=sample_options,
@@ -839,9 +936,9 @@ try:
 
                 N_samples = len(case_norm_df)
                 p_vars = len(numeric_df.columns)
-                
+
                 all_term_matrices = np.zeros((N_samples, num_components_selected, p_vars))
-                
+
                 for i in range(N_samples):
                     s_i = case_pc_scores_array[i]
                     x_i = case_norm_df.iloc[i].values
@@ -898,12 +995,12 @@ try:
                         }),
                         use_container_width=True
                     )
-                
+
                 st.markdown("---")
                 st.markdown(f"**All Online Samples T² Summary ({selected_case_label})**")
                 st.dataframe(
                     case_t2_summary_df.style.background_gradient(
-                        subset=['Hotelling_T2'], 
+                        subset=['Hotelling_T2'],
                         cmap='YlOrRd'
                     ).format("{:.4f}"),
                     use_container_width=True
@@ -993,7 +1090,6 @@ try:
                 AVG_LABEL_SPE = "Average (All Samples / Timeframe)"
                 sample_options_spe = [AVG_LABEL_SPE] + time_axis.tolist()
 
-                # Explicit Session State Key to preserve selected timestamp
                 selected_sample_id_spe = st.selectbox(
                     "Select Sample / Timestamp to Diagnose:",
                     options=sample_options_spe,
@@ -1056,7 +1152,7 @@ try:
                 st.markdown(f"**All Online Samples SPE Summary ({selected_case_label})**")
                 st.dataframe(
                     case_spe_summary_df.style.background_gradient(
-                        subset=['SPE'], 
+                        subset=['SPE'],
                         cmap='YlOrRd'
                     ).format("{:.4f}"),
                     use_container_width=True
