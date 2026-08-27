@@ -9,7 +9,7 @@ st.set_page_config(page_title="Equipment Health Monitoring & Residuals", layout=
 st.title("Machinery Health Monitoring: Euclidean vs. Mahalanobis Residuals")
 st.markdown(
     "Detect equipment deviations by calculating operating residuals—the distance between "
-    "real-time sensor tags (**Flow, Suction Pressure, Discharge Temp, Motor Load**) "
+    "real-time operating data points (**Flow, Suction Pressure, Discharge Temp, Motor Load**) "
     "and baseline mode centroids."
 )
 
@@ -38,9 +38,10 @@ def generate_equipment_data(n, noise):
     m3 = np.random.multivariate_normal(mode3_mean, cov3, n)
     
     X = np.vstack([m1, m2, m3])
-    tags = [f"Tag_{i+1:02d}" for i in range(3 * n)]
+    # Renamed Tag to Set
+    sets = [f"Set_{i+1:02d}" for i in range(3 * n)]
     cols = ['Flow_m3h', 'Press_bara', 'Temp_degC', 'Load_pct']
-    df = pd.DataFrame(np.round(X, 2), columns=cols, index=tags)
+    df = pd.DataFrame(np.round(X, 2), columns=cols, index=sets)
     
     # 1. Euclidean Residuals (Distance to closest centroid)
     dist_euc = cdist(df[cols], centroids, metric='euclidean')
@@ -62,7 +63,7 @@ def generate_equipment_data(n, noise):
 
 df, centroids = generate_equipment_data(n_samples, noise_level)
 
-with st.expander("View Full Equipment Telemetry Data", expanded=False):
+with st.expander("View Full Operating Data Sets", expanded=False):
     st.dataframe(df, use_container_width=True)
 
 tab_euc, tab_mah = st.tabs(["Tab 1: Euclidean Residuals", "Tab 2: Mahalanobis Residuals"])
@@ -82,7 +83,7 @@ with tab_euc:
         )
         
     with col2:
-        st.subheader("Euclidean Residuals by Tag")
+        st.subheader("Euclidean Residuals by Data Set")
         fig, ax = plt.subplots(figsize=(6, 4))
         colors = ['red' if s == 'DEVIATION' else 'navy' for s in df['Euc_Health_Status']]
         ax.bar(df.index, df['Euclidean_Residual'], color=colors)
@@ -107,9 +108,8 @@ with tab_mah:
         )
         
     with col2:
-        st.subheader("Mahalanobis Residuals by Tag")
+        st.subheader("Mahalanobis Residuals by Data Set")
         fig, ax = plt.subplots(figsize=(6, 4))
-        # Fixed color to 'teal' (valid Matplotlib color)
         colors = ['red' if s == 'DEVIATION' else 'teal' for s in df['Mah_Health_Status']]
         ax.bar(df.index, df['Mahalanobis_Residual'], color=colors)
         ax.axhline(2.2, color='red', linestyle='--', label='Anomaly Threshold')
