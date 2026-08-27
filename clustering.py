@@ -10,7 +10,7 @@ st.set_page_config(page_title="Equipment Residual Health & 3D Mapping", layout="
 st.title("Machinery Health Monitoring: Residuals, Contributions & 3D Mapping")
 st.markdown(
     "**Step 1:** Train fixed baseline operating centroids from historical data.  \n"
-    "**Step 2:** Compute real-time residuals, isolate percentage feature contributions, and map points in 3D cluster space."
+    "**Step 2:** Compute real-time residuals, isolate raw & percentage feature contributions, and map points in 3D cluster space."
 )
 
 # ---------------------------------------------------------
@@ -40,7 +40,6 @@ def train_baseline_model(seed):
 
 train_X, cluster_labels, centroids, inv_cov, cols = train_baseline_model(baseline_seed)
 
-# Pre-define suffix lists so column indexing never fails
 pct_cols = [f"{c}_pct_contrib" for c in cols]
 raw_cols = [f"{c}_raw_contrib" for c in cols]
 
@@ -48,7 +47,7 @@ st.sidebar.subheader("2. Real-Time Condition Controls")
 inject_anomaly = st.sidebar.checkbox("Inject Artificial Pressure Drop (Set_05)", value=True)
 
 # ---------------------------------------------------------
-# STEP 2: CALCULATE RESIDUALS AND PERCENT CONTRIBUTIONS
+# STEP 2: CALCULATE RESIDUALS AND BOTH CONTRIB TYPES
 # ---------------------------------------------------------
 def generate_and_analyze_test_data(inject_fault):
     np.random.seed(101)
@@ -79,7 +78,7 @@ def generate_and_analyze_test_data(inject_fault):
     df['Euc_Top_Contributor'] = euc_top_contribs
     df['Euc_Cluster'] = df['Euc_Cluster'] + 1
     
-    # --- 2. Mahalanobis Calculations & Covariance-Weighted Percent Contributions ---
+    # --- 2. Mahalanobis Calculations & Raw / Percent Contributions ---
     dist_mah = cdist(df[cols], centroids, metric='mahalanobis', VI=inv_cov)
     df['Mah_Cluster'] = np.argmin(dist_mah, axis=1)
     df['Mahalanobis_Residual'] = np.min(dist_mah, axis=1).round(2)
@@ -92,7 +91,7 @@ def generate_and_analyze_test_data(inject_fault):
         c_idx = int(row['Mah_Cluster'])
         diff = row[cols].values - centroids[c_idx]
         
-        # Absolute contribution of each variable j to squared distance
+        # Absolute raw contribution of each variable j to D_M^2
         contribs_abs = np.abs(diff * np.dot(inv_cov, diff))
         total_dist_sq = np.sum(contribs_abs)
         
@@ -113,14 +112,12 @@ def generate_and_analyze_test_data(inject_fault):
     df['Euc_Status'] = np.where(df['Euclidean_Residual'] > 12.0, "DEVIATION", "NORMAL")
     df['Mah_Status'] = np.where(df['Mahalanobis_Residual'] > 2.5, "DEVIATION", "NORMAL")
     
-    # Raw contribution score dataframe
     raw_contrib_df = pd.DataFrame(
         np.round(np.array(mah_contrib_raw_matrices, dtype=float), 2), 
         columns=raw_cols, 
         index=sets
     )
 
-    # Percentage contribution dataframe
     pct_contrib_df = pd.DataFrame(
         np.round(np.array(mah_contrib_pct_matrices, dtype=float), 2), 
         columns=pct_cols, 
@@ -176,12 +173,11 @@ with tab_mah:
         ax.legend()
         st.pyplot(fig)
 
-    st.subheader("Variable Contribution Breakdown (%)")
-    st.caption("Percentage contribution of each parameter to the total Mahalanobis distance squared.")
+    st.subheader("Variable Contribution Breakdown")
+    st.caption("Raw distance squared score and normalized percentage contribution per parameter.")
     
-    # Safe indexing using pre-defined pct_cols list
     st.dataframe(
-        df_analysis[pct_cols + ['Mah_Top_Contributor']],
+        df_analysis[raw_cols + pct_cols + ['Mah_Top_Contributor']],
         use_container_width=True
     )
 
@@ -189,17 +185,16 @@ with tab_3d:
     st.header("3D Operating Space Visualization")
     st.caption("Rotate and zoom the 3D space to see where the selected point lies relative to historical baseline clouds.")
     
-    col_controls, col_plot = st.columns([1.1, 2.9])
+    col_controls, col_plot = st.columns([1.2, 2.8])
     
     with col_controls:
         st.markdown("### Point Inspector")
         selected_set = st.selectbox("Select Operating Set:", df_analysis.index, index=4)
         
         selected_row = df_analysis.loc[selected_set]
-        assigned_mode = selected_row['Mah_Cluster']
+        assigned_mode = int(selected_row['Mah_Cluster'])
         status = selected_row['Mah_Status']
         
-        st.metric(label="Assigned Mode", value=f"Mode {assigned_mode}")
         st.metric(label="Mahalanobis Residual", value=selected_row['Mahalanobis_Residual'])
         st.metric(label="Top Root Cause", value=selected_row['Mah_Top_Contributor'])
         
@@ -208,8 +203,17 @@ with tab_3d:
         else:
             st.success(f"Status: {status}")
             
-        st.markdown("**Contribution Breakdown (%):**")
+        st.markdown("**Feature Contribution Breakdown:**")
         
+        # Dual-representation Table (Raw Score + Percent)
+        breakdown_df = pd.DataFrame({
+            'Variable': cols,
+            'Raw Contrib (D²)': [selected_row[c] for c in raw_cols],
+            'Contrib (%)': [f"{selected_row[c]:.1f}%" for c in pct_cols]
+        })
+        st.dataframe(breakdown_df, hide_index=True, use_container_width=True)
+        
+        # Horizontal Stacked Bar Chart for Visual Percentage Distribution
         pct_values = [selected_row[c] for c in pct_cols]
         feature_colors = ['#008080', '#D9534F', '#4169E1', '#F0AD4E']
         
@@ -226,8 +230,8 @@ with tab_3d:
             
         fig_bar.update_layout(
             barmode='stack',
-            height=130,
-            margin=dict(l=0, r=0, t=0, b=0),
+            height=120,
+            margin=dict(l=0, r=0, t=10, b=0),
             xaxis=dict(title="Contribution %", range=[0, 100], showgrid=False),
             yaxis=dict(showticklabels=False),
             legend=dict(orientation="h", yanchor="bottom", y=-0.8, xanchor="center", x=0.5)
@@ -267,7 +271,7 @@ with tab_3d:
         sp_x = selected_row['Flow_m3h']
         sp_y = selected_row['Press_bara']
         sp_z = selected_row['Temp_degC']
-        c_idx = int(assigned_mode) - 1
+        c_idx = assigned_mode - 1
         c_x, c_y, c_z = centroids[c_idx, :3]
         
         fig_3d.add_trace(go.Scatter3d(
