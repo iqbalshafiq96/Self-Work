@@ -40,6 +40,10 @@ def train_baseline_model(seed):
 
 train_X, cluster_labels, centroids, inv_cov, cols = train_baseline_model(baseline_seed)
 
+# Pre-define suffix lists so column indexing never fails
+pct_cols = [f"{c}_pct_contrib" for c in cols]
+raw_cols = [f"{c}_raw_contrib" for c in cols]
+
 st.sidebar.subheader("2. Real-Time Condition Controls")
 inject_anomaly = st.sidebar.checkbox("Inject Artificial Pressure Drop (Set_05)", value=True)
 
@@ -112,14 +116,14 @@ def generate_and_analyze_test_data(inject_fault):
     # Raw contribution score dataframe
     raw_contrib_df = pd.DataFrame(
         np.round(np.array(mah_contrib_raw_matrices, dtype=float), 2), 
-        columns=[f"{c}_raw_contrib" for c in cols], 
+        columns=raw_cols, 
         index=sets
     )
 
     # Percentage contribution dataframe
     pct_contrib_df = pd.DataFrame(
         np.round(np.array(mah_contrib_pct_matrices, dtype=float), 2), 
-        columns=[f"{c}_pct_contrib" for c in cols], 
+        columns=pct_cols, 
         index=sets
     )
     
@@ -174,8 +178,10 @@ with tab_mah:
 
     st.subheader("Variable Contribution Breakdown (%)")
     st.caption("Percentage contribution of each parameter to the total Mahalanobis distance squared.")
+    
+    # Safe indexing using pre-defined pct_cols list
     st.dataframe(
-        df_analysis[['Flow_m3h_pct_contrib', 'Press_bara_pct_contrib', 'Temp_degC_pct_contrib', 'Load_pct_contrib', 'Mah_Top_Contributor']],
+        df_analysis[pct_cols + ['Mah_Top_Contributor']],
         use_container_width=True
     )
 
@@ -187,7 +193,7 @@ with tab_3d:
     
     with col_controls:
         st.markdown("### Point Inspector")
-        selected_set = st.selectbox("Select Operating Set:", df_analysis.index, index=4)  # Default Set_05
+        selected_set = st.selectbox("Select Operating Set:", df_analysis.index, index=4)
         
         selected_row = df_analysis.loc[selected_set]
         assigned_mode = selected_row['Mah_Cluster']
@@ -204,8 +210,7 @@ with tab_3d:
             
         st.markdown("**Contribution Breakdown (%):**")
         
-        # Horizontal Stacked Bar Chart for Percentage Breakdown
-        pct_values = [selected_row[f"{c}_pct_contrib"] for c in cols]
+        pct_values = [selected_row[c] for c in pct_cols]
         feature_colors = ['#008080', '#D9534F', '#4169E1', '#F0AD4E']
         
         fig_bar = go.Figure()
@@ -232,7 +237,7 @@ with tab_3d:
     with col_plot:
         fig_3d = go.Figure()
         
-        # 1. Add Training Baseline Cluster Clouds
+        # 1. Baseline Clusters
         mode_colors = ['#008080', '#4169E1', '#8A2BE2']
         for i in range(3):
             mask = cluster_labels == i
@@ -246,7 +251,7 @@ with tab_3d:
                 hoverinfo='none'
             ))
 
-        # 2. Add Baseline Centroids
+        # 2. Baseline Centroids
         fig_3d.add_trace(go.Scatter3d(
             x=centroids[:, 0],
             y=centroids[:, 1],
@@ -258,14 +263,13 @@ with tab_3d:
             marker=dict(size=8, color='black', symbol='diamond')
         ))
 
-        # 3. Add Selected Point Highlight & Distance Vector
+        # 3. Selected Point Vector
         sp_x = selected_row['Flow_m3h']
         sp_y = selected_row['Press_bara']
         sp_z = selected_row['Temp_degC']
         c_idx = int(assigned_mode) - 1
         c_x, c_y, c_z = centroids[c_idx, :3]
         
-        # Distance Vector Line
         fig_3d.add_trace(go.Scatter3d(
             x=[sp_x, c_x],
             y=[sp_y, c_y],
@@ -275,7 +279,7 @@ with tab_3d:
             line=dict(color='crimson' if status == 'DEVIATION' else 'black', width=4, dash='dash')
         ))
 
-        # Highlight Marker for Selected Set
+        # Highlight Selected Set
         fig_3d.add_trace(go.Scatter3d(
             x=[sp_x],
             y=[sp_y],
@@ -297,7 +301,6 @@ with tab_3d:
                           f"Residual: {selected_row['Mahalanobis_Residual']}<extra></extra>"
         ))
 
-        # Camera & Axes Styling
         fig_3d.update_layout(
             scene=dict(
                 xaxis=dict(title='Flow (m³/h)', backgroundcolor="#F8F9FA"),
