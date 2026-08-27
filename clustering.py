@@ -71,7 +71,7 @@ def generate_and_analyze_test_data(inject_fault):
         top_var = cols[np.argmax(diff)]
         euc_top_contribs.append(top_var)
     df['Euc_Top_Contributor'] = euc_top_contribs
-    df['Euc_Cluster'] = df['Euc_Cluster'] + 1 # Convert to 1-based indexing
+    df['Euc_Cluster'] = df['Euc_Cluster'] + 1
     
     # --- 2. Mahalanobis Calculations & Covariance-Weighted Contributions ---
     dist_mah = cdist(df[cols], centroids, metric='mahalanobis', VI=inv_cov)
@@ -87,7 +87,7 @@ def generate_and_analyze_test_data(inject_fault):
         
         # Contribution of each variable j to Mahalanobis distance squared
         contribs = diff * np.dot(inv_cov, diff)
-        contribs_abs = np.abs(contribs) # Magnitude of contribution
+        contribs_abs = np.abs(contribs)
         
         top_var = cols[np.argmax(contribs_abs)]
         mah_top_contribs.append(top_var)
@@ -99,7 +99,12 @@ def generate_and_analyze_test_data(inject_fault):
     df['Euc_Status'] = np.where(df['Euclidean_Residual'] > 12.0, "DEVIATION", "NORMAL")
     df['Mah_Status'] = np.where(df['Mahalanobis_Residual'] > 2.5, "DEVIATION", "NORMAL")
     
-    contrib_df = pd.DataFrame(np.round(mah_contrib_matrices, 2), columns=[f"{c}_contrib" for c in cols], index=sets)
+    # FIX: Explicitly cast mah_contrib_matrices to np.array before np.round
+    contrib_df = pd.DataFrame(
+        np.round(np.array(mah_contrib_matrices), 2), 
+        columns=[f"{c}_contrib" for c in cols], 
+        index=sets
+    )
     
     return pd.concat([df, contrib_df], axis=1)
 
