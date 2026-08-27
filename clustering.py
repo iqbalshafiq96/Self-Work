@@ -87,7 +87,7 @@ def generate_and_analyze_test_data(inject_fault):
         
         # Contribution of each variable j to Mahalanobis distance squared
         contribs = diff * np.dot(inv_cov, diff)
-        contribs_abs = np.abs(contribs)
+        contribs_abs = np.abs(contribs).tolist()  # Explicit conversion to float list
         
         top_var = cols[np.argmax(contribs_abs)]
         mah_top_contribs.append(top_var)
@@ -99,9 +99,9 @@ def generate_and_analyze_test_data(inject_fault):
     df['Euc_Status'] = np.where(df['Euclidean_Residual'] > 12.0, "DEVIATION", "NORMAL")
     df['Mah_Status'] = np.where(df['Mahalanobis_Residual'] > 2.5, "DEVIATION", "NORMAL")
     
-    # FIX: Explicitly cast mah_contrib_matrices to np.array before np.round
+    # Cast to float matrix to prevent Python 3.14/NumPy 2.x object array errors
     contrib_df = pd.DataFrame(
-        np.round(np.array(mah_contrib_matrices), 2), 
+        np.round(np.array(mah_contrib_matrices, dtype=float), 2), 
         columns=[f"{c}_contrib" for c in cols], 
         index=sets
     )
