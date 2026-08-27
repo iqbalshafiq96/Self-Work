@@ -61,12 +61,12 @@ CASE_URLS = {
     "Case 3": ("https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_3.csv"),
     "Case 4": ("https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_4.csv"),
     "Case 5": ("https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_5.csv"),
-    "Case 6": ("https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"),
-    "Case 7": ("https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"),
-    "Case 8": ("https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"),
-    "Case 9": ("https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"),
-    "Case 10": ("https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"),
-    "Case 11": ("https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"),
+    "Case 6": ("https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_6.csv"),
+    "Case 7": ("https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_7.csv"),
+    "Case 8": ("https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_8.csv"),
+    "Case 9": ("https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_9.csv"),
+    "Case 10": ("https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_10.csv"),
+    "Case 11": ("https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_11.csv"),
 }
 
 
