@@ -10,7 +10,7 @@ st.set_page_config(page_title="Equipment Residual Health & 3D Mapping", layout="
 st.title("Machinery Health Monitoring: Residuals, Contributions & 3D Mapping")
 st.markdown(
     "**Step 1:** Train fixed baseline operating centroids from historical data.  \n"
-    "**Step 2:** Compute real-time residuals, isolate feature contributions, and map points in 3D cluster space."
+    "**Step 2:** Compute real-time residuals, isolate percentage feature contributions, and map points in 3D cluster space."
 )
 
 # ---------------------------------------------------------
@@ -44,7 +44,7 @@ st.sidebar.subheader("2. Real-Time Condition Controls")
 inject_anomaly = st.sidebar.checkbox("Inject Artificial Pressure Drop (Set_05)", value=True)
 
 # ---------------------------------------------------------
-# STEP 2: CALCULATE RESIDUALS AND CONTRIBUTIONS
+# STEP 2: CALCULATE RESIDUALS AND PERCENT CONTRIBUTIONS
 # ---------------------------------------------------------
 def generate_and_analyze_test_data(inject_fault):
     np.random.seed(101)
@@ -75,25 +75,33 @@ def generate_and_analyze_test_data(inject_fault):
     df['Euc_Top_Contributor'] = euc_top_contribs
     df['Euc_Cluster'] = df['Euc_Cluster'] + 1
     
-    # --- 2. Mahalanobis Calculations & Covariance-Weighted Contributions ---
+    # --- 2. Mahalanobis Calculations & Covariance-Weighted Percent Contributions ---
     dist_mah = cdist(df[cols], centroids, metric='mahalanobis', VI=inv_cov)
     df['Mah_Cluster'] = np.argmin(dist_mah, axis=1)
     df['Mahalanobis_Residual'] = np.min(dist_mah, axis=1).round(2)
     
     mah_top_contribs = []
-    mah_contrib_matrices = []
+    mah_contrib_raw_matrices = []
+    mah_contrib_pct_matrices = []
     
     for idx, row in df.iterrows():
         c_idx = int(row['Mah_Cluster'])
         diff = row[cols].values - centroids[c_idx]
         
-        # Contribution of each variable j to Mahalanobis distance squared
-        contribs = diff * np.dot(inv_cov, diff)
-        contribs_abs = np.abs(contribs).tolist()  # Explicit conversion to float list
+        # Absolute contribution of each variable j to squared distance
+        contribs_abs = np.abs(diff * np.dot(inv_cov, diff))
+        total_dist_sq = np.sum(contribs_abs)
         
-        top_var = cols[np.argmax(contribs_abs)]
+        # Calculate percentage contribution
+        if total_dist_sq > 0:
+            contribs_pct = (contribs_abs / total_dist_sq) * 100.0
+        else:
+            contribs_pct = np.zeros_like(contribs_abs)
+            
+        top_var = cols[np.argmax(contribs_pct)]
         mah_top_contribs.append(top_var)
-        mah_contrib_matrices.append(contribs_abs)
+        mah_contrib_raw_matrices.append(contribs_abs)
+        mah_contrib_pct_matrices.append(contribs_pct)
         
     df['Mah_Top_Contributor'] = mah_top_contribs
     df['Mah_Cluster'] = df['Mah_Cluster'] + 1
@@ -101,14 +109,21 @@ def generate_and_analyze_test_data(inject_fault):
     df['Euc_Status'] = np.where(df['Euclidean_Residual'] > 12.0, "DEVIATION", "NORMAL")
     df['Mah_Status'] = np.where(df['Mahalanobis_Residual'] > 2.5, "DEVIATION", "NORMAL")
     
-    # Cast to float matrix to prevent Python 3.14/NumPy 2.x object array errors
-    contrib_df = pd.DataFrame(
-        np.round(np.array(mah_contrib_matrices, dtype=float), 2), 
-        columns=[f"{c}_contrib" for c in cols], 
+    # Raw contribution score dataframe
+    raw_contrib_df = pd.DataFrame(
+        np.round(np.array(mah_contrib_raw_matrices, dtype=float), 2), 
+        columns=[f"{c}_raw_contrib" for c in cols], 
+        index=sets
+    )
+
+    # Percentage contribution dataframe
+    pct_contrib_df = pd.DataFrame(
+        np.round(np.array(mah_contrib_pct_matrices, dtype=float), 2), 
+        columns=[f"{c}_pct_contrib" for c in cols], 
         index=sets
     )
     
-    return pd.concat([df, contrib_df], axis=1)
+    return pd.concat([df, raw_contrib_df, pct_contrib_df], axis=1)
 
 df_analysis = generate_and_analyze_test_data(inject_anomaly)
 
@@ -157,10 +172,10 @@ with tab_mah:
         ax.legend()
         st.pyplot(fig)
 
-    st.subheader("Variable Contribution Breakdown (Mahalanobis)")
-    st.caption("Detailed score showing how much each variable contributed to the total squared distance.")
+    st.subheader("Variable Contribution Breakdown (%)")
+    st.caption("Percentage contribution of each parameter to the total Mahalanobis distance squared.")
     st.dataframe(
-        df_analysis[['Flow_m3h_contrib', 'Press_bara_contrib', 'Temp_degC_contrib', 'Load_pct_contrib', 'Mah_Top_Contributor']],
+        df_analysis[['Flow_m3h_pct_contrib', 'Press_bara_pct_contrib', 'Temp_degC_pct_contrib', 'Load_pct_contrib', 'Mah_Top_Contributor']],
         use_container_width=True
     )
 
@@ -168,11 +183,11 @@ with tab_3d:
     st.header("3D Operating Space Visualization")
     st.caption("Rotate and zoom the 3D space to see where the selected point lies relative to historical baseline clouds.")
     
-    col_controls, col_plot = st.columns([1, 3])
+    col_controls, col_plot = st.columns([1.1, 2.9])
     
     with col_controls:
         st.markdown("### Point Inspector")
-        selected_set = st.selectbox("Select Operating Set:", df_analysis.index, index=0)
+        selected_set = st.selectbox("Select Operating Set:", df_analysis.index, index=4)  # Default Set_05
         
         selected_row = df_analysis.loc[selected_set]
         assigned_mode = selected_row['Mah_Cluster']
@@ -187,20 +202,44 @@ with tab_3d:
         else:
             st.success(f"Status: {status}")
             
-        st.write("**Operating Parameters:**")
-        st.json(selected_row[['Flow_m3h', 'Press_bara', 'Temp_degC', 'Load_pct']].to_dict())
+        st.markdown("**Contribution Breakdown (%):**")
+        
+        # Horizontal Stacked Bar Chart for Percentage Breakdown
+        pct_values = [selected_row[f"{c}_pct_contrib"] for c in cols]
+        feature_colors = ['#008080', '#D9534F', '#4169E1', '#F0AD4E']
+        
+        fig_bar = go.Figure()
+        for idx, col_name in enumerate(cols):
+            fig_bar.add_trace(go.Bar(
+                y=[selected_set],
+                x=[pct_values[idx]],
+                name=col_name,
+                orientation='h',
+                marker=dict(color=feature_colors[idx]),
+                hovertemplate=f"{col_name}: %{{x:.1f}}%<extra></extra>"
+            ))
+            
+        fig_bar.update_layout(
+            barmode='stack',
+            height=130,
+            margin=dict(l=0, r=0, t=0, b=0),
+            xaxis=dict(title="Contribution %", range=[0, 100], showgrid=False),
+            yaxis=dict(showticklabels=False),
+            legend=dict(orientation="h", yanchor="bottom", y=-0.8, xanchor="center", x=0.5)
+        )
+        st.plotly_chart(fig_bar, use_container_width=True)
 
     with col_plot:
         fig_3d = go.Figure()
         
         # 1. Add Training Baseline Cluster Clouds
-        mode_colors = ['#008080', '#4169E1', '#8A2BE2']  # Petronas Teal, Royal Blue, Blue Violet
+        mode_colors = ['#008080', '#4169E1', '#8A2BE2']
         for i in range(3):
             mask = cluster_labels == i
             fig_3d.add_trace(go.Scatter3d(
-                x=train_X[mask, 0],  # Flow
-                y=train_X[mask, 1],  # Pressure
-                z=train_X[mask, 2],  # Temperature
+                x=train_X[mask, 0],
+                y=train_X[mask, 1],
+                z=train_X[mask, 2],
                 mode='markers',
                 name=f'Baseline Mode {i+1}',
                 marker=dict(size=3, color=mode_colors[i], opacity=0.25),
@@ -226,7 +265,7 @@ with tab_3d:
         c_idx = int(assigned_mode) - 1
         c_x, c_y, c_z = centroids[c_idx, :3]
         
-        # Line connecting selected point to its assigned centroid
+        # Distance Vector Line
         fig_3d.add_trace(go.Scatter3d(
             x=[sp_x, c_x],
             y=[sp_y, c_y],
