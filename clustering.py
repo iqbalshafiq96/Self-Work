@@ -109,7 +109,8 @@ with tab_mah:
     with col2:
         st.subheader("Mahalanobis Residuals by Tag")
         fig, ax = plt.subplots(figsize=(6, 4))
-        colors = ['red' if s == 'DEVIATION' else 'darkteal' for s in df['Mah_Health_Status']]
+        # Fixed color to 'teal' (valid Matplotlib color)
+        colors = ['red' if s == 'DEVIATION' else 'teal' for s in df['Mah_Health_Status']]
         ax.bar(df.index, df['Mahalanobis_Residual'], color=colors)
         ax.axhline(2.2, color='red', linestyle='--', label='Anomaly Threshold')
         ax.set_ylabel("Mahalanobis Distance (Residual)")
