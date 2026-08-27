@@ -47,7 +47,7 @@ st.sidebar.subheader("2. Real-Time Condition Controls")
 inject_anomaly = st.sidebar.checkbox("Inject Artificial Pressure Drop (Set_05)", value=True)
 
 # ---------------------------------------------------------
-# STEP 2: CALCULATE RESIDUALS AND BOTH CONTRIB TYPES
+# STEP 2: GENERATE TEST DATA & CALCULATION HELPERS
 # ---------------------------------------------------------
 def generate_test_data(inject_fault):
     np.random.seed(101)
@@ -69,7 +69,12 @@ df_test = generate_test_data(inject_anomaly)
 with st.expander("View Fixed Training Centroids", expanded=False):
     st.dataframe(pd.DataFrame(np.round(centroids, 2), columns=cols, index=["Mode 1", "Mode 2", "Mode 3"]))
 
-# Helper function to compute Mahalanobis & Feature Contributions against a chosen centroid
+# Helper function to find nearest centroid for a sample
+def get_nearest_centroid_index(sample_vector):
+    dists = [mahalanobis(sample_vector, c, inv_cov) for c in centroids]
+    return np.argmin(dists)
+
+# Helper function to compute Mahalanobis & Feature Contributions
 def calculate_metrics_for_centroid(df, target_centroid):
     m_residuals, e_residuals = [], []
     raw_contribs, pct_contribs, top_contribs = [], [], []
@@ -105,8 +110,42 @@ def calculate_metrics_for_centroid(df, target_centroid):
     
     return pd.concat([res_df, raw_df, pct_df], axis=1)
 
-# Default dataframe referenced to nearest cluster (for Tab 1 & Tab 2)
-df_analysis = calculate_metrics_for_centroid(df_test, centroids[1]) # Default Mode 2 for quick view
+# Default dataframe referenced to nearest cluster automatically (for Tab 1 & Tab 2)
+def calculate_auto_nearest_metrics(df):
+    m_residuals, e_residuals, raw_contribs, pct_contribs, top_contribs, nearest_modes = [], [], [], [], [], []
+    
+    for idx, row in df[cols].iterrows():
+        x = row.values
+        c_idx = get_nearest_centroid_index(x)
+        target_centroid = centroids[c_idx]
+        diff = x - target_centroid
+        
+        d_mah = mahalanobis(x, target_centroid, inv_cov)
+        d_euc = euclidean(x, target_centroid)
+        
+        c_raw = np.abs(diff * np.dot(inv_cov, diff))
+        total_sq = np.sum(c_raw)
+        c_pct = (c_raw / total_sq * 100.0) if total_sq > 0 else np.zeros_like(c_raw)
+        
+        m_residuals.append(round(d_mah, 2))
+        e_residuals.append(round(d_euc, 2))
+        raw_contribs.append(c_raw)
+        pct_contribs.append(c_pct)
+        top_contribs.append(cols[np.argmax(c_pct)])
+        nearest_modes.append(f"Mode {c_idx+1}")
+        
+    res_df = df.copy()
+    res_df['Nearest_Mode'] = nearest_modes
+    res_df['Mahalanobis_Residual'] = m_residuals
+    res_df['Euclidean_Residual'] = e_residuals
+    res_df['Mah_Top_Contributor'] = top_contribs
+    res_df['Mah_Status'] = np.where(res_df['Mahalanobis_Residual'] > 2.5, "DEVIATION", "NORMAL")
+    
+    raw_df = pd.DataFrame(np.round(raw_contribs, 2), columns=raw_cols, index=df.index)
+    pct_df = pd.DataFrame(np.round(pct_contribs, 2), columns=pct_cols, index=df.index)
+    return pd.concat([res_df, raw_df, pct_df], axis=1)
+
+df_analysis = calculate_auto_nearest_metrics(df_test)
 
 # ---------------------------------------------------------
 # OUTPUT TABS
@@ -122,7 +161,7 @@ with tab_euc:
     st.warning("⚠️ Unscaled Contribution: Variable with highest raw value difference (usually Flow or Temp) always dominates.")
     
     st.dataframe(
-        df_analysis[['Flow_m3h', 'Press_bara', 'Temp_degC', 'Load_pct', 'Euclidean_Residual', 'Mah_Top_Contributor', 'Mah_Status']],
+        df_analysis[['Flow_m3h', 'Press_bara', 'Temp_degC', 'Load_pct', 'Nearest_Mode', 'Euclidean_Residual', 'Mah_Top_Contributor', 'Mah_Status']],
         use_container_width=True
     )
 
@@ -135,7 +174,7 @@ with tab_mah:
     with col1:
         st.subheader("Residual & Highest Contributor Table")
         st.dataframe(
-            df_analysis[['Flow_m3h', 'Press_bara', 'Temp_degC', 'Load_pct', 'Mahalanobis_Residual', 'Mah_Top_Contributor', 'Mah_Status']],
+            df_analysis[['Flow_m3h', 'Press_bara', 'Temp_degC', 'Load_pct', 'Nearest_Mode', 'Mahalanobis_Residual', 'Mah_Top_Contributor', 'Mah_Status']],
             use_container_width=True
         )
         
@@ -168,24 +207,32 @@ with tab_3d:
         
         # 1. Select Data Set
         selected_set = st.selectbox("1. Select Operating Set:", df_test.index, index=4)
+        sample_vec = df_test.loc[selected_set, cols].values
         
-        # 2. Manual Dropdown for Cluster Reference Selection
+        # 2. Select Reference Mode (4 Options)
+        auto_nearest_idx = get_nearest_centroid_index(sample_vec)
+        
         cluster_options = {
+            f"Nearest Cluster (Auto -> Mode {auto_nearest_idx+1})": -1,
             "Mode 1 (Low Load)": 0,
             "Mode 2 (Normal Operating)": 1,
             "Mode 3 (Peak Load)": 2
         }
-        selected_mode_label = st.selectbox("2. Reference Cluster Mode:", list(cluster_options.keys()), index=1)
-        ref_cluster_idx = cluster_options[selected_mode_label]
+        
+        selected_mode_label = st.selectbox("2. Reference Cluster Mode:", list(cluster_options.keys()), index=0)
+        mode_choice = cluster_options[selected_mode_label]
+        
+        # Resolve target cluster index
+        ref_cluster_idx = auto_nearest_idx if mode_choice == -1 else mode_choice
         target_centroid = centroids[ref_cluster_idx]
         
-        # Recalculate metrics based on selected cluster
+        # Recalculate metrics for selected point against selected target centroid
         df_tab3 = calculate_metrics_for_centroid(df_test, target_centroid)
         selected_row = df_tab3.loc[selected_set]
         status = selected_row['Mah_Status']
         
         st.markdown("---")
-        st.metric(label=f"Mahalanobis Residual (vs {selected_mode_label[:6]})", value=selected_row['Mahalanobis_Residual'])
+        st.metric(label=f"Mahalanobis Residual (vs Mode {ref_cluster_idx+1})", value=selected_row['Mahalanobis_Residual'])
         st.metric(label="Top Root Cause", value=selected_row['Mah_Top_Contributor'])
         
         if status == "DEVIATION":
