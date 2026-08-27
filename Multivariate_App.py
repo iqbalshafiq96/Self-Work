@@ -55,26 +55,18 @@ RESTRICTED_NOC_DATASETS = {"NOC_Chiller", "NOC_Turbine"}
 
 # Dataset Map for Phase 2 Cases
 CASE_URLS = {
-    "Case 0": (
-        "https://raw.githubusercontent.com/"
-        "iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"
-    ),
-    "Case 1": (
-        "https://raw.githubusercontent.com/"
-        "iqbalshafiq96/Self-Work/main/Multivariate_Case_1.csv"
-    ),
-    "Case 2": (
-        "https://raw.githubusercontent.com/"
-        "iqbalshafiq96/Self-Work/main/Multivariate_Case_2.csv"
-    ),
-    "Case 3": (
-        "https://raw.githubusercontent.com/"
-        "iqbalshafiq96/Self-Work/main/Multivariate_Case_3.csv"
-    ),
-    "Case 10": (
-        "https://raw.githubusercontent.com/"
-        "iqbalshafiq96/Self-Work/main/Multivariate_Case_10.csv"
-    ),
+    "Case 0": ("https://raw.githubusercontent.com/"iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"),
+    "Case 1": ("https://raw.githubusercontent.com/"iqbalshafiq96/Self-Work/main/Multivariate_Case_1.csv"),
+    "Case 2": ("https://raw.githubusercontent.com/"iqbalshafiq96/Self-Work/main/Multivariate_Case_2.csv"),
+    "Case 3": ("https://raw.githubusercontent.com/"iqbalshafiq96/Self-Work/main/Multivariate_Case_3.csv"),
+    "Case 4": ("https://raw.githubusercontent.com/"iqbalshafiq96/Self-Work/main/Multivariate_Case_4.csv"),
+    "Case 5": ("https://raw.githubusercontent.com/"iqbalshafiq96/Self-Work/main/Multivariate_Case_5.csv"),
+    "Case 6": ("https://raw.githubusercontent.com/"iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"),
+    "Case 7": ("https://raw.githubusercontent.com/"iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"),
+    "Case 8": ("https://raw.githubusercontent.com/"iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"),
+    "Case 9": ("https://raw.githubusercontent.com/"iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"),
+    "Case 10": ("https://raw.githubusercontent.com/"iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"),
+    "Case 11": ("https://raw.githubusercontent.com/"iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"),
 }
 
 
