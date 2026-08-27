@@ -3,14 +3,14 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
-from scipy.spatial.distance import cdist
+from scipy.spatial.distance import mahalanobis, euclidean
 
 st.set_page_config(page_title="Equipment Residual Health & 3D Mapping", layout="wide")
 
 st.title("Machinery Health Monitoring: Residuals, Contributions & 3D Mapping")
 st.markdown(
     "**Step 1:** Train fixed baseline operating centroids from historical data.  \n"
-    "**Step 2:** Compute real-time residuals, isolate raw & percentage feature contributions, and map points in 3D cluster space."
+    "**Step 2:** Select an operating set and choose a reference cluster to inspect distance and feature contributions."
 )
 
 # ---------------------------------------------------------
@@ -49,7 +49,7 @@ inject_anomaly = st.sidebar.checkbox("Inject Artificial Pressure Drop (Set_05)",
 # ---------------------------------------------------------
 # STEP 2: CALCULATE RESIDUALS AND BOTH CONTRIB TYPES
 # ---------------------------------------------------------
-def generate_and_analyze_test_data(inject_fault):
+def generate_test_data(inject_fault):
     np.random.seed(101)
     
     t1 = np.random.multivariate_normal([120.0, 3.20, 65.0, 45.0], np.diag([25, 0.04, 9, 16]), 3)
@@ -62,74 +62,51 @@ def generate_and_analyze_test_data(inject_fault):
     
     test_X = np.vstack([t1, t2, t3])
     sets = [f"Set_{i+1:02d}" for i in range(len(test_X))]
-    df = pd.DataFrame(np.round(test_X, 2), columns=cols, index=sets)
-    
-    # --- 1. Euclidean Calculations & Unscaled Contributions ---
-    dist_euc = cdist(df[cols], centroids, metric='euclidean')
-    df['Euc_Cluster'] = np.argmin(dist_euc, axis=1)
-    df['Euclidean_Residual'] = np.min(dist_euc, axis=1).round(2)
-    
-    euc_top_contribs = []
-    for idx, row in df.iterrows():
-        c_idx = int(row['Euc_Cluster'])
-        diff = np.abs(row[cols].values - centroids[c_idx])
-        top_var = cols[np.argmax(diff)]
-        euc_top_contribs.append(top_var)
-    df['Euc_Top_Contributor'] = euc_top_contribs
-    df['Euc_Cluster'] = df['Euc_Cluster'] + 1
-    
-    # --- 2. Mahalanobis Calculations & Raw / Percent Contributions ---
-    dist_mah = cdist(df[cols], centroids, metric='mahalanobis', VI=inv_cov)
-    df['Mah_Cluster'] = np.argmin(dist_mah, axis=1)
-    df['Mahalanobis_Residual'] = np.min(dist_mah, axis=1).round(2)
-    
-    mah_top_contribs = []
-    mah_contrib_raw_matrices = []
-    mah_contrib_pct_matrices = []
-    
-    for idx, row in df.iterrows():
-        c_idx = int(row['Mah_Cluster'])
-        diff = row[cols].values - centroids[c_idx]
-        
-        # Absolute raw contribution of each variable j to D_M^2
-        contribs_abs = np.abs(diff * np.dot(inv_cov, diff))
-        total_dist_sq = np.sum(contribs_abs)
-        
-        # Calculate percentage contribution
-        if total_dist_sq > 0:
-            contribs_pct = (contribs_abs / total_dist_sq) * 100.0
-        else:
-            contribs_pct = np.zeros_like(contribs_abs)
-            
-        top_var = cols[np.argmax(contribs_pct)]
-        mah_top_contribs.append(top_var)
-        mah_contrib_raw_matrices.append(contribs_abs)
-        mah_contrib_pct_matrices.append(contribs_pct)
-        
-    df['Mah_Top_Contributor'] = mah_top_contribs
-    df['Mah_Cluster'] = df['Mah_Cluster'] + 1
-    
-    df['Euc_Status'] = np.where(df['Euclidean_Residual'] > 12.0, "DEVIATION", "NORMAL")
-    df['Mah_Status'] = np.where(df['Mahalanobis_Residual'] > 2.5, "DEVIATION", "NORMAL")
-    
-    raw_contrib_df = pd.DataFrame(
-        np.round(np.array(mah_contrib_raw_matrices, dtype=float), 2), 
-        columns=raw_cols, 
-        index=sets
-    )
+    return pd.DataFrame(np.round(test_X, 2), columns=cols, index=sets)
 
-    pct_contrib_df = pd.DataFrame(
-        np.round(np.array(mah_contrib_pct_matrices, dtype=float), 2), 
-        columns=pct_cols, 
-        index=sets
-    )
-    
-    return pd.concat([df, raw_contrib_df, pct_contrib_df], axis=1)
-
-df_analysis = generate_and_analyze_test_data(inject_anomaly)
+df_test = generate_test_data(inject_anomaly)
 
 with st.expander("View Fixed Training Centroids", expanded=False):
     st.dataframe(pd.DataFrame(np.round(centroids, 2), columns=cols, index=["Mode 1", "Mode 2", "Mode 3"]))
+
+# Helper function to compute Mahalanobis & Feature Contributions against a chosen centroid
+def calculate_metrics_for_centroid(df, target_centroid):
+    m_residuals, e_residuals = [], []
+    raw_contribs, pct_contribs, top_contribs = [], [], []
+    
+    for idx, row in df[cols].iterrows():
+        x = row.values
+        diff = x - target_centroid
+        
+        # Distances
+        d_mah = mahalanobis(x, target_centroid, inv_cov)
+        d_euc = euclidean(x, target_centroid)
+        
+        m_residuals.append(round(d_mah, 2))
+        e_residuals.append(round(d_euc, 2))
+        
+        # Contributions
+        c_raw = np.abs(diff * np.dot(inv_cov, diff))
+        total_sq = np.sum(c_raw)
+        c_pct = (c_raw / total_sq * 100.0) if total_sq > 0 else np.zeros_like(c_raw)
+        
+        raw_contribs.append(c_raw)
+        pct_contribs.append(c_pct)
+        top_contribs.append(cols[np.argmax(c_pct)])
+        
+    res_df = df.copy()
+    res_df['Mahalanobis_Residual'] = m_residuals
+    res_df['Euclidean_Residual'] = e_residuals
+    res_df['Mah_Top_Contributor'] = top_contribs
+    res_df['Mah_Status'] = np.where(res_df['Mahalanobis_Residual'] > 2.5, "DEVIATION", "NORMAL")
+    
+    raw_df = pd.DataFrame(np.round(raw_contribs, 2), columns=raw_cols, index=df.index)
+    pct_df = pd.DataFrame(np.round(pct_contribs, 2), columns=pct_cols, index=df.index)
+    
+    return pd.concat([res_df, raw_df, pct_df], axis=1)
+
+# Default dataframe referenced to nearest cluster (for Tab 1 & Tab 2)
+df_analysis = calculate_metrics_for_centroid(df_test, centroids[1]) # Default Mode 2 for quick view
 
 # ---------------------------------------------------------
 # OUTPUT TABS
@@ -145,7 +122,7 @@ with tab_euc:
     st.warning("⚠️ Unscaled Contribution: Variable with highest raw value difference (usually Flow or Temp) always dominates.")
     
     st.dataframe(
-        df_analysis[['Flow_m3h', 'Press_bara', 'Temp_degC', 'Load_pct', 'Euclidean_Residual', 'Euc_Top_Contributor', 'Euc_Status']],
+        df_analysis[['Flow_m3h', 'Press_bara', 'Temp_degC', 'Load_pct', 'Euclidean_Residual', 'Mah_Top_Contributor', 'Mah_Status']],
         use_container_width=True
     )
 
@@ -175,7 +152,6 @@ with tab_mah:
 
     st.subheader("Variable Contribution Breakdown")
     st.caption("Raw distance squared score and normalized percentage contribution per parameter.")
-    
     st.dataframe(
         df_analysis[raw_cols + pct_cols + ['Mah_Top_Contributor']],
         use_container_width=True
@@ -188,14 +164,28 @@ with tab_3d:
     col_controls, col_plot = st.columns([1.2, 2.8])
     
     with col_controls:
-        st.markdown("### Point Inspector")
-        selected_set = st.selectbox("Select Operating Set:", df_analysis.index, index=4)
+        st.markdown("### Point Inspector & Reference Setup")
         
-        selected_row = df_analysis.loc[selected_set]
-        assigned_mode = int(selected_row['Mah_Cluster'])
+        # 1. Select Data Set
+        selected_set = st.selectbox("1. Select Operating Set:", df_test.index, index=4)
+        
+        # 2. Manual Dropdown for Cluster Reference Selection
+        cluster_options = {
+            "Mode 1 (Low Load)": 0,
+            "Mode 2 (Normal Operating)": 1,
+            "Mode 3 (Peak Load)": 2
+        }
+        selected_mode_label = st.selectbox("2. Reference Cluster Mode:", list(cluster_options.keys()), index=1)
+        ref_cluster_idx = cluster_options[selected_mode_label]
+        target_centroid = centroids[ref_cluster_idx]
+        
+        # Recalculate metrics based on selected cluster
+        df_tab3 = calculate_metrics_for_centroid(df_test, target_centroid)
+        selected_row = df_tab3.loc[selected_set]
         status = selected_row['Mah_Status']
         
-        st.metric(label="Mahalanobis Residual", value=selected_row['Mahalanobis_Residual'])
+        st.markdown("---")
+        st.metric(label=f"Mahalanobis Residual (vs {selected_mode_label[:6]})", value=selected_row['Mahalanobis_Residual'])
         st.metric(label="Top Root Cause", value=selected_row['Mah_Top_Contributor'])
         
         if status == "DEVIATION":
@@ -212,31 +202,6 @@ with tab_3d:
             'Contrib (%)': [f"{selected_row[c]:.1f}%" for c in pct_cols]
         })
         st.dataframe(breakdown_df, hide_index=True, use_container_width=True)
-        
-        # Horizontal Stacked Bar Chart for Visual Percentage Distribution
-        pct_values = [selected_row[c] for c in pct_cols]
-        feature_colors = ['#008080', '#D9534F', '#4169E1', '#F0AD4E']
-        
-        fig_bar = go.Figure()
-        for idx, col_name in enumerate(cols):
-            fig_bar.add_trace(go.Bar(
-                y=[selected_set],
-                x=[pct_values[idx]],
-                name=col_name,
-                orientation='h',
-                marker=dict(color=feature_colors[idx]),
-                hovertemplate=f"{col_name}: %{{x:.1f}}%<extra></extra>"
-            ))
-            
-        fig_bar.update_layout(
-            barmode='stack',
-            height=120,
-            margin=dict(l=0, r=0, t=10, b=0),
-            xaxis=dict(title="Contribution %", range=[0, 100], showgrid=False),
-            yaxis=dict(showticklabels=False),
-            legend=dict(orientation="h", yanchor="bottom", y=-0.8, xanchor="center", x=0.5)
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
 
     with col_plot:
         fig_3d = go.Figure()
@@ -251,7 +216,7 @@ with tab_3d:
                 z=train_X[mask, 2],
                 mode='markers',
                 name=f'Baseline Mode {i+1}',
-                marker=dict(size=3, color=mode_colors[i], opacity=0.25),
+                marker=dict(size=3, color=mode_colors[i], opacity=0.20),
                 hoverinfo='none'
             ))
 
@@ -267,19 +232,18 @@ with tab_3d:
             marker=dict(size=8, color='black', symbol='diamond')
         ))
 
-        # 3. Selected Point Vector
+        # 3. Distance Vector to SELECTED Centroid
         sp_x = selected_row['Flow_m3h']
         sp_y = selected_row['Press_bara']
         sp_z = selected_row['Temp_degC']
-        c_idx = assigned_mode - 1
-        c_x, c_y, c_z = centroids[c_idx, :3]
+        c_x, c_y, c_z = target_centroid[:3]
         
         fig_3d.add_trace(go.Scatter3d(
             x=[sp_x, c_x],
             y=[sp_y, c_y],
             z=[sp_z, c_z],
             mode='lines',
-            name='Distance Vector',
+            name=f'Vector to C{ref_cluster_idx+1}',
             line=dict(color='crimson' if status == 'DEVIATION' else 'black', width=4, dash='dash')
         ))
 
@@ -302,7 +266,7 @@ with tab_3d:
                           "Flow: %{x} m³/h<br>" +
                           "Press: %{y} bara<br>" +
                           "Temp: %{z} °C<br>" +
-                          f"Residual: {selected_row['Mahalanobis_Residual']}<extra></extra>"
+                          f"Residual (vs C{ref_cluster_idx+1}): {selected_row['Mahalanobis_Residual']}<extra></extra>"
         ))
 
         fig_3d.update_layout(
