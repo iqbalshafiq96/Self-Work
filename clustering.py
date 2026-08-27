@@ -2,107 +2,117 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.spatial.distance import pdist, squareform
-from scipy.cluster.hierarchy import linkage, fcluster
+from scipy.spatial.distance import cdist
 
-# Page Config
-st.set_page_config(page_title="Model Clustering Comparison", layout="wide")
+st.set_page_config(page_title="Equipment Health Monitoring & Residuals", layout="wide")
 
-st.title("Model Benchmarking: Euclidean vs. Mahalanobis Clustering")
+st.title("Machinery Health Monitoring: Euclidean vs. Mahalanobis Residuals")
 st.markdown(
-    "Compare how distance metrics evaluate model performance across correlated features "
-    "(e.g., Accuracy vs. Latency)."
+    "Detect equipment deviations by calculating operating residuals—the distance between "
+    "real-time sensor tags (**Flow, Suction Pressure, Discharge Temp, Motor Load**) "
+    "and baseline mode centroids."
 )
 
-# Sidebar Options
-st.sidebar.header("Dataset Configuration")
-n_per_cluster = st.sidebar.slider("Models per Tier", min_value=3, max_value=8, value=4)
-random_seed = st.sidebar.number_input("Random Seed", value=42, step=1)
+st.sidebar.header("Plant Simulation Controls")
+n_samples = st.sidebar.slider("Operating Points per Baseline Mode", 3, 10, 5)
+noise_level = st.sidebar.slider("Process Noise", 0.5, 3.0, 1.0)
 
 @st.cache_data
-def generate_model_data(n, seed):
-    np.random.seed(seed)
+def generate_equipment_data(n, noise):
+    np.random.seed(42)
     
-    # Generate 3 model tiers (Edge, Mid, Foundation)
-    cov1 = [[4, 15], [15, 80]]
-    c1 = np.random.multivariate_normal([75, 20], cov1, n)
-
-    cov2 = [[5, 25], [25, 150]]
-    c2 = np.random.multivariate_normal([85, 80], cov2, n)
-
-    cov3 = [[3, 20], [20, 180]]
-    c3 = np.random.multivariate_normal([95, 180], cov3, n)
-
-    X = np.vstack([c1, c2, c3])
-    names = [f"Model_{chr(65+i)}" for i in range(3 * n)]
+    # Define 3 Normal Baseline Operating Clusters (Mode Centroids)
+    # Features: [Flow (m3/h), Suction Press (bara), Discharge Temp (degC), Load (%)]
+    mode1_mean = [120.0, 3.20, 65.0, 45.0]  # Turndown Mode
+    mode2_mean = [250.0, 4.00, 95.0, 78.0]  # Base Load Mode
+    mode3_mean = [340.0, 4.80, 125.0, 95.0] # Peak Load Mode
     
-    df = pd.DataFrame(np.round(X, 2), columns=['Accuracy', 'Latency'], index=names)
+    centroids = np.array([mode1_mean, mode2_mean, mode3_mean])
     
-    # 1. Euclidean Clustering
-    dist_euc = pdist(df[['Accuracy', 'Latency']], metric='euclidean')
-    Z_euc = linkage(dist_euc, method='ward')
-    df['Cluster_Euclidean'] = fcluster(Z_euc, t=3, criterion='maxclust')
+    cov1 = np.diag([25*noise, 0.04*noise, 9*noise, 16*noise])
+    cov2 = np.diag([36*noise, 0.09*noise, 16*noise, 25*noise])
+    cov3 = np.diag([49*noise, 0.16*noise, 25*noise, 16*noise])
     
-    # 2. Mahalanobis Clustering
-    cov_matrix = np.cov(df[['Accuracy', 'Latency']].values, rowvar=False)
-    inv_cov = np.linalg.pinv(cov_matrix)
-    dist_mah = pdist(df[['Accuracy', 'Latency']].values, metric='mahalanobis', VI=inv_cov)
-    Z_mah = linkage(dist_mah, method='average')
-    df['Cluster_Mahalanobis'] = fcluster(Z_mah, t=3, criterion='maxclust')
+    m1 = np.random.multivariate_normal(mode1_mean, cov1, n)
+    m2 = np.random.multivariate_normal(mode2_mean, cov2, n)
+    m3 = np.random.multivariate_normal(mode3_mean, cov3, n)
     
-    return df, squareform(dist_euc), squareform(dist_mah)
+    X = np.vstack([m1, m2, m3])
+    tags = [f"Tag_{i+1:02d}" for i in range(3 * n)]
+    cols = ['Flow_m3h', 'Press_bara', 'Temp_degC', 'Load_pct']
+    df = pd.DataFrame(np.round(X, 2), columns=cols, index=tags)
+    
+    # 1. Euclidean Residuals (Distance to closest centroid)
+    dist_euc = cdist(df[cols], centroids, metric='euclidean')
+    df['Euclidean_Cluster'] = np.argmin(dist_euc, axis=1) + 1
+    df['Euclidean_Residual'] = np.min(dist_euc, axis=1).round(2)
+    
+    # 2. Mahalanobis Residuals (Scales variances and covariances)
+    cov_pooled = np.cov(df[cols].values, rowvar=False)
+    inv_cov = np.linalg.pinv(cov_pooled)
+    dist_mah = cdist(df[cols], centroids, metric='mahalanobis', VI=inv_cov)
+    df['Mahalanobis_Cluster'] = np.argmin(dist_mah, axis=1) + 1
+    df['Mahalanobis_Residual'] = np.min(dist_mah, axis=1).round(2)
+    
+    # Flag Anomaly if residual exceeds threshold
+    df['Euc_Health_Status'] = np.where(df['Euclidean_Residual'] > 12.0, "DEVIATION", "NORMAL")
+    df['Mah_Health_Status'] = np.where(df['Mahalanobis_Residual'] > 2.2, "DEVIATION", "NORMAL")
+    
+    return df, centroids
 
-df, mat_euc, mat_mah = generate_model_data(n_per_cluster, random_seed)
+df, centroids = generate_equipment_data(n_samples, noise_level)
 
-# Show raw data section
-with st.expander("View Raw Benchmark Dataset", expanded=False):
+with st.expander("View Full Equipment Telemetry Data", expanded=False):
     st.dataframe(df, use_container_width=True)
 
-# Main Output Tabs
-tab_euc, tab_mah = st.tabs(["Euclidean Clustering", "Mahalanobis Clustering"])
+tab_euc, tab_mah = st.tabs(["Tab 1: Euclidean Residuals", "Tab 2: Mahalanobis Residuals"])
 
 # --- TAB 1: EUCLIDEAN ---
 with tab_euc:
-    st.header("Euclidean Distance Clustering")
-    st.caption("Treats all dimensions independently; highly sensitive to scale differences (e.g., Latency vs Accuracy).")
+    st.header("Euclidean Distance Residual Analysis")
+    st.warning("⚠️ Unscaled: Flow (0-350) and Temp (0-130) dominate the residual. Pressure variations (0.1 bara) are practically ignored.")
     
-    col1, col2 = st.columns([1, 1])
+    col1, col2 = st.columns([1.2, 1])
     
     with col1:
-        st.subheader("Cluster Assignments")
-        st.dataframe(df[['Accuracy', 'Latency', 'Cluster_Euclidean']], use_container_width=True)
+        st.subheader("Equipment Residual Table")
+        st.dataframe(
+            df[['Flow_m3h', 'Press_bara', 'Temp_degC', 'Load_pct', 'Euclidean_Residual', 'Euc_Health_Status']],
+            use_container_width=True
+        )
         
     with col2:
-        st.subheader("Scatter Visualization")
+        st.subheader("Euclidean Residuals by Tag")
         fig, ax = plt.subplots(figsize=(6, 4))
-        scatter = ax.scatter(df['Latency'], df['Accuracy'], c=df['Cluster_Euclidean'], cmap='viridis', s=80)
-        ax.set_xlabel("Latency (ms)")
-        ax.set_ylabel("Accuracy (%)")
-        ax.set_title("Euclidean Clusters")
+        colors = ['red' if s == 'DEVIATION' else 'navy' for s in df['Euc_Health_Status']]
+        ax.bar(df.index, df['Euclidean_Residual'], color=colors)
+        ax.axhline(12.0, color='red', linestyle='--', label='Anomaly Threshold')
+        ax.set_ylabel("Euclidean Distance (Residual)")
+        ax.set_xticklabels(df.index, rotation=45)
+        ax.legend()
         st.pyplot(fig)
-
-    st.subheader("Pairwise Distance Matrix (Euclidean)")
-    st.dataframe(pd.DataFrame(mat_euc, index=df.index, columns=df.index).round(2), use_container_width=True)
 
 # --- TAB 2: MAHALANOBIS ---
 with tab_mah:
-    st.header("Mahalanobis Distance Clustering")
-    st.caption("Accounts for feature variance and inter-metric correlation (covariance matrix inverse).")
+    st.header("Mahalanobis Distance Residual Analysis")
+    st.success("✅ Covariance-Weighted: Normalizes differences in engineering units, allowing equal sensitivity across Pressure, Flow, and Temp.")
     
-    col1, col2 = st.columns([1, 1])
+    col1, col2 = st.columns([1.2, 1])
     
     with col1:
-        st.subheader("Cluster Assignments")
-        st.dataframe(df[['Accuracy', 'Latency', 'Cluster_Mahalanobis']], use_container_width=True)
+        st.subheader("Equipment Residual Table")
+        st.dataframe(
+            df[['Flow_m3h', 'Press_bara', 'Temp_degC', 'Load_pct', 'Mahalanobis_Residual', 'Mah_Health_Status']],
+            use_container_width=True
+        )
         
     with col2:
-        st.subheader("Scatter Visualization")
+        st.subheader("Mahalanobis Residuals by Tag")
         fig, ax = plt.subplots(figsize=(6, 4))
-        scatter = ax.scatter(df['Latency'], df['Accuracy'], c=df['Cluster_Mahalanobis'], cmap='plasma', s=80)
-        ax.set_xlabel("Latency (ms)")
-        ax.set_ylabel("Accuracy (%)")
-        ax.set_title("Mahalanobis Clusters")
+        colors = ['red' if s == 'DEVIATION' else 'darkteal' for s in df['Mah_Health_Status']]
+        ax.bar(df.index, df['Mahalanobis_Residual'], color=colors)
+        ax.axhline(2.2, color='red', linestyle='--', label='Anomaly Threshold')
+        ax.set_ylabel("Mahalanobis Distance (Residual)")
+        ax.set_xticklabels(df.index, rotation=45)
+        ax.legend()
         st.pyplot(fig)
-
-    st.subheader("Pairwise Distance Matrix (Mahalanobis)")
-    st.dataframe(pd.DataFrame(mat_mah, index=df.index, columns=df.index).round(2), use_container_width=True)
