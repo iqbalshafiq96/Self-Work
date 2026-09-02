@@ -505,12 +505,12 @@ else:
                 st.plotly_chart(fig_edge, use_container_width=True)
 
                 # ---------------------------------------------------------
-                # NEW SECTION: ROOT CAUSE ATTRIBUTION & DEVIATION ANALYSIS
+                # ROOT CAUSE ATTRIBUTION & DEVIATION ANALYSIS
                 # ---------------------------------------------------------
                 st.markdown("---")
                 st.subheader("Root Cause & Feature Deviation Inspector")
                 st.caption(
-                    "Select a sample point to diagnose feature-level deviations from the predicted regime baseline."
+                    "Select any sample point to diagnose feature-level deviations from the predicted regime baseline."
                 )
 
                 feature_cols = st.session_state["feature_cols"]
@@ -522,23 +522,25 @@ else:
                 col_sel1, col_sel2 = st.columns([1, 2])
 
                 with col_sel1:
+                    # 1. Fetch all available sample indices
+                    all_samples = results_df["Sample"].tolist()
+
+                    # 2. Identify indices where an anomaly/fault was triggered
                     fault_samples = results_df[
                         results_df["Alarm_Status"] == "FAULT / ANOMALY"
                     ]["Sample"].tolist()
 
-                    if fault_samples:
-                        sample_to_inspect = st.selectbox(
-                            "Select Detected Anomaly Sample Index:",
-                            options=fault_samples,
-                            index=0,
-                        )
-                    else:
-                        sample_to_inspect = st.number_input(
-                            "Select Any Sample Index to Inspect:",
-                            min_value=0,
-                            max_value=total_samples - 1,
-                            value=0,
-                        )
+                    # 3. Release dropdown for ALL samples, defaulting to first anomaly if available
+                    default_idx = (
+                        all_samples.index(fault_samples[0]) if fault_samples else 0
+                    )
+
+                    sample_to_inspect = st.selectbox(
+                        "Select Sample Index to Inspect:",
+                        options=all_samples,
+                        index=default_idx,
+                        format_func=lambda x: f"Sample #{x} {'⚠️ [FAULT]' if x in fault_samples else '✅ [Normal]'}",
+                    )
 
                 # Extract data for selected sample
                 sample_row = results_df.iloc[sample_to_inspect]
