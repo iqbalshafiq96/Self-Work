@@ -17,8 +17,119 @@ st.set_page_config(
 
 st.title("Rotating Asset Reliability Monitor")
 st.caption(
-    "Regime-based Clustering & Minimum Mahalanobis Residual Scoring"
+    "Regime-Based Clustering & Stabilized Minimum Mahalanobis Residual Scoring"
 )
+
+# ---------------------------------------------------------
+# STABILIZED MAHALANOBIS SCORING ENGINE
+# ---------------------------------------------------------
+class RobustMahalanobisScorer:
+    """
+    Stabilized Regime-Based Mahalanobis Engine for Industrial Sensors.
+    Fixes matrix ill-conditioning, division-by-zero on static sensors, 
+    and dimensional scaling explosions.
+    """
+    def __init__(self, variance_floor: float = 1e-4, shrink_factor: float = 1e-3):
+        self.variance_floor = variance_floor
+        self.shrink_factor = shrink_factor
+        self.registry = {}
+
+    def fit_regime(self, regime_id: int, X_regime: np.ndarray, raw_centroid: np.ndarray, percentile: float = 99.0):
+        """
+        Fit local regime centroid, regularized precision matrix, and threshold R_k.
+        X_regime: Scaled standard features (N_samples x P_features)
+        """
+        n_samples, p_features = X_regime.shape
+        
+        # 1. Compute robust mean/centroid in scaled space
+        centroid = np.mean(X_regime, axis=0)
+        
+        # 2. Add variance floor to prevent division-by-zero on static sensors
+        variances = np.var(X_regime, axis=0)
+        variances_clipped = np.maximum(variances, self.variance_floor)
+        
+        # 3. Regularized Covariance (Ledoit-Wolf Shrinkage)
+        try:
+            lw = LedoitWolf()
+            cov_matrix = lw.fit(X_regime).covariance_
+        except Exception:
+            cov_matrix = np.cov(X_regime, rowvar=False)
+
+        # 4. Diagonal Ridge Regularization (Prevents tiny eigenvalue inversion explosion)
+        ridge = np.eye(p_features) * (self.shrink_factor * np.trace(cov_matrix) / max(1, p_features))
+        reg_cov = cov_matrix + ridge
+
+        # 5. Stable Matrix Inversion via SVD (Pseudo-Inverse with spectral cutoff)
+        U, S, Vt = np.linalg.svd(reg_cov)
+        max_s = np.max(S)
+        # Suppress eigenvalues smaller than 1e-5 relative to max eigenvalue
+        S_inv = np.array([1.0 / s if (s / max_s) > 1e-5 else 0.0 for s in S])
+        precision_matrix = np.dot(Vt.T, np.dot(np.diag(S_inv), U.T))
+
+        # 6. Calculate Dimension-Normalized Mahalanobis Distance for Training Set
+        diffs = X_regime - centroid
+        left_mult = np.dot(diffs, precision_matrix)
+        d_m_sq = np.sum(left_mult * diffs, axis=1)
+        d_m_sq = np.maximum(0.0, d_m_sq)
+        
+        # Dimension-normalized distance (Expected mean ~ 1.0 for normal data)
+        d_m_norm = np.sqrt(d_m_sq) / np.sqrt(p_features)
+
+        # 7. Establish Baseline Threshold R_k
+        threshold_R = np.percentile(d_m_norm, percentile)
+
+        self.registry[regime_id] = {
+            "centroid": centroid,
+            "raw_centroid": raw_centroid,
+            "precision": precision_matrix,
+            "threshold_R": threshold_R,
+            "p_features": p_features,
+            "sample_count": n_samples,
+            "max_d_m": d_m_norm.max(),
+            "mean_d_m": d_m_norm.mean(),
+        }
+
+    def score_point_min_mahalanobis(self, point: np.ndarray):
+        """
+        Evaluates an incoming live sample against all regimes using normalized min(d_M).
+        """
+        d_m_norm_all = []
+        r_k_all = []
+        regime_ids = list(self.registry.keys())
+
+        for k in regime_ids:
+            reg = self.registry[k]
+            centroid = reg["centroid"]
+            precision = reg["precision"]
+            p_features = reg["p_features"]
+
+            diff = point - centroid
+            d_m_sq = np.dot(np.dot(diff, precision), diff.T)
+            d_m_sq = max(0.0, float(d_m_sq))
+            
+            # Dimension-normalized distance
+            d_m_norm = np.sqrt(d_m_sq) / np.sqrt(p_features)
+            
+            d_m_norm_all.append(d_m_norm)
+            r_k_all.append(reg["threshold_R"])
+
+        # Find closest regime in normalized Mahalanobis space
+        best_idx = int(np.argmin(d_m_norm_all))
+        nearest_k = regime_ids[best_idx]
+        min_d_m = d_m_norm_all[best_idx]
+        threshold_R = r_k_all[best_idx]
+
+        # Calculate Edge Residual
+        d_edge = max(0.0, min_d_m - threshold_R)
+
+        return {
+            "nearest_regime": nearest_k,
+            "d_M_normalized": min_d_m,
+            "threshold_R": threshold_R,
+            "d_edge": d_edge,
+            "is_anomaly": d_edge > 0
+        }
+
 
 # ---------------------------------------------------------
 # HELPER DATA CLEANER
@@ -203,8 +314,6 @@ if phase == "Phase 1: Offline Training":
             feature_cols = st.session_state["feature_cols"]
             cluster_labels = st.session_state["cluster_labels"]
             n_clusters = st.session_state["n_clusters"]
-            model = st.session_state["cluster_model"]
-            algo_choice = st.session_state["algo_choice"]
 
             percentile_thresh = st.slider(
                 "Select Radius Threshold Percentile:",
@@ -214,51 +323,31 @@ if phase == "Phase 1: Offline Training":
                 step=0.1,
             )
 
-            if st.button("Compute Regime Metrics & Covariance"):
-                registry = {}
+            if st.button("Compute Regime Metrics & Regularized Covariance"):
+                scorer = RobustMahalanobisScorer(variance_floor=1e-4, shrink_factor=1e-3)
 
                 for k in range(n_clusters):
                     cluster_mask = cluster_labels == k
                     cluster_data = scaled_train[cluster_mask]
                     raw_cluster_data = raw_train_df[feature_cols].iloc[cluster_mask]
-
-                    if algo_choice == "KMeans":
-                        centroid = model.cluster_centers_[k]
-                    else:
-                        centroid = model.means_[k]
-
                     raw_centroid = raw_cluster_data.mean().values
 
-                    lw = LedoitWolf()
-                    lw.fit(cluster_data)
-                    precision_matrix = lw.precision_
-
-                    diffs = cluster_data - centroid
-                    d_m_train = np.sqrt(
-                        np.sum(np.dot(diffs, precision_matrix) * diffs, axis=1)
+                    scorer.fit_regime(
+                        regime_id=k, 
+                        X_regime=cluster_data, 
+                        raw_centroid=raw_centroid, 
+                        percentile=percentile_thresh
                     )
 
-                    threshold_R = np.percentile(d_m_train, percentile_thresh)
-
-                    registry[k] = {
-                        "centroid": centroid,
-                        "raw_centroid": raw_centroid,
-                        "precision": precision_matrix,
-                        "threshold_R": threshold_R,
-                        "sample_count": len(cluster_data),
-                        "max_d_m": d_m_train.max(),
-                        "mean_d_m": d_m_train.mean(),
-                    }
-
-                st.session_state["registry"] = registry
+                st.session_state["scorer"] = scorer
                 st.session_state["percentile_thresh"] = percentile_thresh
                 st.session_state["is_trained"] = True
                 st.success(
-                    "Local regime covariance matrices inverted and boundary radii established!"
+                    "Stabilized precision matrices computed & baseline thresholds established!"
                 )
 
-            if "registry" in st.session_state:
-                registry = st.session_state["registry"]
+            if "scorer" in st.session_state:
+                registry = st.session_state["scorer"].registry
                 regime_summary = []
 
                 for k, v in registry.items():
@@ -266,8 +355,8 @@ if phase == "Phase 1: Offline Training":
                         {
                             "Regime": k,
                             "Baseline Samples": v["sample_count"],
-                            "Mean Mahalanobis Dist": round(v["mean_d_m"], 4),
-                            "Max Mahalanobis Dist": round(v["max_d_m"], 4),
+                            "Mean Norm Mahalanobis": round(v["mean_d_m"], 4),
+                            "Max Norm Mahalanobis": round(v["max_d_m"], 4),
                             "Threshold Radius (R_k)": round(
                                 v["threshold_R"], 4
                             ),
@@ -284,7 +373,7 @@ if phase == "Phase 1: Offline Training":
 
         if st.session_state.get("is_trained", False):
             st.success(
-                "Model Pipeline is Fully Trained and Ready for Online Monitoring!"
+                "Model Pipeline is Fully Trained with Stabilized Engine and Ready for Online Monitoring!"
             )
 
             m_col1, m_col2, m_col3, m_col4 = st.columns(4)
@@ -339,7 +428,6 @@ else:
                 raw_test_df = load_and_clean_csv(TEST_URL)
                 feature_cols = st.session_state["feature_cols"]
 
-                # Strict check to ensure features match baseline
                 missing_features = [f for f in feature_cols if f not in raw_test_df.columns]
                 if missing_features:
                     st.error(f"Test dataset missing baseline features: {missing_features}")
@@ -384,7 +472,7 @@ else:
                 fig_regimes.update_traces(mode="lines+markers")
                 st.plotly_chart(fig_regimes, use_container_width=True)
 
-        # STEP 3: MINIMUM MAHALANOBIS & RESIDUAL SCORING
+        # STEP 3: STABILIZED MINIMUM MAHALANOBIS SCORING
         with t_score:
             st.subheader(
                 "Step 3: Direct Minimum Mahalanobis & Edge Residual Scoring"
@@ -394,47 +482,27 @@ else:
                 st.info("Please load test data in Step 1 first.")
             else:
                 scaled_test = st.session_state["scaled_test"]
-                registry = st.session_state["registry"]
-                n_clusters = st.session_state["n_clusters"]
+                scorer = st.session_state["scorer"]
 
                 results = []
-
                 for i, point in enumerate(scaled_test):
-                    d_m_all = []
-
-                    # Evaluate Mahalanobis distance across all trained regimes
-                    for k in range(n_clusters):
-                        centroid = registry[k]["centroid"]
-                        precision = registry[k]["precision"]
-                        diff = point - centroid
-                        
-                        d_m_k = np.sqrt(np.dot(np.dot(diff, precision), diff.T))
-                        d_m_all.append(d_m_k)
-
-                    # Identify the nearest cluster in Mahalanobis space
-                    nearest_k = int(np.argmin(d_m_all))
-                    min_d_m = d_m_all[nearest_k]
-                    threshold_R = registry[nearest_k]["threshold_R"]
-
-                    # Calculate residual beyond the local threshold radius
-                    d_edge = max(0.0, min_d_m - threshold_R)
-
+                    res = scorer.score_point_min_mahalanobis(point)
                     results.append(
                         {
                             "Sample": i,
-                            "Nearest_Regime": nearest_k,
-                            "Mahalanobis_Distance": min_d_m,
-                            "Regime_Threshold": threshold_R,
-                            "Edge_Residual": d_edge,
+                            "Nearest_Regime": res["nearest_regime"],
+                            "Mahalanobis_Distance": res["d_M_normalized"],
+                            "Regime_Threshold": res["threshold_R"],
+                            "Edge_Residual": res["d_edge"],
                             "Alarm_Status": "FAULT / ANOMALY"
-                            if d_edge > 0
+                            if res["is_anomaly"]
                             else "Normal",
                         }
                     )
 
                 results_df = pd.DataFrame(results)
                 st.session_state["results_df"] = results_df
-                st.success("Minimum Mahalanobis distance computation complete!")
+                st.success("Stabilized Minimum Mahalanobis distance computation complete!")
 
                 st.dataframe(results_df, height=300, use_container_width=True)
 
@@ -477,7 +545,7 @@ else:
                         x=results_df["Sample"],
                         y=results_df["Mahalanobis_Distance"],
                         mode="lines",
-                        name="Min Mahalanobis Distance (d_M)",
+                        name="Min Norm Mahalanobis Dist (d_M)",
                         line=dict(color="blue", width=1.5),
                     )
                 )
@@ -505,9 +573,9 @@ else:
                     )
 
                 fig_trend.update_layout(
-                    title="Live Min Mahalanobis Distance vs. Nearest Regime Threshold (R_k)",
+                    title="Live Normalized Mahalanobis Distance vs. Nearest Regime Threshold (R_k)",
                     xaxis_title="Sample Index / Time",
-                    yaxis_title="Distance Score",
+                    yaxis_title="Normalized Distance Score (Dimension Scaled)",
                     hovermode="x unified",
                 )
 
@@ -535,7 +603,7 @@ else:
                 feature_cols = st.session_state["feature_cols"]
                 raw_test_df = st.session_state["raw_test_df"]
                 scaled_test = st.session_state["scaled_test"]
-                registry = st.session_state["registry"]
+                scorer = st.session_state["scorer"]
                 scaler = st.session_state["scaler"]
 
                 col_sel1, col_sel2 = st.columns([1, 2])
@@ -570,21 +638,22 @@ else:
                     )
                     st.write(
                         f"• Nearest Operating Regime: **Regime {assigned_k}**  \n"
-                        f"• Min Mahalanobis Distance ($d_M$): `{d_m_val:.4f}` | Threshold ($R_k$): `{r_k_val:.4f}`  \n"
+                        f"• Norm Mahalanobis Distance ($d_M$): `{d_m_val:.4f}` | Threshold ($R_k$): `{r_k_val:.4f}`  \n"
                         f"• Status: **:{'red' if status == 'FAULT / ANOMALY' else 'green'}[{status}]**"
                     )
 
                 # Feature-level deviation calculations
                 z_sample = scaled_test[sample_to_inspect]
-                z_centroid = registry[assigned_k]["centroid"]
+                reg_info = scorer.registry[assigned_k]
+                z_centroid = reg_info["centroid"]
 
                 std_devs = scaler.scale_
                 means = scaler.mean_
 
                 raw_actuals = raw_test_df[feature_cols].iloc[sample_to_inspect].values
                 raw_predicted = (
-                    registry[assigned_k]["raw_centroid"]
-                    if "raw_centroid" in registry[assigned_k]
+                    reg_info["raw_centroid"]
+                    if "raw_centroid" in reg_info
                     else (z_centroid * std_devs + means)
                 )
 
