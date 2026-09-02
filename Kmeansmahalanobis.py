@@ -21,6 +21,18 @@ st.caption(
 )
 
 # ---------------------------------------------------------
+# HELPER DATA CLEANER
+# ---------------------------------------------------------
+@st.cache_data
+def load_and_clean_csv(url):
+    """Loads CSV while dropping unnamed index columns and stripping column whitespace."""
+    df = pd.read_csv(url)
+    df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
+    df.columns = df.columns.str.strip()
+    return df
+
+
+# ---------------------------------------------------------
 # SIDEBAR DATASET SELECTION (1-INDEXED)
 # ---------------------------------------------------------
 st.sidebar.header("Data Source Configuration")
@@ -76,17 +88,15 @@ if phase == "Phase 1: Offline Training":
         st.subheader("Step 1: Baseline Data Load & Standardization")
         st.write(f"Active Training Source: `{TRAIN_URL}`")
 
-        @st.cache_data
-        def load_train_data(url):
-            return pd.read_csv(url)
-
         try:
-            raw_train_df = load_train_data(TRAIN_URL)
+            raw_train_df = load_and_clean_csv(TRAIN_URL)
 
             numeric_cols = raw_train_df.select_dtypes(
                 include=[np.number]
             ).columns.tolist()
-            feature_cols = [c for c in numeric_cols if c.lower() != "timestamp"]
+            feature_cols = [
+                c for c in numeric_cols if c.lower() not in ["timestamp", "time", "date"]
+            ]
 
             st.success(
                 f"Data loaded successfully: {raw_train_df.shape[0]} rows × {len(feature_cols)} process features."
@@ -217,7 +227,6 @@ if phase == "Phase 1: Offline Training":
                     else:
                         centroid = model.means_[k]
 
-                    # Centroid in raw unscaled space for deviation calculation
                     raw_centroid = raw_cluster_data.mean().values
 
                     lw = LedoitWolf()
@@ -326,24 +335,25 @@ else:
             st.subheader("Step 1: Load Real-Time / Injected Test Data")
             st.write(f"Active Test Source: `{TEST_URL}`")
 
-            @st.cache_data
-            def load_test_data(url):
-                return pd.read_csv(url)
-
             try:
-                raw_test_df = load_test_data(TEST_URL)
+                raw_test_df = load_and_clean_csv(TEST_URL)
                 feature_cols = st.session_state["feature_cols"]
 
-                st.success(
-                    f"Test dataset loaded: {raw_test_df.shape[0]} samples."
-                )
-                st.dataframe(raw_test_df.head(), height=250)
+                # Strict check to ensure features match baseline
+                missing_features = [f for f in feature_cols if f not in raw_test_df.columns]
+                if missing_features:
+                    st.error(f"Test dataset missing baseline features: {missing_features}")
+                else:
+                    st.success(
+                        f"Test dataset loaded: {raw_test_df.shape[0]} samples."
+                    )
+                    st.dataframe(raw_test_df.head(), height=250)
 
-                scaler = st.session_state["scaler"]
-                scaled_test = scaler.transform(raw_test_df[feature_cols])
+                    scaler = st.session_state["scaler"]
+                    scaled_test = scaler.transform(raw_test_df[feature_cols])
 
-                st.session_state["raw_test_df"] = raw_test_df
-                st.session_state["scaled_test"] = scaled_test
+                    st.session_state["raw_test_df"] = raw_test_df
+                    st.session_state["scaled_test"] = scaled_test
 
             except Exception as e:
                 st.error(f"Failed to load test dataset: {e}")
@@ -419,7 +429,7 @@ else:
 
                 st.dataframe(results_df, height=300, use_container_width=True)
 
-        # STEP 4: ANOMALY ALERT DASHBOARD (ENHANCED WITH ROOT CAUSE ATTRIBUTION)
+        # STEP 4: ANOMALY ALERT DASHBOARD
         with t_dashboard:
             st.subheader("Step 4: Machine Reliability & Anomaly Dashboard")
 
@@ -555,13 +565,14 @@ else:
                         f"• Status: **:{'red' if status == 'FAULT / ANOMALY' else 'green'}[{status}]**"
                     )
 
-                # Calculation of feature-level deviations
+                # Calculation of feature-level deviations strictly matching raw header mapping
                 z_sample = scaled_test[sample_to_inspect]
                 z_centroid = registry[assigned_k]["centroid"]
 
                 std_devs = scaler.scale_
                 means = scaler.mean_
 
+                # Extract raw row matching exact feature column order
                 raw_actuals = raw_test_df[feature_cols].iloc[sample_to_inspect].values
                 raw_predicted = (
                     registry[assigned_k]["raw_centroid"]
