@@ -20,9 +20,31 @@ st.caption(
     "Regime-based Clustering & Multi-Dimensional Mahalanobis Residual Scoring"
 )
 
-# GitHub Data URLs
-TRAIN_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv"
-TEST_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv"
+# ---------------------------------------------------------
+# SIDEBAR DATASET SELECTION
+# ---------------------------------------------------------
+st.sidebar.header("Data Source Configuration")
+
+DATASET_MAP = {
+    "Default Baseline Dataset (NOC6_1 & Case_0)": {
+        "train": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
+        "test": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
+    },
+    "Turbine Baseline Dataset (NOC_Turbine & Case_Turbine)": {
+        "train": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Turbine.csv",
+        "test": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine.csv",
+    },
+}
+
+selected_dataset_name = st.sidebar.selectbox(
+    "Select Baseline & Test Pair:",
+    options=list(DATASET_MAP.keys()),
+    index=0,
+)
+
+# Extract raw URLs based on user choice
+TRAIN_URL = DATASET_MAP[selected_dataset_name]["train"]
+TEST_URL = DATASET_MAP[selected_dataset_name]["test"]
 
 # ---------------------------------------------------------
 # TOP-LEVEL PHASE SELECTION
@@ -31,7 +53,6 @@ phase = st.radio(
     "Select Workflow Phase:",
     options=["Phase 1: Offline Training", "Phase 2: Online Monitoring"],
     horizontal=True,
-
 )
 
 st.markdown("---")
@@ -55,7 +76,7 @@ if phase == "Phase 1: Offline Training":
     # STEP 1: DATA INGESTION
     with t_data:
         st.subheader("Step 1: Baseline Data Load & Standardization")
-        st.write(f"Source URL: `{TRAIN_URL}`")
+        st.write(f"Active Training Source: `{TRAIN_URL}`")
 
         @st.cache_data
         def load_train_data(url):
@@ -91,6 +112,7 @@ if phase == "Phase 1: Offline Training":
             st.session_state["feature_cols"] = feature_cols
             st.session_state["scaler"] = scaler
             st.session_state["scaled_train"] = scaled_train
+            st.session_state["active_dataset_name"] = selected_dataset_name
 
         except Exception as e:
             st.error(f"Failed to load dataset: {e}")
@@ -288,6 +310,11 @@ else:
         st.error(
             "No trained baseline model detected. Please complete 'Phase 1: Offline Training' first."
         )
+    elif st.session_state.get("active_dataset_name") != selected_dataset_name:
+        st.warning(
+            f"Dataset configuration changed to **{selected_dataset_name}**. "
+            "Please return to **Phase 1: Offline Training** to retrain the baseline model."
+        )
     else:
         # Pipeline Tabs arranged Left-to-Right
         t_live_data, t_predict, t_score, t_dashboard = st.tabs(
@@ -302,7 +329,7 @@ else:
         # STEP 1: LIVE DATA INGESTION
         with t_live_data:
             st.subheader("Step 1: Load Real-Time / Injected Test Data")
-            st.write(f"Source URL: `{TEST_URL}`")
+            st.write(f"Active Test Source: `{TEST_URL}`")
 
             @st.cache_data
             def load_test_data(url):
