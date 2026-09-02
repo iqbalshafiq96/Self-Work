@@ -3,21 +3,31 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from sklearn.cluster import KMeans
 from sklearn.covariance import LedoitWolf
 from sklearn.preprocessing import StandardScaler
 
+# Page Configuration
 st.set_page_config(
     page_title="AVEVA OMR - Nearest Cluster OMI (%) Engine",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 st.title("AVEVA OMR Engine: Nearest Cluster Assignment & OMI (%)")
-st.caption("Dynamic Euclidean/Mahalanobis Nearest-Cluster Matching with Percentage OMI Normalization")
+st.caption(
+    "Dynamic Nearest-Cluster Matching with Percentage OMI Normalization & Sensor (%) Deviations"
+)
 
 # ---------------------------------------------------------
-# AVEVA OMR NEAREST-CLUSTER ENGINE
+# AVEVA OMR NEAREST-CLUSTER ENGINE CLASS
 # ---------------------------------------------------------
 class AVEVAOMRNearestClusterEngine:
+    """
+    AVEVA PRiSM / OMR Nearest-Cluster Empirical Engine.
+    Subdivides training data into operating modes (clusters), dynamically maps live data
+    to the nearest cluster, and evaluates normalized percentage distance (OMI %).
+    """
     def __init__(self, n_clusters: int = 3, shrink_factor: float = 1e-3):
         self.n_clusters = n_clusters
         self.shrink_factor = shrink_factor
@@ -25,13 +35,14 @@ class AVEVAOMRNearestClusterEngine:
         self.feature_cols = []
         self.scaler = None
 
-    def fit_baseline_clusters(self, X_raw: pd.DataFrame, feature_cols: list, percentile: float = 99.0):
+    def fit_baseline_clusters(
+        self, X_raw: pd.DataFrame, feature_cols: list, percentile: float = 99.0
+    ):
         self.feature_cols = feature_cols
         self.scaler = StandardScaler()
         X_scaled = self.scaler.fit_transform(X_raw[feature_cols])
 
-        # Subdivide training data into operating profile clusters using mini-batch / k-means allocation
-        from sklearn.cluster import KMeans
+        # Partition baseline dataset into operating clusters (operating states)
         kmeans = KMeans(n_clusters=self.n_clusters, random_state=42, n_init=10)
         cluster_labels = kmeans.fit_predict(X_scaled)
 
@@ -45,14 +56,16 @@ class AVEVAOMRNearestClusterEngine:
             z_centroid = np.mean(X_c_scaled, axis=0)
             raw_centroid = np.mean(X_c_raw, axis=0)
 
-            # Ledoit-Wolf Precision Matrix
+            # Ledoit-Wolf Covariance & Precision Matrix (Stabilized Matrix Inversion)
             try:
                 lw = LedoitWolf()
                 cov_matrix = lw.fit(X_c_scaled).covariance_
             except Exception:
                 cov_matrix = np.cov(X_c_scaled, rowvar=False)
 
-            ridge = np.eye(p_features) * (self.shrink_factor * np.trace(cov_matrix) / max(1, p_features))
+            ridge = np.eye(p_features) * (
+                self.shrink_factor * np.trace(cov_matrix) / max(1, p_features)
+            )
             reg_cov = cov_matrix + ridge
 
             U, S, Vt = np.linalg.svd(reg_cov)
@@ -60,12 +73,12 @@ class AVEVAOMRNearestClusterEngine:
             S_inv = np.array([1.0 / s if (s / max_s) > 1e-5 else 0.0 for s in S])
             precision_matrix = np.dot(Vt.T, np.dot(np.diag(S_inv), U.T))
 
-            # Raw Mahalanobis Distances for Baseline Cluster Calibration
+            # Raw Mahalanobis Distances for Cluster Baseline
             diffs = X_c_scaled - z_centroid
             dist_sq = np.sum(np.dot(diffs, precision_matrix) * diffs, axis=1)
             raw_distances = np.sqrt(np.maximum(0.0, dist_sq)) / np.sqrt(p_features)
 
-            # Statistical 99% Threshold (100% Benchmark baseline)
+            # Statistical Threshold (100% Benchmark Limit for this Cluster)
             threshold_abs = np.percentile(raw_distances, percentile)
 
             self.clusters[c_id] = {
@@ -84,13 +97,13 @@ class AVEVAOMRNearestClusterEngine:
         best_cluster_id = 0
         min_euclidean_dist = float("inf")
 
-        for c_id, cl baseline in self.clusters.items():
+        for c_id, baseline in self.clusters.items():
             dist = np.linalg.norm(z_sample - baseline["z_centroid"])
             if dist < min_euclidean_dist:
                 min_euclidean_dist = dist
                 best_cluster_id = c_id
 
-        # 2. Evaluate Mahalanobis Distance against assigned Nearest Cluster
+        # 2. Evaluate Distance against assigned Nearest Cluster
         cl = self.clusters[best_cluster_id]
         z_centroid = cl["z_centroid"]
         raw_centroid = cl["raw_centroid"]
@@ -102,7 +115,7 @@ class AVEVAOMRNearestClusterEngine:
         raw_mahal_sq = float(np.dot(np.dot(diff, precision), diff.T))
         raw_mahal_dist = np.sqrt(max(0.0, raw_mahal_sq)) / np.sqrt(p_features)
 
-        # 3. Calculate Distance in Percentage (%) Relative to Calibrated Threshold (100% = Baseline Alarm Boundary)
+        # 3. Calculate OMI Distance in Percentage (%) [100% = Baseline Alarm Limit]
         omi_pct = (raw_mahal_dist / (threshold_abs + 1e-6)) * 100.0
 
         # Sensor Residual Calculations
@@ -123,8 +136,9 @@ class AVEVAOMRNearestClusterEngine:
             "std_residuals": std_residuals,
         }
 
+
 # ---------------------------------------------------------
-# DATA LOADER & PIPELINE UTILS
+# DATA INGESTION PIPELINE
 # ---------------------------------------------------------
 @st.cache_data
 def load_and_clean_csv(url):
@@ -132,6 +146,10 @@ def load_and_clean_csv(url):
     df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
     df.columns = df.columns.str.strip()
     return df
+
+
+# Sidebar configuration
+st.sidebar.header("Asset Baseline Configuration")
 
 DATASET_MAP = {
     "Baseline Dataset 1 (NOC6_1 & Case_0)": {
@@ -144,78 +162,223 @@ DATASET_MAP = {
     },
 }
 
-selected_dataset_name = st.sidebar.selectbox("Select Asset Datasets:", list(DATASET_MAP.keys()))
-n_clusters_input = st.sidebar.slider("Operating State Clusters (k):", 1, 5, 3)
+selected_dataset_name = st.sidebar.selectbox(
+    "Select Asset Dataset Pair:", options=list(DATASET_MAP.keys()), index=0
+)
+
+n_clusters_input = st.sidebar.slider(
+    "Number of Operating Profile Clusters (k):",
+    min_value=1,
+    max_value=6,
+    value=3,
+    step=1,
+)
+
+percentile_thresh = st.sidebar.slider(
+    "Baseline Alarm Percentile Limit (%):",
+    min_value=95.0,
+    max_value=99.9,
+    value=99.0,
+    step=0.1,
+)
 
 TRAIN_URL = DATASET_MAP[selected_dataset_name]["train"]
 TEST_URL = DATASET_MAP[selected_dataset_name]["test"]
 
+# Load Data
+try:
+    raw_train_df = load_and_clean_csv(TRAIN_URL)
+    raw_test_df = load_and_clean_csv(TEST_URL)
+
+    feature_cols = [
+        c
+        for c in raw_train_df.select_dtypes(include=[np.number]).columns
+        if c.lower() not in ["timestamp", "time", "date"]
+    ]
+
+    st.success(
+        f"Ingested **{len(feature_cols)}** Process Tag Sensors across **{raw_train_df.shape[0]}** Training Samples."
+    )
+except Exception as e:
+    st.error(f"Failed to load dataset: {e}")
+    st.stop()
+
+# Build / Calibrate Model
+col_btn1, col_btn2 = st.columns([1, 4])
+with col_btn1:
+    if st.button("Calibrate Baseline Model", type="primary"):
+        engine = AVEVAOMRNearestClusterEngine(n_clusters=n_clusters_input)
+        engine.fit_baseline_clusters(
+            X_raw=raw_train_df,
+            feature_cols=feature_cols,
+            percentile=percentile_thresh,
+        )
+        st.session_state["omr_engine"] = engine
+        st.session_state["active_dataset_name"] = selected_dataset_name
+        st.success("Model Calibrated!")
+
 # ---------------------------------------------------------
-# APPLICATION WORKFLOW
+# LIVE EVALUATION & MONITORING
 # ---------------------------------------------------------
-raw_train_df = load_and_clean_csv(TRAIN_URL)
-raw_test_df = load_and_clean_csv(TEST_URL)
-feature_cols = [c for c in raw_train_df.select_dtypes(include=[np.number]).columns if c.lower() not in ["timestamp", "time", "date"]]
-
-st.write(f"Ingested **{len(feature_cols)}** Process Sensors across **{raw_train_df.shape[0]}** Training Samples.")
-
-if st.button("Calibrate Nearest-Cluster OMR Baseline"):
-    engine = AVEVAOMRNearestClusterEngine(n_clusters=n_clusters_input)
-    engine.fit_baseline_clusters(X_raw=raw_train_df, feature_cols=feature_cols)
-    st.session_state["omr_engine"] = engine
-    st.success("Nearest Cluster Model Trained Successfully!")
-
 if "omr_engine" in st.session_state:
-    engine = st.session_state["omr_engine"]
-    
-    # Process Live Data Stream
-    eval_results = []
-    for i in range(len(raw_test_df)):
-        sample = raw_test_df[feature_cols].iloc[i].values
-        res = engine.score_live_sample(sample)
-        eval_results.append({
-            "Sample": i,
-            "Cluster": f"Cluster {res['nearest_cluster']}",
-            "OMI (%)": res["OMI_pct"],
-            "Status": "ALARM BREACH (>100%)" if res["Is_Alert"] else "Normal (≤100%)",
-        })
+    if st.session_state.get("active_dataset_name") != selected_dataset_name:
+        st.warning("Dataset selection changed. Please click **Calibrate Baseline Model** again.")
+    else:
+        engine = st.session_state["omr_engine"]
 
-    results_df = pd.DataFrame(eval_results)
+        # Score Live Stream
+        eval_results = []
+        for i in range(len(raw_test_df)):
+            sample = raw_test_df[feature_cols].iloc[i].values
+            res = engine.score_live_sample(sample)
+            eval_results.append(
+                {
+                    "Sample": i,
+                    "Cluster": f"Cluster {res['nearest_cluster']}",
+                    "OMI (%)": res["OMI_pct"],
+                    "Status": "ALARM BREACH (>100%)"
+                    if res["Is_Alert"]
+                    else "Normal (≤100%)",
+                }
+            )
 
-    # Chart OMI % Trend
-    st.subheader("Asset Health Evaluation: Overall Model Index Distance (%)")
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=results_df["Sample"], y=results_df["OMI (%)"], mode="lines", name="OMI (%) Distance", line=dict(color="#008080")))
-    fig.add_trace(go.Scatter(x=results_df["Sample"], y=[100.0]*len(results_df), mode="lines", name="100% Alarm Threshold", line=dict(color="red", dash="dash")))
+        results_df = pd.DataFrame(eval_results)
 
-    alarms = results_df[results_df["OMI (%)"] > 100.0]
-    if not alarms.empty:
-        fig.add_trace(go.Scatter(x=alarms["Sample"], y=alarms["OMI (%)"], mode="markers", name="Breach Point", marker=dict(color="red", size=6, symbol="x")))
+        st.markdown("---")
+        st.subheader("1. Asset Overall Model Index (OMI) Trend (%)")
 
-    fig.update_layout(xaxis_title="Sample Index", yaxis_title="OMI Distance (% of Baseline Threshold)", hovermode="x unified")
-    st.plotly_chart(fig, use_container_width=True)
+        # Key Metrics Row
+        total_samples = len(results_df)
+        total_alarms = (results_df["OMI (%)"] > 100.0).sum()
 
-    # Breakdown Table for Single Point
-    st.subheader("Nearest-Cluster Sensor Residual Breakdown (%)")
-    sample_to_inspect = st.selectbox("Select Sample Index to Inspect:", results_df["Sample"].tolist())
-    
-    raw_sample = raw_test_df[feature_cols].iloc[sample_to_inspect].values
-    diag_res = engine.score_live_sample(raw_sample)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Evaluated Timestamps", total_samples)
+        m2.metric("Normal Operating Range (≤100%)", total_samples - total_alarms)
+        m3.metric(
+            "OMI Alarm Breaches (>100%)",
+            total_alarms,
+            delta=f"{round((total_alarms/total_samples)*100, 1)}% Off-Normal",
+            delta_color="inverse",
+        )
 
-    diag_df = pd.DataFrame({
-        "Sensor Tag": feature_cols,
-        "Actual Value (y)": raw_sample,
-        "Nearest Cluster Target (ŷ)": diag_res["raw_predicted"],
-        "Raw Residual (y - ŷ)": diag_res["raw_residuals"],
-        "Sensor Residual (%)": diag_res["pct_residuals"],
-        "Normalized Deviation (σ)": diag_res["std_residuals"],
-    }).sort_values(by="Normalized Deviation (σ)", key=abs, ascending=False)
+        # Plotly OMI Chart
+        fig_omi = go.Figure()
+        fig_omi.add_trace(
+            go.Scatter(
+                x=results_df["Sample"],
+                y=results_df["OMI (%)"],
+                mode="lines",
+                name="Overall Model Index (%)",
+                line=dict(color="#008080", width=1.5),  # Petronas Teal
+            )
+        )
+        fig_omi.add_trace(
+            go.Scatter(
+                x=results_df["Sample"],
+                y=[100.0] * len(results_df),
+                mode="lines",
+                name="100% Alarm Threshold",
+                line=dict(color="red", dash="dash", width=2),
+            )
+        )
 
-    st.write(f"Assigned to **Cluster {diag_res['nearest_cluster']}** | Computed OMI: **{diag_res['OMI_pct']:.2f}%**")
-    st.dataframe(diag_df.style.format({
-        "Actual Value (y)": "{:.4f}",
-        "Nearest Cluster Target (ŷ)": "{:.4f}",
-        "Raw Residual (y - ŷ)": "{:+.4f}",
-        "Sensor Residual (%)": "{:+.2f}%",
-        "Normalized Deviation (σ)": "{:+.2f}σ",
-    }), use_container_width=True)
+        alarms = results_df[results_df["OMI (%)"] > 100.0]
+        if not alarms.empty:
+            fig_omi.add_trace(
+                go.Scatter(
+                    x=alarms["Sample"],
+                    y=alarms["OMI (%)"],
+                    mode="markers",
+                    name="Threshold Breach",
+                    marker=dict(color="red", size=6, symbol="x"),
+                )
+            )
+
+        fig_omi.update_layout(
+            xaxis_title="Sample Index",
+            yaxis_title="OMI Distance (% of Baseline Limit)",
+            hovermode="x unified",
+        )
+        st.plotly_chart(fig_omi, use_container_width=True)
+
+        # ---------------------------------------------------------
+        # SENSOR RESIDUAL & CATCH DIAGNOSTICS
+        # ---------------------------------------------------------
+        st.markdown("---")
+        st.subheader("2. Sensor Catch & Percentage Deviation Breakdown")
+
+        all_samples = results_df["Sample"].tolist()
+        alarm_samples = results_df[results_df["Status"] == "ALARM BREACH (>100%)"]["Sample"].tolist()
+        default_idx = all_samples.index(alarm_samples[0]) if alarm_samples else 0
+
+        sample_to_inspect = st.selectbox(
+            "Select Sample Timestamp to Inspect:",
+            options=all_samples,
+            index=default_idx,
+            format_func=lambda x: f"Sample #{x} {'⚠️ [ALARM]' if x in alarm_samples else '✅ [Normal]'}",
+        )
+
+        # Run single point diagnostics
+        raw_sample = raw_test_df[feature_cols].iloc[sample_to_inspect].values
+        diag_res = engine.score_live_sample(raw_sample)
+
+        diag_df = pd.DataFrame(
+            {
+                "Sensor Tag": feature_cols,
+                "Actual Value (y)": raw_sample,
+                "Nearest Cluster Target (ŷ)": diag_res["raw_predicted"],
+                "Raw Residual (y - ŷ)": diag_res["raw_residuals"],
+                "Sensor Residual (%)": diag_res["pct_residuals"],
+                "Normalized Deviation (σ)": diag_res["std_residuals"],
+                "Abs Deviation (|σ|)": np.abs(diag_res["std_residuals"]),
+            }
+        ).sort_values(by="Abs Deviation (|σ|)", ascending=False)
+
+        st.info(
+            f"Sample **#{sample_to_inspect}** mapped to **Cluster {diag_res['nearest_cluster']}** | Calculated OMI: **{diag_res['OMI_pct']:.2f}%**"
+        )
+
+        c_chart1, c_chart2 = st.columns(2)
+
+        with c_chart1:
+            fig_pct = px.bar(
+                diag_df.head(10),
+                x="Sensor Residual (%)",
+                y="Sensor Tag",
+                orientation="h",
+                title="Top Sensor Residuals (%)",
+                color="Sensor Residual (%)",
+                color_continuous_scale="RdBu_r",
+            )
+            fig_pct.update_layout(yaxis={"categoryorder": "total ascending"})
+            st.plotly_chart(fig_pct, use_container_width=True)
+
+        with c_chart2:
+            fig_sigma = px.bar(
+                diag_df.head(10),
+                x="Normalized Deviation (σ)",
+                y="Sensor Tag",
+                orientation="h",
+                title="Normalized Standard Deviations (σ)",
+                color="Normalized Deviation (σ)",
+                color_continuous_scale="Reds",
+            )
+            fig_sigma.update_layout(yaxis={"categoryorder": "total ascending"})
+            st.plotly_chart(fig_sigma, use_container_width=True)
+
+        st.write("**Full Tag Residual Breakdown Table:**")
+        st.dataframe(
+            diag_df.drop(columns=["Abs Deviation (|σ|)"]).style.format(
+                {
+                    "Actual Value (y)": "{:.4f}",
+                    "Nearest Cluster Target (ŷ)": "{:.4f}",
+                    "Raw Residual (y - ŷ)": "{:+.4f}",
+                    "Sensor Residual (%)": "{:+.2f}%",
+                    "Normalized Deviation (σ)": "{:+.2f}σ",
+                }
+            ),
+            use_container_width=True,
+            height=300,
+        )
+else:
+    st.info("Click **Calibrate Baseline Model** above to train the empirical engine.")
