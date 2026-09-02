@@ -1,142 +1,143 @@
 import numpy as np
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as gg
+import plotly.graph_objects as go
 import streamlit as st
-from sklearn.cluster import KMeans
 from sklearn.covariance import LedoitWolf
-from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 
 # Page configuration
 st.set_page_config(
-    page_title="Rotating Asset Reliability Monitor",
+    page_title="AVEVA OMR - Rotating Asset Predictive Analytics Engine",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.title("Rotating Asset Reliability Monitor")
+# Professional Minimalist Styling
+st.title("AVEVA Operational Model & Reliability (OMR) Engine")
 st.caption(
-    "Regime-Based Clustering & Stabilized Minimum Mahalanobis Residual Scoring"
+    "Empirical Pattern Recognition (EPR) & Multi-Sensor Overall Model Index (OMI) Scoring"
 )
 
 # ---------------------------------------------------------
-# STABILIZED MAHALANOBIS SCORING ENGINE
+# AVEVA OMR EMPIRICAL SCORING ENGINE
 # ---------------------------------------------------------
-class RobustMahalanobisScorer:
+class AVEVAOMREngine:
     """
-    Stabilized Regime-Based Mahalanobis Engine for Industrial Sensors.
-    Fixes matrix ill-conditioning, division-by-zero on static sensors, 
-    and dimensional scaling explosions.
+    AVEVA PRiSM / OMR Engine implementation.
+    Calculates empirical baseline predictions, individual sensor residuals,
+    and regularized Hotelling's T^2 / Mahalanobis Overall Model Index (OMI).
     """
-    def __init__(self, variance_floor: float = 1e-4, shrink_factor: float = 1e-3):
-        self.variance_floor = variance_floor
+    def __init__(self, shrink_factor: float = 1e-3):
         self.shrink_factor = shrink_factor
-        self.registry = {}
+        self.profiles = {}
+        self.feature_cols = []
+        self.scaler = None
 
-    def fit_regime(self, regime_id: int, X_regime: np.ndarray, raw_centroid: np.ndarray, percentile: float = 99.0):
-        """
-        Fit local regime centroid, regularized precision matrix, and threshold R_k.
-        X_regime: Scaled standard features (N_samples x P_features)
-        """
-        n_samples, p_features = X_regime.shape
+    def fit_empirical_baseline(self, X_raw: pd.DataFrame, feature_cols: list, profile_col: str = None, percentile: float = 99.0):
+        self.feature_cols = feature_cols
+        self.scaler = StandardScaler()
+        X_scaled = self.scaler.fit_transform(X_raw[feature_cols])
         
-        # 1. Compute robust mean/centroid in scaled space
-        centroid = np.mean(X_regime, axis=0)
+        # If no explicit operating profile column is provided, treat whole dataset as Primary State (Mode 1)
+        if profile_col is None or profile_col not in X_raw.columns:
+            profile_ids = np.zeros(len(X_raw), dtype=int)
+        else:
+            profile_ids = X_raw[profile_col].values
+
+        unique_profiles = np.unique(profile_ids)
+
+        for p_id in unique_profiles:
+            mask = profile_ids == p_id
+            X_prof_scaled = X_scaled[mask]
+            X_prof_raw = X_raw[feature_cols].iloc[mask].values
+
+            n_samples, p_features = X_prof_scaled.shape
+
+            # Empirical Center State Vector
+            z_centroid = np.mean(X_prof_scaled, axis=0)
+            raw_centroid = np.mean(X_prof_raw, axis=0)
+
+            # Regularized Precision Matrix (Ledoit-Wolf)
+            try:
+                lw = LedoitWolf()
+                cov_matrix = lw.fit(X_prof_scaled).covariance_
+            except Exception:
+                cov_matrix = np.cov(X_prof_scaled, rowvar=False)
+
+            ridge = np.eye(p_features) * (self.shrink_factor * np.trace(cov_matrix) / max(1, p_features))
+            reg_cov = cov_matrix + ridge
+
+            # Inverse SVD for precision matrix stabilization
+            U, S, Vt = np.linalg.svd(reg_cov)
+            max_s = np.max(S)
+            S_inv = np.array([1.0 / s if (s / max_s) > 1e-5 else 0.0 for s in S])
+            precision_matrix = np.dot(Vt.T, np.dot(np.diag(S_inv), U.T))
+
+            # Baseline OMI (Dimension-Normalized Mahalanobis Distance)
+            diffs = X_prof_scaled - z_centroid
+            omi_sq = np.sum(np.dot(diffs, precision_matrix) * diffs, axis=1)
+            omi_norm = np.sqrt(np.maximum(0.0, omi_sq)) / np.sqrt(p_features)
+
+            omi_threshold = np.percentile(omi_norm, percentile)
+
+            self.profiles[p_id] = {
+                "z_centroid": z_centroid,
+                "raw_centroid": raw_centroid,
+                "precision": precision_matrix,
+                "omi_threshold": omi_threshold,
+                "p_features": p_features,
+                "sample_count": n_samples,
+            }
+
+    def score_live_sample(self, raw_sample: np.ndarray, active_profile: int = 0):
+        if active_profile not in self.profiles:
+            active_profile = list(self.profiles.keys())[0]
+
+        prof = self.profiles[active_profile]
+        z_sample = self.scaler.transform(raw_sample.reshape(1, -1))[0]
         
-        # 2. Add variance floor to prevent division-by-zero on static sensors
-        variances = np.var(X_regime, axis=0)
-        variances_clipped = np.maximum(variances, self.variance_floor)
-        
-        # 3. Regularized Covariance (Ledoit-Wolf Shrinkage)
-        try:
-            lw = LedoitWolf()
-            cov_matrix = lw.fit(X_regime).covariance_
-        except Exception:
-            cov_matrix = np.cov(X_regime, rowvar=False)
+        z_centroid = prof["z_centroid"]
+        raw_centroid = prof["raw_centroid"]
+        precision = prof["precision"]
+        p_features = prof["p_features"]
 
-        # 4. Diagonal Ridge Regularization (Prevents tiny eigenvalue inversion explosion)
-        ridge = np.eye(p_features) * (self.shrink_factor * np.trace(cov_matrix) / max(1, p_features))
-        reg_cov = cov_matrix + ridge
+        # Predicted Baseline Vector (y_hat)
+        raw_predicted = raw_centroid
 
-        # 5. Stable Matrix Inversion via SVD (Pseudo-Inverse with spectral cutoff)
-        U, S, Vt = np.linalg.svd(reg_cov)
-        max_s = np.max(S)
-        # Suppress eigenvalues smaller than 1e-5 relative to max eigenvalue
-        S_inv = np.array([1.0 / s if (s / max_s) > 1e-5 else 0.0 for s in S])
-        precision_matrix = np.dot(Vt.T, np.dot(np.diag(S_inv), U.T))
+        # Sensor Residuals (y - y_hat)
+        raw_residuals = raw_sample - raw_predicted
 
-        # 6. Calculate Dimension-Normalized Mahalanobis Distance for Training Set
-        diffs = X_regime - centroid
-        left_mult = np.dot(diffs, precision_matrix)
-        d_m_sq = np.sum(left_mult * diffs, axis=1)
-        d_m_sq = np.maximum(0.0, d_m_sq)
-        
-        # Dimension-normalized distance (Expected mean ~ 1.0 for normal data)
-        d_m_norm = np.sqrt(d_m_sq) / np.sqrt(p_features)
+        # Normalized Residuals in Standard Deviations
+        std_devs = self.scaler.scale_
+        std_residuals = raw_residuals / std_devs
 
-        # 7. Establish Baseline Threshold R_k
-        threshold_R = np.percentile(d_m_norm, percentile)
+        # Compute Overall Model Index (OMI)
+        diff = z_sample - z_centroid
+        omi_sq = np.dot(np.dot(diff, precision), diff.T)
+        omi_sq = max(0.0, float(omi_sq))
+        omi_val = np.sqrt(omi_sq) / np.sqrt(p_features)
 
-        self.registry[regime_id] = {
-            "centroid": centroid,
-            "raw_centroid": raw_centroid,
-            "precision": precision_matrix,
-            "threshold_R": threshold_R,
-            "p_features": p_features,
-            "sample_count": n_samples,
-            "max_d_m": d_m_norm.max(),
-            "mean_d_m": d_m_norm.mean(),
-        }
-
-    def score_point_min_mahalanobis(self, point: np.ndarray):
-        """
-        Evaluates an incoming live sample against all regimes using normalized min(d_M).
-        """
-        d_m_norm_all = []
-        r_k_all = []
-        regime_ids = list(self.registry.keys())
-
-        for k in regime_ids:
-            reg = self.registry[k]
-            centroid = reg["centroid"]
-            precision = reg["precision"]
-            p_features = reg["p_features"]
-
-            diff = point - centroid
-            d_m_sq = np.dot(np.dot(diff, precision), diff.T)
-            d_m_sq = max(0.0, float(d_m_sq))
-            
-            # Dimension-normalized distance
-            d_m_norm = np.sqrt(d_m_sq) / np.sqrt(p_features)
-            
-            d_m_norm_all.append(d_m_norm)
-            r_k_all.append(reg["threshold_R"])
-
-        # Find closest regime in normalized Mahalanobis space
-        best_idx = int(np.argmin(d_m_norm_all))
-        nearest_k = regime_ids[best_idx]
-        min_d_m = d_m_norm_all[best_idx]
-        threshold_R = r_k_all[best_idx]
-
-        # Calculate Edge Residual
-        d_edge = max(0.0, min_d_m - threshold_R)
+        omi_thresh = prof["omi_threshold"]
+        omi_residual = max(0.0, omi_val - omi_thresh)
 
         return {
-            "nearest_regime": nearest_k,
-            "d_M_normalized": min_d_m,
-            "threshold_R": threshold_R,
-            "d_edge": d_edge,
-            "is_anomaly": d_edge > 0
+            "active_profile": active_profile,
+            "OMI": omi_val,
+            "OMI_Threshold": omi_thresh,
+            "OMI_Residual": omi_residual,
+            "Is_Alert": omi_residual > 0,
+            "raw_predicted": raw_predicted,
+            "raw_residuals": raw_residuals,
+            "std_residuals": std_residuals,
         }
 
 
 # ---------------------------------------------------------
-# HELPER DATA CLEANER
+# DATA LOADER
 # ---------------------------------------------------------
 @st.cache_data
 def load_and_clean_csv(url):
-    """Loads CSV while dropping unnamed index columns and stripping column whitespace."""
     df = pd.read_csv(url)
     df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
     df.columns = df.columns.str.strip()
@@ -144,12 +145,12 @@ def load_and_clean_csv(url):
 
 
 # ---------------------------------------------------------
-# SIDEBAR DATASET SELECTION (1-INDEXED)
+# SIDEBAR SETUP
 # ---------------------------------------------------------
-st.sidebar.header("Data Source Configuration")
+st.sidebar.header("AVEVA OMR Data Sources")
 
 DATASET_MAP = {
-    "Baseline Dataset 1 (NOC6_1 & Case_1)": {
+    "Baseline Dataset 1 (NOC6_1 & Case_0)": {
         "train": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
         "test": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
     },
@@ -160,7 +161,7 @@ DATASET_MAP = {
 }
 
 selected_dataset_name = st.sidebar.selectbox(
-    "Select Baseline & Test Pair:",
+    "Select Asset Baseline & Live Case:",
     options=list(DATASET_MAP.keys()),
     index=0,
 )
@@ -168,549 +169,326 @@ selected_dataset_name = st.sidebar.selectbox(
 TRAIN_URL = DATASET_MAP[selected_dataset_name]["train"]
 TEST_URL = DATASET_MAP[selected_dataset_name]["test"]
 
-# ---------------------------------------------------------
-# TOP-LEVEL PHASE SELECTION
-# ---------------------------------------------------------
+# Top-level workflow tabs
 phase = st.radio(
-    "Select Workflow Phase:",
-    options=["Phase 1: Offline Training", "Phase 2: Online Monitoring"],
+    "Workflow Mode:",
+    options=["1. Baseline Model Setup & Training", "2. Online Asset Monitoring & Diagnostics"],
     horizontal=True,
 )
 
 st.markdown("---")
 
 # ---------------------------------------------------------
-# PHASE 1: OFFLINE TRAINING
+# PHASE 1: MODEL SETUP & TRAINING
 # ---------------------------------------------------------
-if phase == "Phase 1: Offline Training":
-    st.header("Phase 1: Offline Baseline Training")
+if phase == "1. Baseline Model Setup & Training":
+    st.header("Phase 1: AVEVA OMR Baseline Model Definition")
 
-    t_data, t_cluster, t_metrics, t_summary = st.tabs(
+    t_data, t_profile, t_train = st.tabs(
         [
-            "1. Data Ingestion & Preprocessing",
-            "2. Operational Regime Clustering",
-            "3. Regime-Specific Metrics & Radius",
-            "4. Pipeline Training Summary",
+            "1. Asset Tag Selection",
+            "2. Operational Profile Definition",
+            "3. OMI Threshold Calibration",
         ]
     )
 
-    # STEP 1: DATA INGESTION
     with t_data:
-        st.subheader("Step 1: Baseline Data Load & Standardization")
-        st.write(f"Active Training Source: `{TRAIN_URL}`")
+        st.subheader("Asset Sensor Ingestion")
+        st.write(f"Training Baseline Dataset: `{TRAIN_URL}`")
 
         try:
             raw_train_df = load_and_clean_csv(TRAIN_URL)
+            numeric_cols = raw_train_df.select_dtypes(include=[np.number]).columns.tolist()
+            feature_cols = [c for c in numeric_cols if c.lower() not in ["timestamp", "time", "date"]]
 
-            numeric_cols = raw_train_df.select_dtypes(
-                include=[np.number]
-            ).columns.tolist()
-            feature_cols = [
-                c for c in numeric_cols if c.lower() not in ["timestamp", "time", "date"]
-            ]
+            st.success(f"Loaded {raw_train_df.shape[0]} baseline samples across {len(feature_cols)} sensors.")
 
-            st.success(
-                f"Data loaded successfully: {raw_train_df.shape[0]} rows × {len(feature_cols)} process features."
-            )
-
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                st.write("**Feature Selection:**")
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                st.write("**Model Inputs (Sensors):**")
                 st.dataframe(pd.DataFrame({"Tag Name": feature_cols}), height=250)
-            with col2:
-                st.write("**Raw Data Preview:**")
+            with c2:
+                st.write("**Raw Signal Preview:**")
                 st.dataframe(raw_train_df.head(), height=250)
-
-            scaler = StandardScaler()
-            scaled_train = scaler.fit_transform(raw_train_df[feature_cols])
 
             st.session_state["raw_train_df"] = raw_train_df
             st.session_state["feature_cols"] = feature_cols
-            st.session_state["scaler"] = scaler
-            st.session_state["scaled_train"] = scaled_train
             st.session_state["active_dataset_name"] = selected_dataset_name
 
         except Exception as e:
-            st.error(f"Failed to load dataset: {e}")
+            st.error(f"Error reading asset baseline data: {e}")
 
-    # STEP 2: CLUSTERING
-    with t_cluster:
-        st.subheader("Step 2: Operational Regime Partitioning")
+    with t_profile:
+        st.subheader("Operational Profile Filtering")
+        st.write("In AVEVA OMR, operational profiles split baseline data into distinct load levels or modes.")
 
-        if "scaled_train" not in st.session_state:
-            st.info("Please load and scale data in Step 1 first.")
-        else:
-            scaled_train = st.session_state["scaled_train"]
-
-            col_cfg1, col_cfg2 = st.columns(2)
-            with col_cfg1:
-                algo_choice = st.selectbox(
-                    "Select Clustering Algorithm:",
-                    options=["KMeans", "GaussianMixture (GMM)"],
-                )
-            with col_cfg2:
-                n_clusters = st.slider(
-                    "Select Number of Operational Regimes (K):",
-                    min_value=2,
-                    max_value=10,
-                    value=4,
-                )
-
-            if st.button("Execute Clustering"):
-                if algo_choice == "KMeans":
-                    model = KMeans(
-                        n_clusters=n_clusters, random_state=42, n_init=10
-                    )
-                    cluster_labels = model.fit_predict(scaled_train)
-                else:
-                    model = GaussianMixture(
-                        n_components=n_clusters,
-                        covariance_type="full",
-                        random_state=42,
-                    )
-                    cluster_labels = model.fit(scaled_train).predict(
-                        scaled_train
-                    )
-
-                st.session_state["cluster_model"] = model
-                st.session_state["algo_choice"] = algo_choice
-                st.session_state["cluster_labels"] = cluster_labels
-                st.session_state["n_clusters"] = n_clusters
-
-                st.success(
-                    f"Clustering complete. Identified {n_clusters} regimes across baseline dataset."
-                )
-
-            if "cluster_labels" in st.session_state:
-                cluster_labels = st.session_state["cluster_labels"]
-
-                counts = (
-                    pd.Series(cluster_labels)
-                    .value_counts()
-                    .reset_index(name="Count")
-                )
-                counts.columns = ["Regime", "Count"]
-                fig_dist = px.bar(
-                    counts,
-                    x="Regime",
-                    y="Count",
-                    color="Regime",
-                    title="Data Distribution Across Operating Regimes",
-                    text_auto=True,
-                )
-                st.plotly_chart(fig_dist, use_container_width=True)
-
-    # STEP 3: REGIME METRICS & RADIUS
-    with t_metrics:
-        st.subheader(
-            "Step 3: Calculating Local Centroids, Precision Matrices & Thresholds"
-        )
-
-        if "cluster_labels" not in st.session_state:
-            st.info("Please complete operational clustering in Step 2 first.")
-        else:
-            scaled_train = st.session_state["scaled_train"]
-            raw_train_df = st.session_state["raw_train_df"]
+        if "raw_train_df" in st.session_state:
             feature_cols = st.session_state["feature_cols"]
-            cluster_labels = st.session_state["cluster_labels"]
-            n_clusters = st.session_state["n_clusters"]
+            raw_train_df = st.session_state["raw_train_df"]
 
+            profile_tag = st.selectbox(
+                "Select Operating Mode Variable (Optional):",
+                options=["[None - Single Operating Profile]"] + feature_cols,
+            )
+
+            if profile_tag != "[None - Single Operating Profile]":
+                st.session_state["profile_tag"] = profile_tag
+                st.info(f"Filtering profile state using tag: `{profile_tag}`")
+            else:
+                st.session_state["profile_tag"] = None
+                st.info("Operating model configured as single mode profile.")
+        else:
+            st.warning("Please ingest baseline dataset in Step 1.")
+
+    with t_train:
+        st.subheader("Empirical Profile Training & OMI Threshold Calibration")
+
+        if "raw_train_df" not in st.session_state:
+            st.warning("Please ingest baseline data in Step 1.")
+        else:
             percentile_thresh = st.slider(
-                "Select Radius Threshold Percentile:",
-                min_value=90.0,
+                "Set Overall Model Index (OMI) Statistical Alarm Threshold (%):",
+                min_value=95.0,
                 max_value=99.9,
                 value=99.0,
                 step=0.1,
             )
 
-            if st.button("Compute Regime Metrics & Regularized Covariance"):
-                scorer = RobustMahalanobisScorer(variance_floor=1e-4, shrink_factor=1e-3)
+            if st.button("Generate Baseline Model & Calculate Calibration"):
+                engine = AVEVAOMREngine(shrink_factor=1e-3)
+                raw_train_df = st.session_state["raw_train_df"]
+                feature_cols = st.session_state["feature_cols"]
+                profile_tag = st.session_state.get("profile_tag")
 
-                for k in range(n_clusters):
-                    cluster_mask = cluster_labels == k
-                    cluster_data = scaled_train[cluster_mask]
-                    raw_cluster_data = raw_train_df[feature_cols].iloc[cluster_mask]
-                    raw_centroid = raw_cluster_data.mean().values
-
-                    scorer.fit_regime(
-                        regime_id=k, 
-                        X_regime=cluster_data, 
-                        raw_centroid=raw_centroid, 
-                        percentile=percentile_thresh
-                    )
-
-                st.session_state["scorer"] = scorer
-                st.session_state["percentile_thresh"] = percentile_thresh
-                st.session_state["is_trained"] = True
-                st.success(
-                    "Stabilized precision matrices computed & baseline thresholds established!"
+                engine.fit_empirical_baseline(
+                    X_raw=raw_train_df,
+                    feature_cols=feature_cols,
+                    profile_col=profile_tag,
+                    percentile=percentile_thresh,
                 )
 
-            if "scorer" in st.session_state:
-                registry = st.session_state["scorer"].registry
-                regime_summary = []
+                st.session_state["omr_engine"] = engine
+                st.session_state["is_model_trained"] = True
+                st.success("AVEVA OMR Empirical Baseline Model generated successfully!")
 
-                for k, v in registry.items():
-                    regime_summary.append(
+                # Profile Summary Table
+                summary = []
+                for pid, prof in engine.profiles.items():
+                    summary.append(
                         {
-                            "Regime": k,
-                            "Baseline Samples": v["sample_count"],
-                            "Mean Norm Mahalanobis": round(v["mean_d_m"], 4),
-                            "Max Norm Mahalanobis": round(v["max_d_m"], 4),
-                            "Threshold Radius (R_k)": round(
-                                v["threshold_R"], 4
-                            ),
+                            "Operating Profile Mode": f"Mode {pid}",
+                            "Training Samples": prof["sample_count"],
+                            "Monitored Sensors": prof["p_features"],
+                            "Calibrated OMI Threshold": round(prof["omi_threshold"], 4),
                         }
                     )
-
-                st.dataframe(
-                    pd.DataFrame(regime_summary), use_container_width=True
-                )
-
-    # STEP 4: SUMMARY
-    with t_summary:
-        st.subheader("Step 4: Baseline Model Registry Status")
-
-        if st.session_state.get("is_trained", False):
-            st.success(
-                "Model Pipeline is Fully Trained with Stabilized Engine and Ready for Online Monitoring!"
-            )
-
-            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-            m_col1.metric("Feature Dimensions", len(st.session_state["feature_cols"]))
-            m_col2.metric("Operating Regimes", st.session_state["n_clusters"])
-            m_col3.metric("Clustering Engine", st.session_state["algo_choice"])
-            m_col4.metric(
-                "Boundary Percentile",
-                f"{st.session_state['percentile_thresh']}%",
-            )
-
-            st.write("---")
-            st.write(
-                "**Action:** Switch top selection button to **Phase 2: Online Monitoring**."
-            )
-        else:
-            st.warning(
-                "Training pipeline is incomplete. Please run Step 3 to register regime metrics."
-            )
+                st.dataframe(pd.DataFrame(summary), use_container_width=True)
 
 # ---------------------------------------------------------
-# PHASE 2: ONLINE MONITORING
+# PHASE 2: ONLINE MONITORING & DIAGNOSTICS
 # ---------------------------------------------------------
 else:
-    st.header("Phase 2: Online Monitoring & Anomaly Scoring")
+    st.header("Phase 2: Online Asset Reliability & Catch Diagnostics")
 
-    if not st.session_state.get("is_trained", False):
-        st.error(
-            "No trained baseline model detected. Please complete 'Phase 1: Offline Training' first."
-        )
+    if not st.session_state.get("is_model_trained", False):
+        st.error("No calibrated baseline model detected. Run Phase 1 setup first.")
     elif st.session_state.get("active_dataset_name") != selected_dataset_name:
-        st.warning(
-            f"Dataset configuration changed to **{selected_dataset_name}**. "
-            "Please return to **Phase 1: Offline Training** to retrain the baseline model."
-        )
+        st.warning(f"Dataset changed to **{selected_dataset_name}**. Please retrain baseline model in Phase 1.")
     else:
-        t_live_data, t_predict, t_score, t_dashboard = st.tabs(
+        t_live, t_eval, t_diag = st.tabs(
             [
-                "1. Live Data Ingestion",
-                "2. Pre-Clustering Baseline Assignment",
-                "3. Minimum Mahalanobis Scoring",
-                "4. Anomaly Alert Dashboard",
+                "1. Live Data Stream",
+                "2. Overall Model Index (OMI) Trend",
+                "3. Sensor Catch & Deviation Analysis",
             ]
         )
 
-        # STEP 1: LIVE DATA INGESTION
-        with t_live_data:
-            st.subheader("Step 1: Load Real-Time / Injected Test Data")
+        with t_live:
+            st.subheader("Live Operational Ingestion")
             st.write(f"Active Test Source: `{TEST_URL}`")
 
             try:
                 raw_test_df = load_and_clean_csv(TEST_URL)
                 feature_cols = st.session_state["feature_cols"]
 
-                missing_features = [f for f in feature_cols if f not in raw_test_df.columns]
-                if missing_features:
-                    st.error(f"Test dataset missing baseline features: {missing_features}")
+                missing = [f for f in feature_cols if f not in raw_test_df.columns]
+                if missing:
+                    st.error(f"Live dataset missing required model tags: {missing}")
                 else:
-                    st.success(
-                        f"Test dataset loaded: {raw_test_df.shape[0]} samples."
-                    )
+                    st.success(f"Live data loaded: {raw_test_df.shape[0]} timestamps.")
                     st.dataframe(raw_test_df.head(), height=250)
-
-                    scaler = st.session_state["scaler"]
-                    scaled_test = scaler.transform(raw_test_df[feature_cols])
-
                     st.session_state["raw_test_df"] = raw_test_df
-                    st.session_state["scaled_test"] = scaled_test
 
             except Exception as e:
-                st.error(f"Failed to load test dataset: {e}")
+                st.error(f"Failed to load live data stream: {e}")
 
-        # STEP 2: REGIME PREDICTION (EUCLIDEAN/GMM ASSIGNMENT)
-        with t_predict:
-            st.subheader("Step 2: Initial Hard Assignment to Baseline Regimes")
+        with t_eval:
+            st.subheader("Asset Health Evaluation (Overall Model Index)")
 
-            if "scaled_test" not in st.session_state:
-                st.info("Please load test data in Step 1 first.")
+            if "raw_test_df" not in st.session_state:
+                st.info("Please load live data in Step 1.")
             else:
-                scaled_test = st.session_state["scaled_test"]
-                model = st.session_state["cluster_model"]
+                raw_test_df = st.session_state["raw_test_df"]
+                feature_cols = st.session_state["feature_cols"]
+                engine = st.session_state["omr_engine"]
+                profile_tag = st.session_state.get("profile_tag")
 
-                live_clusters = model.predict(scaled_test)
-                st.session_state["live_clusters"] = live_clusters
-
-                st.success(
-                    "Primary clustering model regime assignments computed for comparison."
-                )
-
-                fig_regimes = px.line(
-                    x=np.arange(len(live_clusters)),
-                    y=live_clusters,
-                    labels={"x": "Sample Index", "y": "Active Regime ID"},
-                    title="Hard Clustering Assignment Over Time",
-                )
-                fig_regimes.update_traces(mode="lines+markers")
-                st.plotly_chart(fig_regimes, use_container_width=True)
-
-        # STEP 3: STABILIZED MINIMUM MAHALANOBIS SCORING
-        with t_score:
-            st.subheader(
-                "Step 3: Direct Minimum Mahalanobis & Edge Residual Scoring"
-            )
-
-            if "scaled_test" not in st.session_state:
-                st.info("Please load test data in Step 1 first.")
-            else:
-                scaled_test = st.session_state["scaled_test"]
-                scorer = st.session_state["scorer"]
-
-                results = []
-                for i, point in enumerate(scaled_test):
-                    res = scorer.score_point_min_mahalanobis(point)
-                    results.append(
+                eval_results = []
+                for i in range(len(raw_test_df)):
+                    sample = raw_test_df[feature_cols].iloc[i].values
+                    p_id = 0 if (profile_tag is None or profile_tag not in raw_test_df.columns) else int(raw_test_df[profile_tag].iloc[i])
+                    
+                    res = engine.score_live_sample(sample, active_profile=p_id)
+                    eval_results.append(
                         {
                             "Sample": i,
-                            "Nearest_Regime": res["nearest_regime"],
-                            "Mahalanobis_Distance": res["d_M_normalized"],
-                            "Regime_Threshold": res["threshold_R"],
-                            "Edge_Residual": res["d_edge"],
-                            "Alarm_Status": "FAULT / ANOMALY"
-                            if res["is_anomaly"]
-                            else "Normal",
+                            "OMI": res["OMI"],
+                            "OMI_Threshold": res["OMI_Threshold"],
+                            "OMI_Residual": res["OMI_Residual"],
+                            "Status": "ALARM / BREACH" if res["Is_Alert"] else "Normal",
                         }
                     )
 
-                results_df = pd.DataFrame(results)
+                results_df = pd.DataFrame(eval_results)
                 st.session_state["results_df"] = results_df
-                st.success("Stabilized Minimum Mahalanobis distance computation complete!")
 
-                st.dataframe(results_df, height=300, use_container_width=True)
-
-        # STEP 4: ANOMALY ALERT DASHBOARD
-        with t_dashboard:
-            st.subheader("Step 4: Machine Reliability & Anomaly Dashboard")
-
-            if "results_df" not in st.session_state:
-                st.info("Please execute scoring calculations in Step 3 first.")
-            else:
-                results_df = st.session_state["results_df"]
-
+                # Top Metrics
                 total_samples = len(results_df)
-                total_anomalies = (
-                    results_df["Alarm_Status"] == "FAULT / ANOMALY"
-                ).sum()
-                normal_samples = total_samples - total_anomalies
+                total_alarms = (results_df["Status"] == "ALARM / BREACH").sum()
 
                 c1, c2, c3 = st.columns(3)
-                c1.metric("Total Evaluation Samples", total_samples)
-                c2.metric(
-                    "Normal Operations",
-                    normal_samples,
-                    delta="Normal",
-                    delta_color="normal",
-                )
+                c1.metric("Total Evaluation Timestamps", total_samples)
+                c2.metric("Normal Asset State", total_samples - total_alarms)
                 c3.metric(
-                    "Detected Anomalies (Breaches)",
-                    total_anomalies,
-                    delta=f"{round((total_anomalies/total_samples)*100, 1)}% Faults",
+                    "OMI Alarm Breaches",
+                    total_alarms,
+                    delta=f"{round((total_alarms/total_samples)*100, 1)}% Off-Normal",
                     delta_color="inverse",
                 )
 
                 st.markdown("---")
 
-                # Trend Plot
-                fig_trend = gg.Figure()
-                fig_trend.add_trace(
-                    gg.Scatter(
+                # OMI Chart
+                fig_omi = go.Figure()
+                fig_omi.add_trace(
+                    go.Scatter(
                         x=results_df["Sample"],
-                        y=results_df["Mahalanobis_Distance"],
+                        y=results_df["OMI"],
                         mode="lines",
-                        name="Min Norm Mahalanobis Dist (d_M)",
-                        line=dict(color="blue", width=1.5),
+                        name="Overall Model Index (OMI)",
+                        line=dict(color="#008080", width=1.5),  # Petronas Teal
+                    )
+                )
+                fig_omi.add_trace(
+                    go.Scatter(
+                        x=results_df["Sample"],
+                        y=results_df["OMI_Threshold"],
+                        mode="lines",
+                        name="Calibrated Threshold",
+                        line=dict(color="red", dash="dash", width=2),
                     )
                 )
 
-                fig_trend.add_trace(
-                    gg.Scatter(
-                        x=results_df["Sample"],
-                        y=results_df["Regime_Threshold"],
-                        mode="lines",
-                        name="Nearest Regime Threshold (R_k)",
-                        line=dict(color="orange", dash="dash", width=2),
-                    )
-                )
-
-                faults = results_df[results_df["Edge_Residual"] > 0]
-                if not faults.empty:
-                    fig_trend.add_trace(
-                        gg.Scatter(
-                            x=faults["Sample"],
-                            y=faults["Mahalanobis_Distance"],
+                alarms = results_df[results_df["Status"] == "ALARM / BREACH"]
+                if not alarms.empty:
+                    fig_omi.add_trace(
+                        go.Scatter(
+                            x=alarms["Sample"],
+                            y=alarms["OMI"],
                             mode="markers",
-                            name="Anomaly / Fault Breach",
+                            name="Model Alarm Breach",
                             marker=dict(color="red", size=6, symbol="x"),
                         )
                     )
 
-                fig_trend.update_layout(
-                    title="Live Normalized Mahalanobis Distance vs. Nearest Regime Threshold (R_k)",
-                    xaxis_title="Sample Index / Time",
-                    yaxis_title="Normalized Distance Score (Dimension Scaled)",
+                fig_omi.update_layout(
+                    title="Asset Overall Model Index (OMI) vs. Statistical Threshold",
+                    xaxis_title="Sample / Timestamp",
+                    yaxis_title="Normalized OMI Distance",
                     hovermode="x unified",
                 )
+                st.plotly_chart(fig_omi, use_container_width=True)
 
-                st.plotly_chart(fig_trend, use_container_width=True)
+        with t_diag:
+            st.subheader("Sensor Catch & Model Residual Diagnostics")
+            st.caption("Diagnose specific tag deviation contributions ($y - \\hat{y}$) driving the OMI alarm.")
 
-                # Edge Residual Plot
-                fig_edge = px.area(
-                    results_df,
-                    x="Sample",
-                    y="Edge_Residual",
-                    title="Edge Residual Score (d_edge = max(0, min_d_M - R_k))",
-                    color_discrete_sequence=["red"],
-                )
-                st.plotly_chart(fig_edge, use_container_width=True)
-
-                # ---------------------------------------------------------
-                # ROOT CAUSE ATTRIBUTION & DEVIATION ANALYSIS
-                # ---------------------------------------------------------
-                st.markdown("---")
-                st.subheader("Root Cause & Feature Deviation Inspector")
-                st.caption(
-                    "Select any sample point to diagnose feature-level deviations against the nearest operational regime."
-                )
-
-                feature_cols = st.session_state["feature_cols"]
+            if "results_df" not in st.session_state:
+                st.info("Run OMI Evaluation in Step 2 first.")
+            else:
+                results_df = st.session_state["results_df"]
                 raw_test_df = st.session_state["raw_test_df"]
-                scaled_test = st.session_state["scaled_test"]
-                scorer = st.session_state["scorer"]
-                scaler = st.session_state["scaler"]
+                feature_cols = st.session_state["feature_cols"]
+                engine = st.session_state["omr_engine"]
+                profile_tag = st.session_state.get("profile_tag")
 
-                col_sel1, col_sel2 = st.columns([1, 2])
+                all_samples = results_df["Sample"].tolist()
+                alarm_samples = results_df[results_df["Status"] == "ALARM / BREACH"]["Sample"].tolist()
+                default_idx = all_samples.index(alarm_samples[0]) if alarm_samples else 0
 
-                with col_sel1:
-                    all_samples = results_df["Sample"].tolist()
-                    fault_samples = results_df[
-                        results_df["Alarm_Status"] == "FAULT / ANOMALY"
-                    ]["Sample"].tolist()
-
-                    default_idx = (
-                        all_samples.index(fault_samples[0]) if fault_samples else 0
-                    )
-
-                    sample_to_inspect = st.selectbox(
-                        "Select Sample Index to Inspect:",
-                        options=all_samples,
-                        index=default_idx,
-                        format_func=lambda x: f"Sample #{x} {'⚠️ [FAULT]' if x in fault_samples else '✅ [Normal]'}",
-                    )
-
-                # Extract data for selected sample
-                sample_row = results_df.iloc[sample_to_inspect]
-                assigned_k = int(sample_row["Nearest_Regime"])
-                d_m_val = sample_row["Mahalanobis_Distance"]
-                r_k_val = sample_row["Regime_Threshold"]
-                status = sample_row["Alarm_Status"]
-
-                with col_sel2:
-                    st.write(
-                        f"**Inspection Summary for Sample `{sample_to_inspect}`:**"
-                    )
-                    st.write(
-                        f"• Nearest Operating Regime: **Regime {assigned_k}**  \n"
-                        f"• Norm Mahalanobis Distance ($d_M$): `{d_m_val:.4f}` | Threshold ($R_k$): `{r_k_val:.4f}`  \n"
-                        f"• Status: **:{'red' if status == 'FAULT / ANOMALY' else 'green'}[{status}]**"
-                    )
-
-                # Feature-level deviation calculations
-                z_sample = scaled_test[sample_to_inspect]
-                reg_info = scorer.registry[assigned_k]
-                z_centroid = reg_info["centroid"]
-
-                std_devs = scaler.scale_
-                means = scaler.mean_
-
-                raw_actuals = raw_test_df[feature_cols].iloc[sample_to_inspect].values
-                raw_predicted = (
-                    reg_info["raw_centroid"]
-                    if "raw_centroid" in reg_info
-                    else (z_centroid * std_devs + means)
+                sample_to_inspect = st.selectbox(
+                    "Select Timestamp to Inspect:",
+                    options=all_samples,
+                    index=default_idx,
+                    format_func=lambda x: f"Sample #{x} {'⚠️ [ALARM]' if x in alarm_samples else '✅ [Normal]'}",
                 )
 
-                raw_delta = raw_actuals - raw_predicted
-                scaled_abs_dev = np.abs(z_sample - z_centroid)
-                std_deviations = (raw_actuals - raw_predicted) / std_devs
+                # Execute Single-Point Diagnostics
+                raw_sample = raw_test_df[feature_cols].iloc[sample_to_inspect].values
+                p_id = 0 if (profile_tag is None or profile_tag not in raw_test_df.columns) else int(raw_test_df[profile_tag].iloc[sample_to_inspect])
+                diag_res = engine.score_live_sample(raw_sample, active_profile=p_id)
 
+                # Construct Diagnostic DataFrame
                 diag_df = pd.DataFrame(
                     {
-                        "Feature Tag": feature_cols,
-                        "Actual Value": raw_actuals,
-                        "Predicted Baseline Mean": raw_predicted,
-                        "Absolute Delta (Δ)": raw_delta,
-                        "Deviations (Std Devs σ)": std_deviations,
-                        "Contribution Score (|z - μ_k|)": scaled_abs_dev,
+                        "Sensor Tag": feature_cols,
+                        "Actual Value (y)": raw_sample,
+                        "Model Predicted (ŷ)": diag_res["raw_predicted"],
+                        "Raw Residual (y - ŷ)": diag_res["raw_residuals"],
+                        "Normalized Deviation (σ)": diag_res["std_residuals"],
+                        "Absolute Contribution (|σ|)": np.abs(diag_res["std_residuals"]),
                     }
-                ).sort_values(by="Contribution Score (|z - μ_k|)", ascending=False)
+                ).sort_values(by="Absolute Contribution (|σ|)", ascending=False)
 
-                # Top Contributor Visuals
-                d_col1, d_col2 = st.columns(2)
+                # Visualization layout
+                col_chart1, col_chart2 = st.columns(2)
 
-                with d_col1:
+                with col_chart1:
                     fig_contrib = px.bar(
                         diag_df.head(10),
-                        x="Contribution Score (|z - μ_k|)",
-                        y="Feature Tag",
+                        x="Absolute Contribution (|σ|)",
+                        y="Sensor Tag",
                         orientation="h",
-                        title=f"Top 10 Feature Contributors (Sample #{sample_to_inspect})",
-                        color="Contribution Score (|z - μ_k|)",
+                        title=f"Top 10 Offending Sensors (Sample #{sample_to_inspect})",
+                        color="Absolute Contribution (|σ|)",
                         color_continuous_scale="Reds",
                     )
                     fig_contrib.update_layout(yaxis={"categoryorder": "total ascending"})
                     st.plotly_chart(fig_contrib, use_container_width=True)
 
-                with d_col2:
-                    fig_dev = px.bar(
+                with col_chart2:
+                    fig_res = px.bar(
                         diag_df.head(10),
-                        x="Deviations (Std Devs σ)",
-                        y="Feature Tag",
+                        x="Normalized Deviation (σ)",
+                        y="Sensor Tag",
                         orientation="h",
-                        title="Feature Offsets in Standard Deviations (σ)",
-                        color="Deviations (Std Devs σ)",
+                        title="Normalized Sensor Residuals (σ)",
+                        color="Normalized Deviation (σ)",
                         color_continuous_scale="RdBu_r",
                     )
-                    fig_dev.update_layout(yaxis={"categoryorder": "total ascending"})
-                    st.plotly_chart(fig_dev, use_container_width=True)
+                    fig_res.update_layout(yaxis={"categoryorder": "total ascending"})
+                    st.plotly_chart(fig_res, use_container_width=True)
 
-                # Detailed Table Breakdown
-                st.write("**Full Feature Deviation & Contribution Breakdown:**")
+                # Breakdown Table
+                st.write("**Complete Sensor Profile Residual Breakdown:**")
                 st.dataframe(
                     diag_df.style.format(
                         {
-                            "Actual Value": "{:.4f}",
-                            "Predicted Baseline Mean": "{:.4f}",
-                            "Absolute Delta (Δ)": "{:+.4f}",
-                            "Deviations (Std Devs σ)": "{:+.2f}σ",
-                            "Contribution Score (|z - μ_k|)": "{:.4f}",
+                            "Actual Value (y)": "{:.4f}",
+                            "Model Predicted (ŷ)": "{:.4f}",
+                            "Raw Residual (y - ŷ)": "{:+.4f}",
+                            "Normalized Deviation (σ)": "{:+.2f}σ",
+                            "Absolute Contribution (|σ|)": "{:.4f}",
                         }
                     ),
                     use_container_width=True,
