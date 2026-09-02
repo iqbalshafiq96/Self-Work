@@ -23,9 +23,9 @@ st.caption(
 # ---------------------------------------------------------
 # AUTOMATED K OPTIMIZER
 # ---------------------------------------------------------
-def find_optimal_k(X_scaled: np.ndarray, max_k: int = 10) -> tuple[int, dict]:
+def find_optimal_k(X_scaled: np.ndarray, max_k: int = 20) -> tuple[int, dict]:
     n_samples = X_scaled.shape[0]
-    upper_bound = min(max_k, max(2, n_samples // 10))
+    upper_bound = min(max_k, max(2, n_samples // 5))
 
     if upper_bound < 2:
         return 1, {1: 1.0}
@@ -83,7 +83,7 @@ class AVEVACorrelationClusterEngine:
 
         # Step 2: Optimal K search (Auto vs Manual)
         if user_k <= 0:
-            best_k, scores = find_optimal_k(X_scaled, max_k=10)
+            best_k, scores = find_optimal_k(X_scaled, max_k=20)
             self.optimal_k = best_k
             self.silhouette_scores = scores
         else:
@@ -109,7 +109,6 @@ class AVEVACorrelationClusterEngine:
             raw_centroid = np.mean(X_c_raw, axis=0)
 
             # Step 3: Correlation Matrix R of the cluster
-            # (Covariance of standardized features is the Correlation Matrix)
             if n_samples > 1:
                 R = np.corrcoef(X_c_scaled, rowvar=False)
             else:
@@ -119,8 +118,9 @@ class AVEVACorrelationClusterEngine:
             if np.ndim(R) == 0 or np.isnan(R).any():
                 R = np.eye(p_features)
 
-            # Regularize R matrix to ensure safe inversion
-            R_reg = R + self.ridge_factor * np.eye(p_features)
+            # High dynamic ridge adjustment for sparse/small clusters
+            adaptive_ridge = max(self.ridge_factor, 1e-2 if n_samples < p_features else self.ridge_factor)
+            R_reg = R + adaptive_ridge * np.eye(p_features)
             R_inv = np.linalg.pinv(R_reg)
 
             # Distance calculated using R_inv
@@ -128,8 +128,8 @@ class AVEVACorrelationClusterEngine:
             dist_sq = np.sum(np.dot(diffs, R_inv) * diffs, axis=1)
             raw_distances = np.sqrt(np.maximum(0.0, dist_sq))
 
-            # Step 4: 99th percentile baseline boundary (maps directly to 10% OMR benchmark)
-            d_99 = np.percentile(raw_distances, percentile)
+            # Step 4: 99th percentile baseline boundary
+            d_99 = np.percentile(raw_distances, percentile) if len(raw_distances) > 0 else 1.0
 
             self.clusters[c_id] = {
                 "z_centroid": z_centroid,
@@ -162,7 +162,7 @@ class AVEVACorrelationClusterEngine:
         d_99 = cl["d_99"]
         raw_centroid = cl["raw_centroid"]
 
-        # Step 6: OMR Percentage Scaling (Baseline 99th percentile = 10% OMR Benchmark)
+        # Step 6: OMR Percentage Scaling
         omr_pct = (min_distance / (d_99 + 1e-6)) * 10.0
 
         # Residual Calculations
@@ -221,7 +221,7 @@ if cluster_mode == "Manual Override":
     manual_k = st.sidebar.slider(
         "Select Cluster Count (k):",
         min_value=1,
-        max_value=10,
+        max_value=30,  # Increased upper limit
         value=3,
         step=1,
     )
