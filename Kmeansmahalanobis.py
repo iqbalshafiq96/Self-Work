@@ -21,16 +21,16 @@ st.caption(
 )
 
 # ---------------------------------------------------------
-# SIDEBAR DATASET SELECTION
+# SIDEBAR DATASET SELECTION (1-INDEXED)
 # ---------------------------------------------------------
 st.sidebar.header("Data Source Configuration")
 
 DATASET_MAP = {
-    "Default Baseline Dataset (NOC6_1 & Case_0)": {
+    "Baseline Dataset 1 (NOC6_1 & Case_1)": {
         "train": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
         "test": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
     },
-    "Turbine Baseline Dataset (NOC_Turbine & Case_Turbine)": {
+    "Turbine Baseline Dataset 2 (NOC_Turbine & Case_Turbine)": {
         "train": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Turbine.csv",
         "test": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine.csv",
     },
@@ -522,15 +522,11 @@ else:
                 col_sel1, col_sel2 = st.columns([1, 2])
 
                 with col_sel1:
-                    # 1. Fetch all available sample indices
                     all_samples = results_df["Sample"].tolist()
-
-                    # 2. Identify indices where an anomaly/fault was triggered
                     fault_samples = results_df[
                         results_df["Alarm_Status"] == "FAULT / ANOMALY"
                     ]["Sample"].tolist()
 
-                    # 3. Release dropdown for ALL samples, defaulting to first anomaly if available
                     default_idx = (
                         all_samples.index(fault_samples[0]) if fault_samples else 0
                     )
@@ -563,7 +559,6 @@ else:
                 z_sample = scaled_test[sample_to_inspect]
                 z_centroid = registry[assigned_k]["centroid"]
 
-                # Standard deviations and means of baseline features
                 std_devs = scaler.scale_
                 means = scaler.mean_
 
@@ -611,7 +606,7 @@ else:
                         x="Deviations (Std Devs σ)",
                         y="Feature Tag",
                         orientation="h",
-                        title=f"Feature Offsets in Standard Deviations (σ)",
+                        title="Feature Offsets in Standard Deviations (σ)",
                         color="Deviations (Std Devs σ)",
                         color_continuous_scale="RdBu_r",
                     )
