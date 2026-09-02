@@ -5,48 +5,100 @@ import plotly.graph_objects as go
 import streamlit as st
 from sklearn.cluster import KMeans
 from sklearn.covariance import LedoitWolf
+from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 # Page Configuration
 st.set_page_config(
-    page_title="AVEVA OMR - Nearest Cluster OMI (%) Engine",
+    page_title="AVEVA OMR - Auto-Optimized OMI (%) Engine",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.title("AVEVA OMR Engine: Nearest Cluster Assignment & OMI (%)")
+st.title("AVEVA OMR Engine: Auto-Optimized Cluster Assignment & OMI (%)")
 st.caption(
-    "Dynamic Nearest-Cluster Matching with Percentage OMI Normalization & Sensor (%) Deviations"
+    "Automated $k$ Selection via Silhouette Scoring, Nearest-Cluster Matching, and Percentage Deviations"
 )
+
+
+# ---------------------------------------------------------
+# AUTOMATED K OPTIMIZER
+# ---------------------------------------------------------
+def find_optimal_k(X_scaled: np.ndarray, max_k: int = 10) -> tuple[int, dict]:
+    """
+    Evaluates Silhouette Scores across a range of k (2 to max_k)
+    to automatically determine the optimal cluster count.
+    """
+    n_samples = X_scaled.shape[0]
+    # Bound max_k so clusters don't become excessively small
+    upper_bound = min(max_k, max(2, n_samples // 10))
+    
+    if upper_bound < 2:
+        return 1, {1: 1.0}
+
+    scores = {}
+    best_k = 2
+    best_score = -1.0
+
+    for k in range(2, upper_bound + 1):
+        kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+        labels = kmeans.fit_predict(X_scaled)
+        
+        # Silhouette score requires at least 2 distinct clusters in output
+        if len(np.unique(labels)) > 1:
+            score = silhouette_score(X_scaled, labels)
+            scores[k] = score
+            if score > best_score:
+                best_score = score
+                best_k = k
+
+    return best_k, scores
+
 
 # ---------------------------------------------------------
 # AVEVA OMR NEAREST-CLUSTER ENGINE CLASS
 # ---------------------------------------------------------
 class AVEVAOMRNearestClusterEngine:
     """
-    AVEVA PRiSM / OMR Nearest-Cluster Empirical Engine.
-    Subdivides training data into operating modes (clusters), dynamically maps live data
-    to the nearest cluster, and evaluates normalized percentage distance (OMI %).
+    AVEVA PRiSM / OMR Nearest-Cluster Empirical Engine with dynamic k optimization.
     """
-    def __init__(self, n_clusters: int = 3, shrink_factor: float = 1e-3):
-        self.n_clusters = n_clusters
+    def __init__(self, shrink_factor: float = 1e-3):
         self.shrink_factor = shrink_factor
         self.clusters = {}
         self.feature_cols = []
         self.scaler = None
+        self.optimal_k = 1
+        self.silhouette_scores = {}
 
     def fit_baseline_clusters(
-        self, X_raw: pd.DataFrame, feature_cols: list, percentile: float = 99.0
+        self,
+        X_raw: pd.DataFrame,
+        feature_cols: list,
+        user_k: int = 0,
+        percentile: float = 99.0,
     ):
         self.feature_cols = feature_cols
         self.scaler = StandardScaler()
         X_scaled = self.scaler.fit_transform(X_raw[feature_cols])
 
-        # Partition baseline dataset into operating clusters (operating states)
-        kmeans = KMeans(n_clusters=self.n_clusters, random_state=42, n_init=10)
-        cluster_labels = kmeans.fit_predict(X_scaled)
+        # 1. Automatic k optimization if user_k is 0 (Auto Mode)
+        if user_k <= 0:
+            best_k, scores = find_optimal_k(X_scaled, max_k=10)
+            self.optimal_k = best_k
+            self.silhouette_scores = scores
+        else:
+            self.optimal_k = user_k
+            self.silhouette_scores = {}
 
-        for c_id in range(self.n_clusters):
+        # 2. Partition baseline dataset using selected k
+        if self.optimal_k > 1:
+            kmeans = KMeans(n_clusters=self.optimal_k, random_state=42, n_init=10)
+            cluster_labels = kmeans.fit_predict(X_scaled)
+        else:
+            cluster_labels = np.zeros(len(X_raw), dtype=int)
+
+        self.clusters = {}
+        for c_id in np.unique(cluster_labels):
             mask = cluster_labels == c_id
             X_c_scaled = X_scaled[mask]
             X_c_raw = X_raw[feature_cols].iloc[mask].values
@@ -56,7 +108,7 @@ class AVEVAOMRNearestClusterEngine:
             z_centroid = np.mean(X_c_scaled, axis=0)
             raw_centroid = np.mean(X_c_raw, axis=0)
 
-            # Ledoit-Wolf Covariance & Precision Matrix (Stabilized Matrix Inversion)
+            # Ledoit-Wolf Covariance & Precision Matrix
             try:
                 lw = LedoitWolf()
                 cov_matrix = lw.fit(X_c_scaled).covariance_
@@ -93,7 +145,7 @@ class AVEVAOMRNearestClusterEngine:
     def score_live_sample(self, raw_sample: np.ndarray):
         z_sample = self.scaler.transform(raw_sample.reshape(1, -1))[0]
 
-        # 1. Identify Nearest Cluster Centroid in Scaled Feature Space
+        # Identify Nearest Cluster Centroid
         best_cluster_id = 0
         min_euclidean_dist = float("inf")
 
@@ -103,7 +155,7 @@ class AVEVAOMRNearestClusterEngine:
                 min_euclidean_dist = dist
                 best_cluster_id = c_id
 
-        # 2. Evaluate Distance against assigned Nearest Cluster
+        # Evaluate Distance against assigned Nearest Cluster
         cl = self.clusters[best_cluster_id]
         z_centroid = cl["z_centroid"]
         raw_centroid = cl["raw_centroid"]
@@ -115,7 +167,7 @@ class AVEVAOMRNearestClusterEngine:
         raw_mahal_sq = float(np.dot(np.dot(diff, precision), diff.T))
         raw_mahal_dist = np.sqrt(max(0.0, raw_mahal_sq)) / np.sqrt(p_features)
 
-        # 3. Calculate OMI Distance in Percentage (%) [100% = Baseline Alarm Limit]
+        # OMI Distance in Percentage (%) [100% = Baseline Alarm Limit]
         omi_pct = (raw_mahal_dist / (threshold_abs + 1e-6)) * 100.0
 
         # Sensor Residual Calculations
@@ -166,13 +218,22 @@ selected_dataset_name = st.sidebar.selectbox(
     "Select Asset Dataset Pair:", options=list(DATASET_MAP.keys()), index=0
 )
 
-n_clusters_input = st.sidebar.slider(
-    "Number of Operating Profile Clusters (k):",
-    min_value=1,
-    max_value=6,
-    value=3,
-    step=1,
+cluster_mode = st.sidebar.radio(
+    "Cluster Optimization Mode:",
+    options=["Automatic (Silhouette Score)", "Manual Override"],
+    index=0,
 )
+
+if cluster_mode == "Manual Override":
+    manual_k = st.sidebar.slider(
+        "Select Cluster Count (k):",
+        min_value=1,
+        max_value=10,
+        value=3,
+        step=1,
+    )
+else:
+    manual_k = 0  # 0 flags automatic search in engine
 
 percentile_thresh = st.sidebar.slider(
     "Baseline Alarm Percentile Limit (%):",
@@ -207,10 +268,11 @@ except Exception as e:
 col_btn1, col_btn2 = st.columns([1, 4])
 with col_btn1:
     if st.button("Calibrate Baseline Model", type="primary"):
-        engine = AVEVAOMRNearestClusterEngine(n_clusters=n_clusters_input)
+        engine = AVEVAOMRNearestClusterEngine()
         engine.fit_baseline_clusters(
             X_raw=raw_train_df,
             feature_cols=feature_cols,
+            user_k=manual_k,
             percentile=percentile_thresh,
         )
         st.session_state["omr_engine"] = engine
@@ -225,6 +287,29 @@ if "omr_engine" in st.session_state:
         st.warning("Dataset selection changed. Please click **Calibrate Baseline Model** again.")
     else:
         engine = st.session_state["omr_engine"]
+
+        # Optimization Summary Banner
+        if engine.silhouette_scores:
+            st.info(
+                f"Automated Optimization Selected **k = {engine.optimal_k}** operating clusters "
+                f"(Peak Silhouette Score: **{engine.silhouette_scores[engine.optimal_k]:.4f}**)."
+            )
+            
+            # Silhouette Score Evaluation Chart
+            score_df = pd.DataFrame(
+                list(engine.silhouette_scores.items()), columns=["k", "Silhouette Score"]
+            )
+            fig_scores = px.line(
+                score_df,
+                x="k",
+                y="Silhouette Score",
+                markers=True,
+                title="Cluster Optimization Curve (Silhouette Method)",
+            )
+            fig_scores.add_vline(
+                x=engine.optimal_k, line_dash="dash", line_color="green", annotation_text="Optimal k"
+            )
+            st.plotly_chart(fig_scores, use_container_width=True)
 
         # Score Live Stream
         eval_results = []
@@ -269,7 +354,7 @@ if "omr_engine" in st.session_state:
                 y=results_df["OMI (%)"],
                 mode="lines",
                 name="Overall Model Index (%)",
-                line=dict(color="#008080", width=1.5),  # Petronas Teal
+                line=dict(color="#008080", width=1.5),
             )
         )
         fig_omi.add_trace(
@@ -318,7 +403,7 @@ if "omr_engine" in st.session_state:
             format_func=lambda x: f"Sample #{x} {'⚠️ [ALARM]' if x in alarm_samples else '✅ [Normal]'}",
         )
 
-        # Run single point diagnostics
+        # Single point diagnostics
         raw_sample = raw_test_df[feature_cols].iloc[sample_to_inspect].values
         diag_res = engine.score_live_sample(raw_sample)
 
