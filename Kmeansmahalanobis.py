@@ -17,7 +17,7 @@ st.set_page_config(
 
 st.title("Rotating Asset Reliability Monitor")
 st.caption(
-    "Regime-based Clustering & Multi-Dimensional Mahalanobis Residual Scoring"
+    "Regime-based Clustering & Minimum Mahalanobis Residual Scoring"
 )
 
 # ---------------------------------------------------------
@@ -324,8 +324,8 @@ else:
         t_live_data, t_predict, t_score, t_dashboard = st.tabs(
             [
                 "1. Live Data Ingestion",
-                "2. Regime Prediction",
-                "3. Mahalanobis & Residual Scoring",
+                "2. Pre-Clustering Baseline Assignment",
+                "3. Minimum Mahalanobis Scoring",
                 "4. Anomaly Alert Dashboard",
             ]
         )
@@ -358,9 +358,9 @@ else:
             except Exception as e:
                 st.error(f"Failed to load test dataset: {e}")
 
-        # STEP 2: REGIME PREDICTION
+        # STEP 2: REGIME PREDICTION (EUCLIDEAN/GMM ASSIGNMENT)
         with t_predict:
-            st.subheader("Step 2: Assign Live Points to Baseline Regimes")
+            st.subheader("Step 2: Initial Hard Assignment to Baseline Regimes")
 
             if "scaled_test" not in st.session_state:
                 st.info("Please load test data in Step 1 first.")
@@ -372,49 +372,58 @@ else:
                 st.session_state["live_clusters"] = live_clusters
 
                 st.success(
-                    "All incoming data points mapped to closest operating regimes."
+                    "Primary clustering model regime assignments computed for comparison."
                 )
 
                 fig_regimes = px.line(
                     x=np.arange(len(live_clusters)),
                     y=live_clusters,
                     labels={"x": "Sample Index", "y": "Active Regime ID"},
-                    title="Active Operational Regime Assignment Over Time",
+                    title="Hard Clustering Assignment Over Time",
                 )
                 fig_regimes.update_traces(mode="lines+markers")
                 st.plotly_chart(fig_regimes, use_container_width=True)
 
-        # STEP 3: MAHALANOBIS & RESIDUAL SCORING
+        # STEP 3: MINIMUM MAHALANOBIS & RESIDUAL SCORING
         with t_score:
             st.subheader(
-                "Step 3: Calculate Local Mahalanobis Distance & Edge Residuals"
+                "Step 3: Direct Minimum Mahalanobis & Edge Residual Scoring"
             )
 
-            if "live_clusters" not in st.session_state:
-                st.info("Please complete regime prediction in Step 2 first.")
+            if "scaled_test" not in st.session_state:
+                st.info("Please load test data in Step 1 first.")
             else:
                 scaled_test = st.session_state["scaled_test"]
-                live_clusters = st.session_state["live_clusters"]
                 registry = st.session_state["registry"]
+                n_clusters = st.session_state["n_clusters"]
 
                 results = []
 
                 for i, point in enumerate(scaled_test):
-                    k = live_clusters[i]
-                    centroid = registry[k]["centroid"]
-                    precision = registry[k]["precision"]
-                    threshold_R = registry[k]["threshold_R"]
+                    d_m_all = []
 
-                    diff = point - centroid
-                    d_m = np.sqrt(np.dot(np.dot(diff, precision), diff.T))
+                    # Evaluate Mahalanobis distance across all trained regimes
+                    for k in range(n_clusters):
+                        centroid = registry[k]["centroid"]
+                        precision = registry[k]["precision"]
+                        diff = point - centroid
+                        
+                        d_m_k = np.sqrt(np.dot(np.dot(diff, precision), diff.T))
+                        d_m_all.append(d_m_k)
 
-                    d_edge = max(0.0, d_m - threshold_R)
+                    # Identify the nearest cluster in Mahalanobis space
+                    nearest_k = int(np.argmin(d_m_all))
+                    min_d_m = d_m_all[nearest_k]
+                    threshold_R = registry[nearest_k]["threshold_R"]
+
+                    # Calculate residual beyond the local threshold radius
+                    d_edge = max(0.0, min_d_m - threshold_R)
 
                     results.append(
                         {
                             "Sample": i,
-                            "Assigned_Regime": k,
-                            "Mahalanobis_Distance": d_m,
+                            "Nearest_Regime": nearest_k,
+                            "Mahalanobis_Distance": min_d_m,
                             "Regime_Threshold": threshold_R,
                             "Edge_Residual": d_edge,
                             "Alarm_Status": "FAULT / ANOMALY"
@@ -425,7 +434,7 @@ else:
 
                 results_df = pd.DataFrame(results)
                 st.session_state["results_df"] = results_df
-                st.success("Distance computations complete!")
+                st.success("Minimum Mahalanobis distance computation complete!")
 
                 st.dataframe(results_df, height=300, use_container_width=True)
 
@@ -468,7 +477,7 @@ else:
                         x=results_df["Sample"],
                         y=results_df["Mahalanobis_Distance"],
                         mode="lines",
-                        name="Mahalanobis Distance (d_M)",
+                        name="Min Mahalanobis Distance (d_M)",
                         line=dict(color="blue", width=1.5),
                     )
                 )
@@ -478,7 +487,7 @@ else:
                         x=results_df["Sample"],
                         y=results_df["Regime_Threshold"],
                         mode="lines",
-                        name="Regime Radius Threshold (R_k)",
+                        name="Nearest Regime Threshold (R_k)",
                         line=dict(color="orange", dash="dash", width=2),
                     )
                 )
@@ -496,7 +505,7 @@ else:
                     )
 
                 fig_trend.update_layout(
-                    title="Live Mahalanobis Distance vs. Regime Threshold (R_k)",
+                    title="Live Min Mahalanobis Distance vs. Nearest Regime Threshold (R_k)",
                     xaxis_title="Sample Index / Time",
                     yaxis_title="Distance Score",
                     hovermode="x unified",
@@ -509,7 +518,7 @@ else:
                     results_df,
                     x="Sample",
                     y="Edge_Residual",
-                    title="Edge Residual Score (d_edge = max(0, d_M - R_k))",
+                    title="Edge Residual Score (d_edge = max(0, min_d_M - R_k))",
                     color_discrete_sequence=["red"],
                 )
                 st.plotly_chart(fig_edge, use_container_width=True)
@@ -520,7 +529,7 @@ else:
                 st.markdown("---")
                 st.subheader("Root Cause & Feature Deviation Inspector")
                 st.caption(
-                    "Select any sample point to diagnose feature-level deviations from the predicted regime baseline."
+                    "Select any sample point to diagnose feature-level deviations against the nearest operational regime."
                 )
 
                 feature_cols = st.session_state["feature_cols"]
@@ -550,7 +559,7 @@ else:
 
                 # Extract data for selected sample
                 sample_row = results_df.iloc[sample_to_inspect]
-                assigned_k = int(sample_row["Assigned_Regime"])
+                assigned_k = int(sample_row["Nearest_Regime"])
                 d_m_val = sample_row["Mahalanobis_Distance"]
                 r_k_val = sample_row["Regime_Threshold"]
                 status = sample_row["Alarm_Status"]
@@ -560,19 +569,18 @@ else:
                         f"**Inspection Summary for Sample `{sample_to_inspect}`:**"
                     )
                     st.write(
-                        f"• Mapped Operating Regime: **Regime {assigned_k}**  \n"
-                        f"• Mahalanobis Distance ($d_M$): `{d_m_val:.4f}` | Threshold ($R_k$): `{r_k_val:.4f}`  \n"
+                        f"• Nearest Operating Regime: **Regime {assigned_k}**  \n"
+                        f"• Min Mahalanobis Distance ($d_M$): `{d_m_val:.4f}` | Threshold ($R_k$): `{r_k_val:.4f}`  \n"
                         f"• Status: **:{'red' if status == 'FAULT / ANOMALY' else 'green'}[{status}]**"
                     )
 
-                # Calculation of feature-level deviations strictly matching raw header mapping
+                # Feature-level deviation calculations
                 z_sample = scaled_test[sample_to_inspect]
                 z_centroid = registry[assigned_k]["centroid"]
 
                 std_devs = scaler.scale_
                 means = scaler.mean_
 
-                # Extract raw row matching exact feature column order
                 raw_actuals = raw_test_df[feature_cols].iloc[sample_to_inspect].values
                 raw_predicted = (
                     registry[assigned_k]["raw_centroid"]
@@ -595,7 +603,7 @@ else:
                     }
                 ).sort_values(by="Contribution Score (|z - μ_k|)", ascending=False)
 
-                # Display Top Contributor Visuals
+                # Top Contributor Visuals
                 d_col1, d_col2 = st.columns(2)
 
                 with d_col1:
