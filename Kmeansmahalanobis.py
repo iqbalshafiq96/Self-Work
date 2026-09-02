@@ -3,191 +3,96 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
+from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 
 # Page Configuration
 st.set_page_config(
-    page_title="AVEVA OMR - Correlation Matrix & 10% Benchmark Engine",
+    page_title="AVEVA OMR - Point-to-Point Nearest Baseline Engine",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.title("AVEVA OMR Engine: Correlation-Based Nearest Cluster (10% Scale)")
+st.title("AVEVA OMR Engine: Exact Point-to-Point Baseline Matching")
 st.caption(
-    "Empirical Pattern Matching via Standardization, Correlation Inversion (R⁻¹), and 10% OMR Alarm Scaling"
+    "Empirical Pattern Matching via k-Nearest Neighbor (k=1). Training Self-Evaluation yields 0% Residual."
 )
 
 
 # ---------------------------------------------------------
-# AUTOMATED K OPTIMIZER
+# POINT-TO-POINT NEAREST NEIGHBOR ENGINE
 # ---------------------------------------------------------
-def find_optimal_k(X_scaled: np.ndarray, max_k: int = 20) -> tuple[int, dict]:
-    n_samples = X_scaled.shape[0]
-    upper_bound = min(max_k, max(2, n_samples // 5))
-
-    if upper_bound < 2:
-        return 1, {1: 1.0}
-
-    scores = {}
-    best_k = 2
-    best_score = -1.0
-
-    for k in range(2, upper_bound + 1):
-        kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-        labels = kmeans.fit_predict(X_scaled)
-
-        if len(np.unique(labels)) > 1:
-            score = silhouette_score(X_scaled, labels)
-            scores[k] = score
-            if score > best_score:
-                best_score = score
-                best_k = k
-
-    return best_k, scores
-
-
-# ---------------------------------------------------------
-# AVEVA CORRELATION MATRIX NEAREST-CLUSTER ENGINE
-# ---------------------------------------------------------
-class AVEVACorrelationClusterEngine:
+class AVEVAPointToPointEngine:
     """
-    AVEVA OMR Empirical Engine using:
-    1. Standardization (z-score)
-    2. Cluster Correlation Matrix R (via Covariance of Standardized Data)
-    3. Inverse Correlation Matrix (R^-1) Mahalanobis Distance
-    4. 10% Benchmark Scaling (Normal <= 10%, Alarm > 10%)
+    AVEVA OMR Engine mapping live samples to the single closest baseline timestamp.
+    - Self-evaluation (X_train == X_test) results in zero residual and 0% OMR.
+    - Baseline boundary (10% scale) set at the 99th percentile of nearest-neighbor baseline noise.
     """
 
-    def __init__(self, ridge_factor: float = 1e-4):
-        self.ridge_factor = ridge_factor
-        self.clusters = {}
-        self.feature_cols = []
+    def __init__(self):
         self.scaler = None
-        self.optimal_k = 1
-        self.silhouette_scores = {}
+        self.nn_model = None
+        self.feature_cols = []
         self.X_train_raw = None
-        self.train_cluster_labels = None
+        self.X_train_scaled = None
+        self.d_99 = 1.0
 
-    def fit_baseline_clusters(
+    def fit_baseline(
         self,
         X_raw: pd.DataFrame,
         feature_cols: list,
-        user_k: int = 0,
         percentile: float = 99.0,
     ):
         self.feature_cols = feature_cols
         self.scaler = StandardScaler()
-        self.X_train_raw = X_raw[feature_cols].copy()
+        self.X_train_raw = X_raw[feature_cols].copy().reset_index(drop=True)
 
-        # Step 1: Standardization (z-scores)
-        X_scaled = self.scaler.fit_transform(X_raw[feature_cols])
+        # 1. Standardize Training Data
+        self.X_train_scaled = self.scaler.fit_transform(self.X_train_raw)
 
-        # Step 2: Optimal K search (Auto vs Manual)
-        if user_k <= 0:
-            best_k, scores = find_optimal_k(X_scaled, max_k=20)
-            self.optimal_k = best_k
-            self.silhouette_scores = scores
-        else:
-            self.optimal_k = user_k
-            self.silhouette_scores = {}
+        # 2. Fit Nearest Neighbor Engine (k=1 for exact point matching)
+        self.nn_model = NearestNeighbors(n_neighbors=2, algorithm="auto").fit(
+            self.X_train_scaled
+        )
 
-        # Partition baseline dataset
-        if self.optimal_k > 1:
-            kmeans = KMeans(n_clusters=self.optimal_k, random_state=42, n_init=10)
-            cluster_labels = kmeans.fit_predict(X_scaled)
-        else:
-            cluster_labels = np.zeros(len(X_raw), dtype=int)
+        # 3. Calculate baseline noise threshold (distance to 2nd nearest neighbor in train data)
+        distances, _ = self.nn_model.kneighbors(self.X_train_scaled)
+        # distances[:, 1] is distance to the closest distinct baseline point
+        neighbor_dists = distances[:, 1]
 
-        self.train_cluster_labels = cluster_labels
-        self.clusters = {}
+        self.d_99 = max(np.percentile(neighbor_dists, percentile), 1e-6)
 
-        for c_id in np.unique(cluster_labels):
-            mask = cluster_labels == c_id
-            X_c_scaled = X_scaled[mask]
-            X_c_raw = X_raw[feature_cols].iloc[mask].values
-
-            n_samples, p_features = X_c_scaled.shape
-
-            z_centroid = np.mean(X_c_scaled, axis=0)
-            raw_centroid = np.mean(X_c_raw, axis=0)
-
-            # Step 3: Correlation Matrix R of the cluster
-            if n_samples > 1:
-                R = np.corrcoef(X_c_scaled, rowvar=False)
-            else:
-                R = np.eye(p_features)
-
-            # Handle edge case where corrcoef returns scalar or NaN
-            if np.ndim(R) == 0 or np.isnan(R).any():
-                R = np.eye(p_features)
-
-            # Adaptive ridge regularization for numerical stability
-            adaptive_ridge = max(
-                self.ridge_factor, 1e-2 if n_samples < p_features * 2 else self.ridge_factor
-            )
-            R_reg = (1.0 - adaptive_ridge) * R + adaptive_ridge * np.eye(p_features)
-            R_inv = np.linalg.pinv(R_reg, rcond=1e-5)
-
-            # Distance calculated using R_inv
-            diffs = X_c_scaled - z_centroid
-            dist_sq = np.sum(np.dot(diffs, R_inv) * diffs, axis=1)
-            raw_distances = np.sqrt(np.maximum(0.0, dist_sq))
-
-            # Step 4: 99th percentile baseline boundary
-            d_99 = max(
-                np.percentile(raw_distances, percentile) if len(raw_distances) > 0 else 1.0,
-                1e-2,
-            )
-
-            self.clusters[c_id] = {
-                "z_centroid": z_centroid,
-                "raw_centroid": raw_centroid,
-                "R": R,
-                "R_inv": R_inv,
-                "d_99": d_99,
-                "p_features": p_features,
-                "sample_count": n_samples,
-            }
+        # Fit final single-neighbor lookup
+        self.nn_lookup = NearestNeighbors(n_neighbors=1, algorithm="auto").fit(
+            self.X_train_scaled
+        )
 
     def score_live_sample(self, raw_sample: np.ndarray):
-        z_sample = self.scaler.transform(raw_sample.reshape(1, -1))[0]
+        z_sample = self.scaler.transform(raw_sample.reshape(1, -1))
 
-        # Step 5: Find Nearest Cluster & Distance using Correlation Matrix R_inv
-        min_distance = float("inf")
-        best_cluster_id = 0
+        # Find exact nearest historical sample
+        dist, idx = self.nn_lookup.kneighbors(z_sample)
+        min_distance = float(dist[0][0])
+        nearest_idx = int(idx[0][0])
 
-        for c_id, cl in self.clusters.items():
-            diff = z_sample - cl["z_centroid"]
-            d_m = np.sqrt(
-                np.maximum(0.0, float(np.dot(np.dot(diff, cl["R_inv"]), diff.T)))
-            )
+        # Nearest historical state (Predicted y-hat)
+        raw_predicted = self.X_train_raw.iloc[nearest_idx].values
 
-            if d_m < min_distance:
-                min_distance = d_m
-                best_cluster_id = c_id
+        # 10% Benchmark Scaling
+        omr_pct = (min_distance / self.d_99) * 10.0
 
-        # Target nearest cluster reference
-        cl = self.clusters[best_cluster_id]
-        d_99 = cl["d_99"]
-        raw_centroid = cl["raw_centroid"]
-
-        # Step 6: OMR Percentage Scaling
-        omr_pct = (min_distance / (d_99 + 1e-6)) * 10.0
-
-        # Residual Calculations
-        raw_residuals = raw_sample - raw_centroid
-        pct_residuals = (raw_residuals / (np.abs(raw_centroid) + 1e-6)) * 100.0
+        # Residual Calculations relative to nearest historical point
+        raw_residuals = raw_sample - raw_predicted
+        pct_residuals = (raw_residuals / (np.abs(raw_predicted) + 1e-6)) * 100.0
         std_residuals = raw_residuals / self.scaler.scale_
 
         return {
-            "nearest_cluster": best_cluster_id,
-            "raw_mahal_dist": min_distance,
-            "d_99_threshold": d_99,
+            "nearest_baseline_idx": nearest_idx,
+            "raw_dist": min_distance,
+            "d_99_threshold": self.d_99,
             "OMR_pct": omr_pct,
             "Is_Alert": omr_pct > 10.0,
-            "raw_predicted": raw_centroid,
+            "raw_predicted": raw_predicted,
             "raw_residuals": raw_residuals,
             "pct_residuals": pct_residuals,
             "std_residuals": std_residuals,
@@ -222,22 +127,11 @@ selected_dataset_name = st.sidebar.selectbox(
     "Select Asset Dataset Pair:", options=list(DATASET_MAP.keys()), index=1
 )
 
-cluster_mode = st.sidebar.radio(
-    "Cluster Optimization Mode:",
-    options=["Automatic (Silhouette Score)", "Manual Override"],
-    index=0,
+use_train_as_test = st.sidebar.checkbox(
+    "Self-Evaluation Mode (Set Test = Train)",
+    value=False,
+    help="Enable to confirm zero residual on baseline data.",
 )
-
-if cluster_mode == "Manual Override":
-    manual_k = st.sidebar.slider(
-        "Select Cluster Count (k):",
-        min_value=1,
-        max_value=30,
-        value=3,
-        step=1,
-    )
-else:
-    manual_k = 0
 
 percentile_thresh = st.sidebar.slider(
     "Baseline 10% Scale Boundary Percentile:",
@@ -248,9 +142,10 @@ percentile_thresh = st.sidebar.slider(
 )
 
 TRAIN_URL = DATASET_MAP[selected_dataset_name]["train"]
-TEST_URL = DATASET_MAP[selected_dataset_name]["test"]
+TEST_URL = (
+    TRAIN_URL if use_train_as_test else DATASET_MAP[selected_dataset_name]["test"]
+)
 
-# Load Data
 try:
     raw_train_df = load_and_clean_csv(TRAIN_URL)
     raw_test_df = load_and_clean_csv(TEST_URL)
@@ -268,13 +163,11 @@ except Exception as e:
     st.error(f"Failed to load dataset: {e}")
     st.stop()
 
-# Build Tabs
-tab1, tab2, tab3, tab4 = st.tabs(
+tab1, tab2, tab3 = st.tabs(
     [
         "1. Calibrate Baseline",
-        "2. Correlation Matrices (R & R⁻¹)",
-        "3. OMR Trend & Diagnostics",
-        "4. 3D Cluster Operational Profile",
+        "2. OMR Trend & Diagnostics",
+        "3. 3D Operational Profile",
     ]
 )
 
@@ -282,9 +175,9 @@ tab1, tab2, tab3, tab4 = st.tabs(
 # TAB 1: CALIBRATE BASELINE
 # ---------------------------------------------------------
 with tab1:
-    st.subheader("Model Calibration & Parameter Settings")
+    st.subheader("Point-to-Point Baseline Calibration")
     st.write(
-        "Calibrate the empirical baseline model across the ingested training dataset to establish operational cluster centroids and correlation matrices."
+        "Calibrate the nearest-point engine. Each live sample will match to its closest single historical vector."
     )
 
     c_c1, c_c2 = st.columns(2)
@@ -292,96 +185,47 @@ with tab1:
         st.info(f"**Selected Asset Pair:** {selected_dataset_name}")
         st.write(f"- Baseline Training Samples: **{raw_train_df.shape[0]}**")
         st.write(f"- Live Evaluation Samples: **{raw_test_df.shape[0]}**")
-        st.write(f"- Total Operational Tags: **{len(feature_cols)}**")
+        st.write(f"- Evaluation Mode: **{'Self-Evaluation (Test=Train)' if use_train_as_test else 'Standard Evaluation'}**")
 
     with c_c2:
-        st.write(f"- **Mode:** {cluster_mode}")
-        if cluster_mode == "Manual Override":
-            st.write(f"- **Manual k Target:** {manual_k}")
+        st.write(f"- **Total Operational Tags:** {len(feature_cols)}")
         st.write(f"- **Percentile Scale Boundary:** {percentile_thresh}%")
 
     st.markdown("---")
     if st.button("Calibrate Baseline Model", type="primary", use_container_width=True):
-        engine = AVEVACorrelationClusterEngine()
-        engine.fit_baseline_clusters(
+        engine = AVEVAPointToPointEngine()
+        engine.fit_baseline(
             X_raw=raw_train_df,
             feature_cols=feature_cols,
-            user_k=manual_k,
             percentile=percentile_thresh,
         )
-        st.session_state["omr_engine"] = engine
+        st.session_state["p2p_engine"] = engine
         st.session_state["active_dataset_name"] = selected_dataset_name
-        st.success("Model Calibrated Successfully!")
+        st.session_state["active_eval_mode"] = use_train_as_test
+        st.success("Point-to-Point Engine Calibrated Successfully!")
 
-    if "omr_engine" in st.session_state and st.session_state.get("active_dataset_name") == selected_dataset_name:
-        engine = st.session_state["omr_engine"]
-        st.success(
-            f"Active Calibrated Model Ready: **{len(engine.clusters)}** Active Cluster(s)."
-        )
+    if (
+        "p2p_engine" in st.session_state
+        and st.session_state.get("active_dataset_name") == selected_dataset_name
+        and st.session_state.get("active_eval_mode") == use_train_as_test
+    ):
+        st.success("Active Point-to-Point Model Ready.")
 
 # ---------------------------------------------------------
-# TAB 2: CORRELATION MATRICES (R & R^-1)
+# TAB 2: OMR TREND & DIAGNOSTICS
 # ---------------------------------------------------------
 with tab2:
-    st.subheader("Cluster Correlation (R) & Inverse Correlation (R⁻¹) Matrices")
-    
-    if "omr_engine" not in st.session_state or st.session_state.get("active_dataset_name") != selected_dataset_name:
+    st.subheader("Overall Model Residual (OMR) Trend (%) & Diagnostics")
+
+    if (
+        "p2p_engine" not in st.session_state
+        or st.session_state.get("active_dataset_name") != selected_dataset_name
+        or st.session_state.get("active_eval_mode") != use_train_as_test
+    ):
         st.warning("Please calibrate the baseline model in **Tab 1** first.")
     else:
-        engine = st.session_state["omr_engine"]
-        cluster_options = list(engine.clusters.keys())
-        
-        selected_c_id = st.selectbox(
-            "Select Operational Cluster to Inspect:",
-            options=cluster_options,
-            format_func=lambda c: f"Cluster {c} ({engine.clusters[c]['sample_count']} Baseline Timestamps)",
-        )
+        engine = st.session_state["p2p_engine"]
 
-        cl_data = engine.clusters[selected_c_id]
-        
-        st.write(
-            f"**Cluster {selected_c_id} Metrics:** Population = **{cl_data['sample_count']}** samples | "
-            f"$D_{{99\%}}$ Boundary = **{cl_data['d_99']:.4f}**"
-        )
-
-        col_r1, col_r2 = st.columns(2)
-        
-        with col_r1:
-            st.write("**Correlation Matrix (R)**")
-            fig_r = px.imshow(
-                cl_data["R"],
-                x=feature_cols,
-                y=feature_cols,
-                color_continuous_scale="RdBu_r",
-                zmin=-1,
-                zmax=1,
-                title=f"Cluster {selected_c_id} Inter-Sensor Correlation (R)",
-            )
-            st.plotly_chart(fig_r, use_container_width=True)
-
-        with col_r2:
-            st.write("**Inverse Correlation Matrix (R⁻¹)**")
-            fig_rinv = px.imshow(
-                cl_data["R_inv"],
-                x=feature_cols,
-                y=feature_cols,
-                color_continuous_scale="Viridis",
-                title=f"Cluster {selected_c_id} Precision Matrix (R⁻¹)",
-            )
-            st.plotly_chart(fig_rinv, use_container_width=True)
-
-# ---------------------------------------------------------
-# TAB 3: OMR TREND & DIAGNOSTICS
-# ---------------------------------------------------------
-with tab3:
-    st.subheader("Overall Model Residual (OMR) Trend (%) & Catch Diagnostics")
-    
-    if "omr_engine" not in st.session_state or st.session_state.get("active_dataset_name") != selected_dataset_name:
-        st.warning("Please calibrate the baseline model in **Tab 1** first.")
-    else:
-        engine = st.session_state["omr_engine"]
-
-        # Score Live Data
         eval_results = []
         for i in range(len(raw_test_df)):
             sample = raw_test_df[feature_cols].iloc[i].values
@@ -389,7 +233,7 @@ with tab3:
             eval_results.append(
                 {
                     "Sample": i,
-                    "Cluster": f"Cluster {res['nearest_cluster']}",
+                    "Matched Baseline Row": res["nearest_baseline_idx"],
                     "OMR (%)": res["OMR_pct"],
                     "Status": "ALARM BREACH (>10%)"
                     if res["Is_Alert"]
@@ -412,7 +256,6 @@ with tab3:
             delta_color="inverse",
         )
 
-        # Plotly OMR Trend Chart
         fig_omr = go.Figure()
         fig_omr.add_trace(
             go.Scatter(
@@ -433,18 +276,6 @@ with tab3:
             )
         )
 
-        alarms = results_df[results_df["OMR (%)"] > 10.0]
-        if not alarms.empty:
-            fig_omr.add_trace(
-                go.Scatter(
-                    x=alarms["Sample"],
-                    y=alarms["OMR (%)"],
-                    mode="markers",
-                    name="Threshold Breach (>10%)",
-                    marker=dict(color="red", size=6, symbol="x"),
-                )
-            )
-
         fig_omr.update_layout(
             xaxis_title="Sample Index",
             yaxis_title="OMR (%) [10% = Baseline Alarm Boundary]",
@@ -453,17 +284,14 @@ with tab3:
         st.plotly_chart(fig_omr, use_container_width=True)
 
         st.markdown("---")
-        st.subheader("Sensor Catch Diagnostics")
+        st.subheader("Sensor Diagnostics for Selected Timestamp")
 
         all_samples = results_df["Sample"].tolist()
-        alarm_samples = results_df[results_df["Status"] == "ALARM BREACH (>10%)"]["Sample"].tolist()
-        default_idx = all_samples.index(alarm_samples[0]) if alarm_samples else 0
-
         sample_to_inspect = st.selectbox(
             "Select Timestamp to Inspect Sensor Breakdown:",
             options=all_samples,
-            index=default_idx,
-            format_func=lambda x: f"Sample #{x} {'⚠️ [ALARM >10%]' if x in alarm_samples else '✅ [Normal ≤10%]'}",
+            index=0,
+            format_func=lambda x: f"Sample #{x} (Matched Baseline Row #{results_df.loc[x, 'Matched Baseline Row']})",
         )
 
         raw_sample = raw_test_df[feature_cols].iloc[sample_to_inspect].values
@@ -473,7 +301,7 @@ with tab3:
             {
                 "Sensor Tag": feature_cols,
                 "Actual Value (y)": raw_sample,
-                "Nearest Cluster Target (ŷ)": diag_res["raw_predicted"],
+                "Nearest Baseline Target (ŷ)": diag_res["raw_predicted"],
                 "Raw Residual (y - ŷ)": diag_res["raw_residuals"],
                 "Sensor Residual (%)": diag_res["pct_residuals"],
                 "Normalized Deviation (σ)": diag_res["std_residuals"],
@@ -482,11 +310,10 @@ with tab3:
         ).sort_values(by="Abs Deviation (|σ|)", ascending=False)
 
         st.info(
-            f"Sample **#{sample_to_inspect}** mapped to **Cluster {diag_res['nearest_cluster']}** | Calculated OMR: **{diag_res['OMR_pct']:.2f}%**"
+            f"Sample **#{sample_to_inspect}** matched to Baseline Timestamp **#{diag_res['nearest_baseline_idx']}** | Calculated OMR: **{diag_res['OMR_pct']:.4f}%**"
         )
 
         c_chart1, c_chart2 = st.columns(2)
-
         with c_chart1:
             fig_pct = px.bar(
                 diag_df.head(10),
@@ -517,7 +344,7 @@ with tab3:
             diag_df.drop(columns=["Abs Deviation (|σ|)"]).style.format(
                 {
                     "Actual Value (y)": "{:.4f}",
-                    "Nearest Cluster Target (ŷ)": "{:.4f}",
+                    "Nearest Baseline Target (ŷ)": "{:.4f}",
                     "Raw Residual (y - ŷ)": "{:+.4f}",
                     "Sensor Residual (%)": "{:+.2f}%",
                     "Normalized Deviation (σ)": "{:+.2f}σ",
@@ -528,51 +355,52 @@ with tab3:
         )
 
 # ---------------------------------------------------------
-# TAB 4: 3D CLUSTER OPERATIONAL PROFILE
+# TAB 3: 3D OPERATIONAL PROFILE
 # ---------------------------------------------------------
-with tab4:
-    st.subheader("3D Operational Profile & Live Sample Overlay")
-    
-    if "omr_engine" not in st.session_state or st.session_state.get("active_dataset_name") != selected_dataset_name:
+with tab3:
+    st.subheader("3D Space: Live Sample vs. Nearest Baseline Point")
+
+    if (
+        "p2p_engine" not in st.session_state
+        or st.session_state.get("active_dataset_name") != selected_dataset_name
+        or st.session_state.get("active_eval_mode") != use_train_as_test
+    ):
         st.warning("Please calibrate the baseline model in **Tab 1** first.")
     else:
-        engine = st.session_state["omr_engine"]
+        engine = st.session_state["p2p_engine"]
 
-        # Tag Selection
         col_p1, col_p2, col_p3 = st.columns(3)
         with col_p1:
             x_tag = st.selectbox("X-Axis Sensor Tag:", options=feature_cols, index=0)
         with col_p2:
-            y_tag = st.selectbox("Y-Axis Sensor Tag:", options=feature_cols, index=min(1, len(feature_cols) - 1))
+            y_tag = st.selectbox(
+                "Y-Axis Sensor Tag:",
+                options=feature_cols,
+                index=min(1, len(feature_cols) - 1),
+            )
         with col_p3:
-            z_tag = st.selectbox("Z-Axis Sensor Tag:", options=feature_cols, index=min(2, len(feature_cols) - 1))
-
-        # Live Sample Selector
-        st.markdown("---")
-        col_sample_sel, _ = st.columns([2, 2])
-        with col_sample_sel:
-            live_sample_idx = st.selectbox(
-                "Select Live Timestamp to Overlay in 3D Space:",
-                options=list(range(len(raw_test_df))),
-                format_func=lambda i: f"Sample #{i}",
+            z_tag = st.selectbox(
+                "Z-Axis Sensor Tag:",
+                options=feature_cols,
+                index=min(2, len(feature_cols) - 1),
             )
 
-        # Baseline Data Points with Cluster Color Coding
-        train_df_plot = engine.X_train_raw.copy()
-        train_df_plot["Cluster"] = [f"Cluster {c}" for c in engine.train_cluster_labels]
+        live_sample_idx = st.selectbox(
+            "Select Live Timestamp to Overlay in 3D Space:",
+            options=list(range(len(raw_test_df))),
+            format_func=lambda i: f"Sample #{i}",
+        )
 
         fig_3d = px.scatter_3d(
-            train_df_plot,
+            engine.X_train_raw,
             x=x_tag,
             y=y_tag,
             z=z_tag,
-            color="Cluster",
-            opacity=0.4,
-            title="Baseline Operating Clusters with Live Sample Overlay",
+            opacity=0.3,
+            title="Baseline Space with Live Point Match Vector",
         )
-        fig_3d.update_traces(marker=dict(size=3))
+        fig_3d.update_traces(marker=dict(size=2, color="blue"))
 
-        # Live Sample Evaluation
         raw_live_sample = raw_test_df[feature_cols].iloc[live_sample_idx].values
         live_res = engine.score_live_sample(raw_live_sample)
 
@@ -580,57 +408,43 @@ with tab4:
         live_y = raw_test_df[y_tag].iloc[live_sample_idx]
         live_z = raw_test_df[z_tag].iloc[live_sample_idx]
 
-        target_c_id = live_res["nearest_cluster"]
-        target_centroid_raw = engine.clusters[target_c_id]["raw_centroid"]
-        
-        target_x_idx = feature_cols.index(x_tag)
-        target_y_idx = feature_cols.index(y_tag)
-        target_z_idx = feature_cols.index(z_tag)
+        target_row_raw = live_res["raw_predicted"]
+        target_x = target_row_raw[feature_cols.index(x_tag)]
+        target_y = target_row_raw[feature_cols.index(y_tag)]
+        target_z = target_row_raw[feature_cols.index(z_tag)]
 
-        cent_x = target_centroid_raw[target_x_idx]
-        cent_y = target_centroid_raw[target_y_idx]
-        cent_z = target_centroid_raw[target_z_idx]
-
-        # Add Live Sample Point
+        # Live Point
         fig_3d.add_trace(
             go.Scatter3d(
                 x=[live_x],
                 y=[live_y],
                 z=[live_z],
                 mode="markers",
-                name=f"Live Sample #{live_sample_idx} ({'ALARM' if live_res['Is_Alert'] else 'Normal'})",
+                name=f"Live Sample #{live_sample_idx}",
                 marker=dict(
-                    color="red" if live_res["Is_Alert"] else "brightgreen",
-                    size=10,
+                    color="red" if live_res["Is_Alert"] else "green",
+                    size=8,
                     symbol="diamond",
                 ),
             )
         )
 
-        # Vector line connecting Live Point to Assigned Cluster Centroid
+        # Vector connecting to exact nearest baseline point
         fig_3d.add_trace(
             go.Scatter3d(
-                x=[live_x, cent_x],
-                y=[live_y, cent_y],
-                z=[live_z, cent_z],
-                mode="lines",
-                name=f"Residual Vector to Cluster {target_c_id} Target",
-                line=dict(color="red" if live_res["Is_Alert"] else "black", width=5, dash="dash"),
+                x=[live_x, target_x],
+                y=[live_y, target_y],
+                z=[live_z, target_z],
+                mode="lines+markers",
+                name=f"Nearest Baseline Match (Row #{live_res['nearest_baseline_idx']})",
+                line=dict(color="orange", width=4),
+                marker=dict(size=4, color="orange"),
             )
         )
 
         fig_3d.update_layout(
-            scene=dict(
-                xaxis_title=x_tag,
-                yaxis_title=y_tag,
-                zaxis_title=z_tag,
-            ),
+            scene=dict(xaxis_title=x_tag, yaxis_title=y_tag, zaxis_title=z_tag),
             margin=dict(l=0, r=0, b=0, t=40),
         )
 
         st.plotly_chart(fig_3d, use_container_width=True)
-
-        st.info(
-            f"**Live Sample #{live_sample_idx} Diagnostics:** Assigned to **Cluster {target_c_id}** | "
-            f"Calculated OMR = **{live_res['OMR_pct']:.2f}%** ({'⚠️ ALARM BREACH (>10%)' if live_res['Is_Alert'] else '✅ Normal Operating State'})"
-        )
