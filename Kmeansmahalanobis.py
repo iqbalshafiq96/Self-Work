@@ -67,6 +67,8 @@ class AVEVACorrelationClusterEngine:
         self.scaler = None
         self.optimal_k = 1
         self.silhouette_scores = {}
+        self.X_train_raw = None
+        self.train_cluster_labels = None
 
     def fit_baseline_clusters(
         self,
@@ -77,6 +79,7 @@ class AVEVACorrelationClusterEngine:
     ):
         self.feature_cols = feature_cols
         self.scaler = StandardScaler()
+        self.X_train_raw = X_raw[feature_cols].copy()
 
         # Step 1: Standardization (z-scores)
         X_scaled = self.scaler.fit_transform(X_raw[feature_cols])
@@ -97,7 +100,9 @@ class AVEVACorrelationClusterEngine:
         else:
             cluster_labels = np.zeros(len(X_raw), dtype=int)
 
+        self.train_cluster_labels = cluster_labels
         self.clusters = {}
+
         for c_id in np.unique(cluster_labels):
             mask = cluster_labels == c_id
             X_c_scaled = X_scaled[mask]
@@ -118,10 +123,12 @@ class AVEVACorrelationClusterEngine:
             if np.ndim(R) == 0 or np.isnan(R).any():
                 R = np.eye(p_features)
 
-            # High dynamic ridge adjustment for sparse/small clusters
-            adaptive_ridge = max(self.ridge_factor, 1e-2 if n_samples < p_features else self.ridge_factor)
-            R_reg = R + adaptive_ridge * np.eye(p_features)
-            R_inv = np.linalg.pinv(R_reg)
+            # Adaptive ridge regularization for numerical stability
+            adaptive_ridge = max(
+                self.ridge_factor, 1e-2 if n_samples < p_features * 2 else self.ridge_factor
+            )
+            R_reg = (1.0 - adaptive_ridge) * R + adaptive_ridge * np.eye(p_features)
+            R_inv = np.linalg.pinv(R_reg, rcond=1e-5)
 
             # Distance calculated using R_inv
             diffs = X_c_scaled - z_centroid
@@ -129,11 +136,15 @@ class AVEVACorrelationClusterEngine:
             raw_distances = np.sqrt(np.maximum(0.0, dist_sq))
 
             # Step 4: 99th percentile baseline boundary
-            d_99 = np.percentile(raw_distances, percentile) if len(raw_distances) > 0 else 1.0
+            d_99 = max(
+                np.percentile(raw_distances, percentile) if len(raw_distances) > 0 else 1.0,
+                1e-2,
+            )
 
             self.clusters[c_id] = {
                 "z_centroid": z_centroid,
                 "raw_centroid": raw_centroid,
+                "R": R,
                 "R_inv": R_inv,
                 "d_99": d_99,
                 "p_features": p_features,
@@ -221,7 +232,7 @@ if cluster_mode == "Manual Override":
     manual_k = st.sidebar.slider(
         "Select Cluster Count (k):",
         min_value=1,
-        max_value=30,  # Increased upper limit
+        max_value=30,
         value=3,
         step=1,
     )
@@ -250,17 +261,47 @@ try:
         if c.lower() not in ["timestamp", "time", "date"]
     ]
 
-    st.success(
-        f"Ingested **{len(feature_cols)}** Tag Sensors across **{raw_train_df.shape[0]}** Training Baseline Timestamps."
+    st.sidebar.success(
+        f"Ingested **{len(feature_cols)}** Tag Sensors across **{raw_train_df.shape[0]}** Baseline Timestamps."
     )
 except Exception as e:
     st.error(f"Failed to load dataset: {e}")
     st.stop()
 
-# Build / Calibrate Model
-col_btn1, _ = st.columns([1, 4])
-with col_btn1:
-    if st.button("Calibrate Baseline Model", type="primary"):
+# Build Tabs
+tab1, tab2, tab3, tab4 = st.tabs(
+    [
+        "1. Calibrate Baseline",
+        "2. Correlation Matrices (R & R⁻¹)",
+        "3. OMR Trend & Diagnostics",
+        "4. 3D Cluster Operational Profile",
+    ]
+)
+
+# ---------------------------------------------------------
+# TAB 1: CALIBRATE BASELINE
+# ---------------------------------------------------------
+with tab1:
+    st.subheader("Model Calibration & Parameter Settings")
+    st.write(
+        "Calibrate the empirical baseline model across the ingested training dataset to establish operational cluster centroids and correlation matrices."
+    )
+
+    c_c1, c_c2 = st.columns(2)
+    with c_c1:
+        st.info(f"**Selected Asset Pair:** {selected_dataset_name}")
+        st.write(f"- Baseline Training Samples: **{raw_train_df.shape[0]}**")
+        st.write(f"- Live Evaluation Samples: **{raw_test_df.shape[0]}**")
+        st.write(f"- Total Operational Tags: **{len(feature_cols)}**")
+
+    with c_c2:
+        st.write(f"- **Mode:** {cluster_mode}")
+        if cluster_mode == "Manual Override":
+            st.write(f"- **Manual k Target:** {manual_k}")
+        st.write(f"- **Percentile Scale Boundary:** {percentile_thresh}%")
+
+    st.markdown("---")
+    if st.button("Calibrate Baseline Model", type="primary", use_container_width=True):
         engine = AVEVACorrelationClusterEngine()
         engine.fit_baseline_clusters(
             X_raw=raw_train_df,
@@ -270,22 +311,75 @@ with col_btn1:
         )
         st.session_state["omr_engine"] = engine
         st.session_state["active_dataset_name"] = selected_dataset_name
-        st.success("Model Calibrated!")
+        st.success("Model Calibrated Successfully!")
+
+    if "omr_engine" in st.session_state and st.session_state.get("active_dataset_name") == selected_dataset_name:
+        engine = st.session_state["omr_engine"]
+        st.success(
+            f"Active Calibrated Model Ready: **{len(engine.clusters)}** Active Cluster(s)."
+        )
 
 # ---------------------------------------------------------
-# LIVE EVALUATION & MONITORING
+# TAB 2: CORRELATION MATRICES (R & R^-1)
 # ---------------------------------------------------------
-if "omr_engine" in st.session_state:
-    if st.session_state.get("active_dataset_name") != selected_dataset_name:
-        st.warning("Dataset selection changed. Click **Calibrate Baseline Model** again.")
+with tab2:
+    st.subheader("Cluster Correlation (R) & Inverse Correlation (R⁻¹) Matrices")
+    
+    if "omr_engine" not in st.session_state or st.session_state.get("active_dataset_name") != selected_dataset_name:
+        st.warning("Please calibrate the baseline model in **Tab 1** first.")
     else:
         engine = st.session_state["omr_engine"]
+        cluster_options = list(engine.clusters.keys())
+        
+        selected_c_id = st.selectbox(
+            "Select Operational Cluster to Inspect:",
+            options=cluster_options,
+            format_func=lambda c: f"Cluster {c} ({engine.clusters[c]['sample_count']} Baseline Timestamps)",
+        )
 
-        if engine.silhouette_scores:
-            st.info(
-                f"Automated Optimization Selected **k = {engine.optimal_k}** operating clusters "
-                f"(Peak Silhouette Score: **{engine.silhouette_scores[engine.optimal_k]:.4f}**)."
+        cl_data = engine.clusters[selected_c_id]
+        
+        st.write(
+            f"**Cluster {selected_c_id} Metrics:** Population = **{cl_data['sample_count']}** samples | "
+            f"$D_{{99\%}}$ Boundary = **{cl_data['d_99']:.4f}**"
+        )
+
+        col_r1, col_r2 = st.columns(2)
+        
+        with col_r1:
+            st.write("**Correlation Matrix (R)**")
+            fig_r = px.imshow(
+                cl_data["R"],
+                x=feature_cols,
+                y=feature_cols,
+                color_continuous_scale="RdBu_r",
+                zmin=-1,
+                zmax=1,
+                title=f"Cluster {selected_c_id} Inter-Sensor Correlation (R)",
             )
+            st.plotly_chart(fig_r, use_container_width=True)
+
+        with col_r2:
+            st.write("**Inverse Correlation Matrix (R⁻¹)**")
+            fig_rinv = px.imshow(
+                cl_data["R_inv"],
+                x=feature_cols,
+                y=feature_cols,
+                color_continuous_scale="Viridis",
+                title=f"Cluster {selected_c_id} Precision Matrix (R⁻¹)",
+            )
+            st.plotly_chart(fig_rinv, use_container_width=True)
+
+# ---------------------------------------------------------
+# TAB 3: OMR TREND & DIAGNOSTICS
+# ---------------------------------------------------------
+with tab3:
+    st.subheader("Overall Model Residual (OMR) Trend (%) & Catch Diagnostics")
+    
+    if "omr_engine" not in st.session_state or st.session_state.get("active_dataset_name") != selected_dataset_name:
+        st.warning("Please calibrate the baseline model in **Tab 1** first.")
+    else:
+        engine = st.session_state["omr_engine"]
 
         # Score Live Data
         eval_results = []
@@ -304,9 +398,6 @@ if "omr_engine" in st.session_state:
             )
 
         results_df = pd.DataFrame(eval_results)
-
-        st.markdown("---")
-        st.subheader("1. Overall Model Residual (OMR) Trend (%)")
 
         total_samples = len(results_df)
         total_alarms = (results_df["OMR (%)"] > 10.0).sum()
@@ -361,18 +452,15 @@ if "omr_engine" in st.session_state:
         )
         st.plotly_chart(fig_omr, use_container_width=True)
 
-        # ---------------------------------------------------------
-        # SENSOR RESIDUAL DIAGNOSTICS
-        # ---------------------------------------------------------
         st.markdown("---")
-        st.subheader("2. Sensor Residual & Catch Diagnostics")
+        st.subheader("Sensor Catch Diagnostics")
 
         all_samples = results_df["Sample"].tolist()
         alarm_samples = results_df[results_df["Status"] == "ALARM BREACH (>10%)"]["Sample"].tolist()
         default_idx = all_samples.index(alarm_samples[0]) if alarm_samples else 0
 
         sample_to_inspect = st.selectbox(
-            "Select Timestamp to Inspect:",
+            "Select Timestamp to Inspect Sensor Breakdown:",
             options=all_samples,
             index=default_idx,
             format_func=lambda x: f"Sample #{x} {'⚠️ [ALARM >10%]' if x in alarm_samples else '✅ [Normal ≤10%]'}",
@@ -425,7 +513,6 @@ if "omr_engine" in st.session_state:
             fig_sigma.update_layout(yaxis={"categoryorder": "total ascending"})
             st.plotly_chart(fig_sigma, use_container_width=True)
 
-        st.write("**Full Tag Residual Breakdown Table:**")
         st.dataframe(
             diag_df.drop(columns=["Abs Deviation (|σ|)"]).style.format(
                 {
@@ -439,5 +526,111 @@ if "omr_engine" in st.session_state:
             use_container_width=True,
             height=300,
         )
-else:
-    st.info("Click **Calibrate Baseline Model** above to train the empirical engine.")
+
+# ---------------------------------------------------------
+# TAB 4: 3D CLUSTER OPERATIONAL PROFILE
+# ---------------------------------------------------------
+with tab4:
+    st.subheader("3D Operational Profile & Live Sample Overlay")
+    
+    if "omr_engine" not in st.session_state or st.session_state.get("active_dataset_name") != selected_dataset_name:
+        st.warning("Please calibrate the baseline model in **Tab 1** first.")
+    else:
+        engine = st.session_state["omr_engine"]
+
+        # Tag Selection
+        col_p1, col_p2, col_p3 = st.columns(3)
+        with col_p1:
+            x_tag = st.selectbox("X-Axis Sensor Tag:", options=feature_cols, index=0)
+        with col_p2:
+            y_tag = st.selectbox("Y-Axis Sensor Tag:", options=feature_cols, index=min(1, len(feature_cols) - 1))
+        with col_p3:
+            z_tag = st.selectbox("Z-Axis Sensor Tag:", options=feature_cols, index=min(2, len(feature_cols) - 1))
+
+        # Live Sample Selector
+        st.markdown("---")
+        col_sample_sel, _ = st.columns([2, 2])
+        with col_sample_sel:
+            live_sample_idx = st.selectbox(
+                "Select Live Timestamp to Overlay in 3D Space:",
+                options=list(range(len(raw_test_df))),
+                format_func=lambda i: f"Sample #{i}",
+            )
+
+        # Baseline Data Points with Cluster Color Coding
+        train_df_plot = engine.X_train_raw.copy()
+        train_df_plot["Cluster"] = [f"Cluster {c}" for c in engine.train_cluster_labels]
+
+        fig_3d = px.scatter_3d(
+            train_df_plot,
+            x=x_tag,
+            y=y_tag,
+            z=z_tag,
+            color="Cluster",
+            opacity=0.4,
+            title="Baseline Operating Clusters with Live Sample Overlay",
+        )
+        fig_3d.update_traces(marker=dict(size=3))
+
+        # Live Sample Evaluation
+        raw_live_sample = raw_test_df[feature_cols].iloc[live_sample_idx].values
+        live_res = engine.score_live_sample(raw_live_sample)
+
+        live_x = raw_test_df[x_tag].iloc[live_sample_idx]
+        live_y = raw_test_df[y_tag].iloc[live_sample_idx]
+        live_z = raw_test_df[z_tag].iloc[live_sample_idx]
+
+        target_c_id = live_res["nearest_cluster"]
+        target_centroid_raw = engine.clusters[target_c_id]["raw_centroid"]
+        
+        target_x_idx = feature_cols.index(x_tag)
+        target_y_idx = feature_cols.index(y_tag)
+        target_z_idx = feature_cols.index(z_tag)
+
+        cent_x = target_centroid_raw[target_x_idx]
+        cent_y = target_centroid_raw[target_y_idx]
+        cent_z = target_centroid_raw[target_z_idx]
+
+        # Add Live Sample Point
+        fig_3d.add_trace(
+            go.Scatter3d(
+                x=[live_x],
+                y=[live_y],
+                z=[live_z],
+                mode="markers",
+                name=f"Live Sample #{live_sample_idx} ({'ALARM' if live_res['Is_Alert'] else 'Normal'})",
+                marker=dict(
+                    color="red" if live_res["Is_Alert"] else "brightgreen",
+                    size=10,
+                    symbol="diamond",
+                ),
+            )
+        )
+
+        # Vector line connecting Live Point to Assigned Cluster Centroid
+        fig_3d.add_trace(
+            go.Scatter3d(
+                x=[live_x, cent_x],
+                y=[live_y, cent_y],
+                z=[live_z, cent_z],
+                mode="lines",
+                name=f"Residual Vector to Cluster {target_c_id} Target",
+                line=dict(color="red" if live_res["Is_Alert"] else "black", width=5, dash="dash"),
+            )
+        )
+
+        fig_3d.update_layout(
+            scene=dict(
+                xaxis_title=x_tag,
+                yaxis_title=y_tag,
+                zaxis_title=z_tag,
+            ),
+            margin=dict(l=0, r=0, b=0, t=40),
+        )
+
+        st.plotly_chart(fig_3d, use_container_width=True)
+
+        st.info(
+            f"**Live Sample #{live_sample_idx} Diagnostics:** Assigned to **Cluster {target_c_id}** | "
+            f"Calculated OMR = **{live_res['OMR_pct']:.2f}%** ({'⚠️ ALARM BREACH (>10%)' if live_res['Is_Alert'] else '✅ Normal Operating State'})"
+        )
