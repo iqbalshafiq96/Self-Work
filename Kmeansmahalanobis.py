@@ -42,7 +42,6 @@ selected_dataset_name = st.sidebar.selectbox(
     index=0,
 )
 
-# Extract raw URLs based on user choice
 TRAIN_URL = DATASET_MAP[selected_dataset_name]["train"]
 TEST_URL = DATASET_MAP[selected_dataset_name]["test"]
 
@@ -63,7 +62,6 @@ st.markdown("---")
 if phase == "Phase 1: Offline Training":
     st.header("Phase 1: Offline Baseline Training")
 
-    # Pipeline Tabs arranged Left-to-Right
     t_data, t_cluster, t_metrics, t_summary = st.tabs(
         [
             "1. Data Ingestion & Preprocessing",
@@ -85,7 +83,6 @@ if phase == "Phase 1: Offline Training":
         try:
             raw_train_df = load_train_data(TRAIN_URL)
 
-            # Separate numeric columns (handling timestamp if present)
             numeric_cols = raw_train_df.select_dtypes(
                 include=[np.number]
             ).columns.tolist()
@@ -103,11 +100,9 @@ if phase == "Phase 1: Offline Training":
                 st.write("**Raw Data Preview:**")
                 st.dataframe(raw_train_df.head(), height=250)
 
-            # Scaling
             scaler = StandardScaler()
             scaled_train = scaler.fit_transform(raw_train_df[feature_cols])
 
-            # Store temporary step outputs in session state
             st.session_state["raw_train_df"] = raw_train_df
             st.session_state["feature_cols"] = feature_cols
             st.session_state["scaler"] = scaler
@@ -125,7 +120,6 @@ if phase == "Phase 1: Offline Training":
             st.info("Please load and scale data in Step 1 first.")
         else:
             scaled_train = st.session_state["scaled_train"]
-            feature_cols = st.session_state["feature_cols"]
 
             col_cfg1, col_cfg2 = st.columns(2)
             with col_cfg1:
@@ -169,7 +163,6 @@ if phase == "Phase 1: Offline Training":
             if "cluster_labels" in st.session_state:
                 cluster_labels = st.session_state["cluster_labels"]
 
-                # Regime Distribution Plot
                 counts = (
                     pd.Series(cluster_labels)
                     .value_counts()
@@ -196,6 +189,8 @@ if phase == "Phase 1: Offline Training":
             st.info("Please complete operational clustering in Step 2 first.")
         else:
             scaled_train = st.session_state["scaled_train"]
+            raw_train_df = st.session_state["raw_train_df"]
+            feature_cols = st.session_state["feature_cols"]
             cluster_labels = st.session_state["cluster_labels"]
             n_clusters = st.session_state["n_clusters"]
             model = st.session_state["cluster_model"]
@@ -215,29 +210,30 @@ if phase == "Phase 1: Offline Training":
                 for k in range(n_clusters):
                     cluster_mask = cluster_labels == k
                     cluster_data = scaled_train[cluster_mask]
+                    raw_cluster_data = raw_train_df[feature_cols].iloc[cluster_mask]
 
-                    # Centroid determination
                     if algo_choice == "KMeans":
                         centroid = model.cluster_centers_[k]
                     else:
                         centroid = model.means_[k]
 
-                    # Ledoit-Wolf Shrinkage for Covariance Inversion
+                    # Centroid in raw unscaled space for deviation calculation
+                    raw_centroid = raw_cluster_data.mean().values
+
                     lw = LedoitWolf()
                     lw.fit(cluster_data)
-                    precision_matrix = lw.precision_  # Sigma_k^-1
+                    precision_matrix = lw.precision_
 
-                    # Compute baseline Mahalanobis distances
                     diffs = cluster_data - centroid
                     d_m_train = np.sqrt(
                         np.sum(np.dot(diffs, precision_matrix) * diffs, axis=1)
                     )
 
-                    # Compute boundary radius (99th percentile default)
                     threshold_R = np.percentile(d_m_train, percentile_thresh)
 
                     registry[k] = {
                         "centroid": centroid,
+                        "raw_centroid": raw_centroid,
                         "precision": precision_matrix,
                         "threshold_R": threshold_R,
                         "sample_count": len(cluster_data),
@@ -273,7 +269,7 @@ if phase == "Phase 1: Offline Training":
                     pd.DataFrame(regime_summary), use_container_width=True
                 )
 
-    # STEP 4: TRAINING PIPELINE SUMMARY
+    # STEP 4: SUMMARY
     with t_summary:
         st.subheader("Step 4: Baseline Model Registry Status")
 
@@ -293,7 +289,7 @@ if phase == "Phase 1: Offline Training":
 
             st.write("---")
             st.write(
-                "**Action:** Switch the top selection button to **Phase 2: Online Monitoring** to evaluate test fault data."
+                "**Action:** Switch top selection button to **Phase 2: Online Monitoring**."
             )
         else:
             st.warning(
@@ -316,7 +312,6 @@ else:
             "Please return to **Phase 1: Offline Training** to retrain the baseline model."
         )
     else:
-        # Pipeline Tabs arranged Left-to-Right
         t_live_data, t_predict, t_score, t_dashboard = st.tabs(
             [
                 "1. Live Data Ingestion",
@@ -370,7 +365,6 @@ else:
                     "All incoming data points mapped to closest operating regimes."
                 )
 
-                # Time-series of mapped regimes
                 fig_regimes = px.line(
                     x=np.arange(len(live_clusters)),
                     y=live_clusters,
@@ -401,11 +395,9 @@ else:
                     precision = registry[k]["precision"]
                     threshold_R = registry[k]["threshold_R"]
 
-                    # Local Mahalanobis Distance d_M
                     diff = point - centroid
                     d_m = np.sqrt(np.dot(np.dot(diff, precision), diff.T))
 
-                    # Edge Residual d_edge = max(0, d_m - R_k)
                     d_edge = max(0.0, d_m - threshold_R)
 
                     results.append(
@@ -427,7 +419,7 @@ else:
 
                 st.dataframe(results_df, height=300, use_container_width=True)
 
-        # STEP 4: ANOMALY ALERT DASHBOARD
+        # STEP 4: ANOMALY ALERT DASHBOARD (ENHANCED WITH ROOT CAUSE ATTRIBUTION)
         with t_dashboard:
             st.subheader("Step 4: Machine Reliability & Anomaly Dashboard")
 
@@ -442,7 +434,6 @@ else:
                 ).sum()
                 normal_samples = total_samples - total_anomalies
 
-                # Metrics Summary Cards
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Total Evaluation Samples", total_samples)
                 c2.metric(
@@ -460,10 +451,8 @@ else:
 
                 st.markdown("---")
 
-                # Visualizing Mahalanobis Distance vs. Boundary Radius
+                # Trend Plot
                 fig_trend = gg.Figure()
-
-                # Mahalanobis Distance Trace
                 fig_trend.add_trace(
                     gg.Scatter(
                         x=results_df["Sample"],
@@ -474,7 +463,6 @@ else:
                     )
                 )
 
-                # Regime Radius Boundary Trace
                 fig_trend.add_trace(
                     gg.Scatter(
                         x=results_df["Sample"],
@@ -485,7 +473,6 @@ else:
                     )
                 )
 
-                # Fault Markers
                 faults = results_df[results_df["Edge_Residual"] > 0]
                 if not faults.empty:
                     fig_trend.add_trace(
@@ -507,7 +494,7 @@ else:
 
                 st.plotly_chart(fig_trend, use_container_width=True)
 
-                # Edge Residual d_edge Plot
+                # Edge Residual Plot
                 fig_edge = px.area(
                     results_df,
                     x="Sample",
@@ -516,3 +503,131 @@ else:
                     color_discrete_sequence=["red"],
                 )
                 st.plotly_chart(fig_edge, use_container_width=True)
+
+                # ---------------------------------------------------------
+                # NEW SECTION: ROOT CAUSE ATTRIBUTION & DEVIATION ANALYSIS
+                # ---------------------------------------------------------
+                st.markdown("---")
+                st.subheader("Root Cause & Feature Deviation Inspector")
+                st.caption(
+                    "Select a sample point to diagnose feature-level deviations from the predicted regime baseline."
+                )
+
+                feature_cols = st.session_state["feature_cols"]
+                raw_test_df = st.session_state["raw_test_df"]
+                scaled_test = st.session_state["scaled_test"]
+                registry = st.session_state["registry"]
+                scaler = st.session_state["scaler"]
+
+                col_sel1, col_sel2 = st.columns([1, 2])
+
+                with col_sel1:
+                    fault_samples = results_df[
+                        results_df["Alarm_Status"] == "FAULT / ANOMALY"
+                    ]["Sample"].tolist()
+
+                    if fault_samples:
+                        sample_to_inspect = st.selectbox(
+                            "Select Detected Anomaly Sample Index:",
+                            options=fault_samples,
+                            index=0,
+                        )
+                    else:
+                        sample_to_inspect = st.number_input(
+                            "Select Any Sample Index to Inspect:",
+                            min_value=0,
+                            max_value=total_samples - 1,
+                            value=0,
+                        )
+
+                # Extract data for selected sample
+                sample_row = results_df.iloc[sample_to_inspect]
+                assigned_k = int(sample_row["Assigned_Regime"])
+                d_m_val = sample_row["Mahalanobis_Distance"]
+                r_k_val = sample_row["Regime_Threshold"]
+                status = sample_row["Alarm_Status"]
+
+                with col_sel2:
+                    st.write(
+                        f"**Inspection Summary for Sample `{sample_to_inspect}`:**"
+                    )
+                    st.write(
+                        f"• Mapped Operating Regime: **Regime {assigned_k}**  \n"
+                        f"• Mahalanobis Distance ($d_M$): `{d_m_val:.4f}` | Threshold ($R_k$): `{r_k_val:.4f}`  \n"
+                        f"• Status: **:{'red' if status == 'FAULT / ANOMALY' else 'green'}[{status}]**"
+                    )
+
+                # Calculation of feature-level deviations
+                z_sample = scaled_test[sample_to_inspect]
+                z_centroid = registry[assigned_k]["centroid"]
+
+                # Standard deviations and means of baseline features
+                std_devs = scaler.scale_
+                means = scaler.mean_
+
+                raw_actuals = raw_test_df[feature_cols].iloc[sample_to_inspect].values
+                raw_predicted = (
+                    registry[assigned_k]["raw_centroid"]
+                    if "raw_centroid" in registry[assigned_k]
+                    else (z_centroid * std_devs + means)
+                )
+
+                raw_delta = raw_actuals - raw_predicted
+                scaled_abs_dev = np.abs(z_sample - z_centroid)
+                std_deviations = (raw_actuals - raw_predicted) / std_devs
+
+                diag_df = pd.DataFrame(
+                    {
+                        "Feature Tag": feature_cols,
+                        "Actual Value": raw_actuals,
+                        "Predicted Baseline Mean": raw_predicted,
+                        "Absolute Delta (Δ)": raw_delta,
+                        "Deviations (Std Devs σ)": std_deviations,
+                        "Contribution Score (|z - μ_k|)": scaled_abs_dev,
+                    }
+                ).sort_values(by="Contribution Score (|z - μ_k|)", ascending=False)
+
+                # Display Top Contributor Visuals
+                d_col1, d_col2 = st.columns(2)
+
+                with d_col1:
+                    fig_contrib = px.bar(
+                        diag_df.head(10),
+                        x="Contribution Score (|z - μ_k|)",
+                        y="Feature Tag",
+                        orientation="h",
+                        title=f"Top 10 Feature Contributors (Sample #{sample_to_inspect})",
+                        color="Contribution Score (|z - μ_k|)",
+                        color_continuous_scale="Reds",
+                    )
+                    fig_contrib.update_layout(yaxis={"categoryorder": "total ascending"})
+                    st.plotly_chart(fig_contrib, use_container_width=True)
+
+                with d_col2:
+                    fig_dev = px.bar(
+                        diag_df.head(10),
+                        x="Deviations (Std Devs σ)",
+                        y="Feature Tag",
+                        orientation="h",
+                        title=f"Feature Offsets in Standard Deviations (σ)",
+                        color="Deviations (Std Devs σ)",
+                        color_continuous_scale="RdBu_r",
+                    )
+                    fig_dev.update_layout(yaxis={"categoryorder": "total ascending"})
+                    st.plotly_chart(fig_dev, use_container_width=True)
+
+                # Detailed Table Breakdown
+                st.write("**Full Feature Deviation & Contribution Breakdown:**")
+                st.dataframe(
+                    diag_df.style.format(
+                        {
+                            "Actual Value": "{:.4f}",
+                            "Predicted Baseline Mean": "{:.4f}",
+                            "Absolute Delta (Δ)": "{:+.4f}",
+                            "Deviations (Std Devs σ)": "{:+.2f}σ",
+                            "Contribution Score (|z - μ_k|)": "{:.4f}",
+                        }
+                    ),
+                    use_container_width=True,
+                    height=300,
+                )
