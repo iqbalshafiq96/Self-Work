@@ -349,15 +349,13 @@ with st.sidebar:
             "Discharge Temp (°C)", value=52.44, step=0.1, key="t_dis_A", label_visibility="collapsed"
         )
 
-        no_subcool_A = st.checkbox(
-            "No Subcooling (Set Condenser Temp = Sat Temp at Discharge)",
-            value=False,
-            key="no_subcool_A",
-        )
-
         t_sat_dis_A_val = calc_tsat_val(p_dis_A, p_unit, fluid)
-        if no_subcool_A:
-            # Offset by -0.05°C to force point into pure liquid phase and avoid state ambiguity
+        
+        # Render Condenser input / toggle structure
+        if "no_subcool_A" not in st.session_state:
+            st.session_state.no_subcool_A = False
+
+        if st.session_state.no_subcool_A:
             t_cond_A = t_sat_dis_A_val - 0.05
             st.text_input(
                 "Condenser Outlet Temp (°C)",
@@ -369,6 +367,12 @@ with st.sidebar:
             t_cond_A = st.number_input(
                 "Condenser Outlet Temp (°C)", value=44.04, step=0.1, key="t_cond_A"
             )
+
+        no_subcool_A = st.checkbox(
+            "No Subcooling (Set Condenser Temp = Sat Temp at Discharge)",
+            value=st.session_state.no_subcool_A,
+            key="no_subcool_A",
+        )
 
         st.markdown("**Evaporator Duty Specification**")
         duty_mode_A = st.selectbox(
@@ -414,15 +418,12 @@ with st.sidebar:
                 "Discharge Temp (°C)", value=52.44, step=0.1, key="t_dis_A_m", label_visibility="collapsed"
             )
 
-            no_subcool_A = st.checkbox(
-                "No Subcooling (Set Condenser Temp = Sat Temp at Discharge)",
-                value=False,
-                key="no_subcool_A_m",
-            )
-
             t_sat_dis_A_val = calc_tsat_val(p_dis_A, p_unit, fluid)
-            if no_subcool_A:
-                # Offset by -0.05°C to force point into pure liquid phase and avoid state ambiguity
+            
+            if "no_subcool_A_m" not in st.session_state:
+                st.session_state.no_subcool_A_m = False
+
+            if st.session_state.no_subcool_A_m:
                 t_cond_A = t_sat_dis_A_val - 0.05
                 st.text_input(
                     "Condenser Temp (°C)",
@@ -434,6 +435,12 @@ with st.sidebar:
                 t_cond_A = st.number_input(
                     "Condenser Temp (°C)", value=44.04, step=0.1, key="t_cond_A_m"
                 )
+
+            no_subcool_A = st.checkbox(
+                "No Subcooling (Set Condenser Temp = Sat Temp at Discharge)",
+                value=st.session_state.no_subcool_A_m,
+                key="no_subcool_A_m",
+            )
 
             st.markdown("**Evaporator Duty Specification**")
             duty_mode_A = st.selectbox(
@@ -477,15 +484,12 @@ with st.sidebar:
                 "Discharge Temp (°C)", value=60.00, step=0.1, key="t_dis_B", label_visibility="collapsed"
             )
 
-            no_subcool_B = st.checkbox(
-                "No Subcooling (Set Condenser Temp = Sat Temp at Discharge)",
-                value=False,
-                key="no_subcool_B",
-            )
-
             t_sat_dis_B_val = calc_tsat_val(p_dis_B, p_unit, fluid)
-            if no_subcool_B:
-                # Offset by -0.05°C to force point into pure liquid phase and avoid state ambiguity
+            
+            if "no_subcool_B" not in st.session_state:
+                st.session_state.no_subcool_B = False
+
+            if st.session_state.no_subcool_B:
                 t_cond_B = t_sat_dis_B_val - 0.05
                 st.text_input(
                     "Condenser Temp (°C)",
@@ -497,6 +501,12 @@ with st.sidebar:
                 t_cond_B = st.number_input(
                     "Condenser Temp (°C)", value=46.00, step=0.1, key="t_cond_B"
                 )
+
+            no_subcool_B = st.checkbox(
+                "No Subcooling (Set Condenser Temp = Sat Temp at Discharge)",
+                value=st.session_state.no_subcool_B,
+                key="no_subcool_B",
+            )
 
             st.markdown("**Evaporator Duty Specification**")
             duty_mode_B = st.selectbox(
