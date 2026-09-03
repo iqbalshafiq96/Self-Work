@@ -357,7 +357,8 @@ with st.sidebar:
 
         t_sat_dis_A_val = calc_tsat_val(p_dis_A, p_unit, fluid)
         if no_subcool_A:
-            t_cond_A = t_sat_dis_A_val
+            # Offset by -0.05°C to force point into pure liquid phase and avoid state ambiguity
+            t_cond_A = t_sat_dis_A_val - 0.05
             st.text_input(
                 "Condenser Outlet Temp (°C)",
                 value=f"{t_cond_A:.2f}",
@@ -421,7 +422,8 @@ with st.sidebar:
 
             t_sat_dis_A_val = calc_tsat_val(p_dis_A, p_unit, fluid)
             if no_subcool_A:
-                t_cond_A = t_sat_dis_A_val
+                # Offset by -0.05°C to force point into pure liquid phase and avoid state ambiguity
+                t_cond_A = t_sat_dis_A_val - 0.05
                 st.text_input(
                     "Condenser Temp (°C)",
                     value=f"{t_cond_A:.2f}",
@@ -483,7 +485,8 @@ with st.sidebar:
 
             t_sat_dis_B_val = calc_tsat_val(p_dis_B, p_unit, fluid)
             if no_subcool_B:
-                t_cond_B = t_sat_dis_B_val
+                # Offset by -0.05°C to force point into pure liquid phase and avoid state ambiguity
+                t_cond_B = t_sat_dis_B_val - 0.05
                 st.text_input(
                     "Condenser Temp (°C)",
                     value=f"{t_cond_B:.2f}",
