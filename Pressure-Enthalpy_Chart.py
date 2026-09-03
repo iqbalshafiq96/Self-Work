@@ -136,13 +136,22 @@ def get_point_props(p_bara, t_degc, fluid):
     return h_kj, cp_kj, cv_kj, t_sat_c
 
 
-def calc_tsat_ui(p_val, unit, fl):
-    """Calculates saturation temperature in °C directly for input subtitles."""
+def calc_tsat_val(p_val, unit, fl):
+    """Returns raw saturation temperature in °C."""
     try:
         p_bara = convert_to_bara(p_val, unit)
         p_pa = p_bara * 1e5
         t_sat_k = CP.PropsSI("T", "P", p_pa, "Q", 0, fl)
-        return f"Sat Temp: {t_sat_k - 273.15:.2f} °C"
+        return t_sat_k - 273.15
+    except Exception:
+        return 0.0
+
+
+def calc_tsat_ui(p_val, unit, fl):
+    """Calculates saturation temperature in °C directly for input subtitles."""
+    try:
+        t_sat_c = calc_tsat_val(p_val, unit, fl)
+        return f"Sat Temp: {t_sat_c:.2f} °C"
     except Exception:
         return "Sat Temp: N/A"
 
@@ -195,7 +204,7 @@ def calculate_cycle_points(
         m_flow_kghr = flowrate_kghr_val
         evap_duty_kw = (m_flow_kghr * q_in) / 3600.0
 
-    # Isentropic Efficiency calculation using S2 Cp/Cv (Maintained in calculations for future use)
+    # Isentropic Efficiency calculation using S2 Cp/Cv
     t1_k = t_suc_in + 273.15
     t2_k = t_dis_in + 273.15
     k_s2 = s2_cp / s2_cv
@@ -340,9 +349,25 @@ with st.sidebar:
             "Discharge Temp (°C)", value=52.44, step=0.1, key="t_dis_A", label_visibility="collapsed"
         )
 
-        t_cond_A = st.number_input(
-            "Condenser Outlet Temp (°C)", value=44.04, step=0.1, key="t_cond_A"
+        no_subcool_A = st.checkbox(
+            "No Subcooling (Set Condenser Temp = Sat Temp at Discharge)",
+            value=False,
+            key="no_subcool_A",
         )
+
+        t_sat_dis_A_val = calc_tsat_val(p_dis_A, p_unit, fluid)
+        if no_subcool_A:
+            t_cond_A = t_sat_dis_A_val
+            st.text_input(
+                "Condenser Outlet Temp (°C)",
+                value=f"{t_cond_A:.2f}",
+                disabled=True,
+                key="t_cond_A_dis",
+            )
+        else:
+            t_cond_A = st.number_input(
+                "Condenser Outlet Temp (°C)", value=44.04, step=0.1, key="t_cond_A"
+            )
 
         st.markdown("**Evaporator Duty Specification**")
         duty_mode_A = st.selectbox(
@@ -388,9 +413,25 @@ with st.sidebar:
                 "Discharge Temp (°C)", value=52.44, step=0.1, key="t_dis_A_m", label_visibility="collapsed"
             )
 
-            t_cond_A = st.number_input(
-                "Condenser Temp (°C)", value=44.04, step=0.1, key="t_cond_A_m"
+            no_subcool_A = st.checkbox(
+                "No Subcooling (Set Condenser Temp = Sat Temp at Discharge)",
+                value=False,
+                key="no_subcool_A_m",
             )
+
+            t_sat_dis_A_val = calc_tsat_val(p_dis_A, p_unit, fluid)
+            if no_subcool_A:
+                t_cond_A = t_sat_dis_A_val
+                st.text_input(
+                    "Condenser Temp (°C)",
+                    value=f"{t_cond_A:.2f}",
+                    disabled=True,
+                    key="t_cond_A_m_dis",
+                )
+            else:
+                t_cond_A = st.number_input(
+                    "Condenser Temp (°C)", value=44.04, step=0.1, key="t_cond_A_m"
+                )
 
             st.markdown("**Evaporator Duty Specification**")
             duty_mode_A = st.selectbox(
@@ -434,9 +475,25 @@ with st.sidebar:
                 "Discharge Temp (°C)", value=60.00, step=0.1, key="t_dis_B", label_visibility="collapsed"
             )
 
-            t_cond_B = st.number_input(
-                "Condenser Temp (°C)", value=46.00, step=0.1, key="t_cond_B"
+            no_subcool_B = st.checkbox(
+                "No Subcooling (Set Condenser Temp = Sat Temp at Discharge)",
+                value=False,
+                key="no_subcool_B",
             )
+
+            t_sat_dis_B_val = calc_tsat_val(p_dis_B, p_unit, fluid)
+            if no_subcool_B:
+                t_cond_B = t_sat_dis_B_val
+                st.text_input(
+                    "Condenser Temp (°C)",
+                    value=f"{t_cond_B:.2f}",
+                    disabled=True,
+                    key="t_cond_B_dis",
+                )
+            else:
+                t_cond_B = st.number_input(
+                    "Condenser Temp (°C)", value=46.00, step=0.1, key="t_cond_B"
+                )
 
             st.markdown("**Evaporator Duty Specification**")
             duty_mode_B = st.selectbox(
@@ -611,7 +668,7 @@ try:
         )
         subcool = prof["s3_tsat"] - prof["t_cond"]
         subcool_str = (
-            f"Subcooled: {subcool:.1f} K" if subcool > 0 else "Sat Liquid"
+            f"Subcooled: {subcool:.1f} K" if subcool > 0.05 else "Sat Liquid"
         )
         fig.add_annotation(
             x=prof["s3_h"],
