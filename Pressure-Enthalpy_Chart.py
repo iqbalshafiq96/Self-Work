@@ -369,7 +369,7 @@ with st.sidebar:
             )
 
         no_subcool_A = st.checkbox(
-            "No Subcooling (Set Condenser Temp = Sat Temp at Discharge)",
+            "No Subcooling (Condenser Temp = Sat Temp at Discharge)",
             value=st.session_state.no_subcool_A,
             key="no_subcool_A",
         )
