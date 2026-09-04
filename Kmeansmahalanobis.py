@@ -54,7 +54,6 @@ class OMRNearestNeighborEngine:
             status_text.text("Step 1/4: Standardizing feature tags...")
         if progress_bar:
             progress_bar.progress(25)
-        time.sleep(0.1)
 
         self.X_train_scaled = self.scaler.fit_transform(self.X_train_raw)
 
@@ -62,7 +61,6 @@ class OMRNearestNeighborEngine:
             status_text.text("Step 2/4: Fitting 2-Nearest Neighbor graph...")
         if progress_bar:
             progress_bar.progress(50)
-        time.sleep(0.1)
 
         self.nn_model = NearestNeighbors(n_neighbors=2, algorithm="auto").fit(
             self.X_train_scaled
@@ -74,7 +72,6 @@ class OMRNearestNeighborEngine:
             )
         if progress_bar:
             progress_bar.progress(75)
-        time.sleep(0.1)
 
         distances, _ = self.nn_model.kneighbors(self.X_train_scaled)
         neighbor_dists = distances[:, 1]
@@ -84,7 +81,6 @@ class OMRNearestNeighborEngine:
             status_text.text("Step 4/4: Finalizing k=1 lookup index...")
         if progress_bar:
             progress_bar.progress(90)
-        time.sleep(0.1)
 
         self.nn_lookup = NearestNeighbors(n_neighbors=1, algorithm="auto").fit(
             self.X_train_scaled
@@ -228,6 +224,11 @@ with tab1:
         st.session_state["active_feature_cols"] = feature_cols
         st.session_state["active_raw_train_df"] = raw_train_df
         st.session_state["active_percentile"] = percentile_thresh
+
+        # Clear progress indicators immediately to release running lock
+        progress_bar.empty()
+        status_text.empty()
+
         st.success("Overall Model Residual Engine Calibrated Successfully!")
 
     if "p2p_engine" in st.session_state:
@@ -304,7 +305,9 @@ with tab2:
             )
             if i % max(1, n_samples // 10) == 0:
                 progress_eval.progress(int((i + 1) / n_samples * 100))
+        
         progress_eval.progress(100)
+        progress_eval.empty()
 
         results_df = pd.DataFrame(eval_results)
 
@@ -496,7 +499,6 @@ with tab3:
         target_y = target_row_raw[feature_cols.index(y_tag)]
         target_z = target_row_raw[feature_cols.index(z_tag)]
 
-        # Color live point by severity: Red for Alert (>10%), Orange for Alarm (>5%), Green for Normal
         point_color = "green"
         if live_res["Is_Alert"]:
             point_color = "red"
@@ -530,7 +532,6 @@ with tab3:
             )
         )
 
-        # CHANGED: height=700 and aspectmode="cube" applied inside update_layout
         fig_3d.update_layout(
             height=700,
             scene=dict(
