@@ -142,19 +142,19 @@ def get_clean_dataset(url):
     return df, features
 
 
-# BASELINE / TRAINING DATASETS (STRICT LIST)
+# BASELINE / TRAINING DATASETS (CLEAN DISPLAY NAMES)
 BASELINE_DATASETS = {
-    "NOC6_1 (Normal Baseline 1)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
-    "NOC_Turbine (Turbine Baseline)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Turbine.csv",
-    "NOC_Turbine_r1 (Turbine Baseline Rev 1)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Turbine_r1.csv",
-    "NOC_Chiller (Chiller Baseline)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Chiller.csv",
+    "NOC6_1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
+    "NOC_Turbine": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Turbine.csv",
+    "NOC_Turbine_r1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Turbine_r1.csv",
+    "NOC_Chiller": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Chiller.csv",
 }
 
-# EVALUATION / TEST DATASETS (STRICT LIST)
+# EVALUATION / TEST DATASETS (CLEAN DISPLAY NAMES)
 TEST_DATASETS = {
-    "Case_0 (Test Fault 1)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
-    "Case_Turbine (Turbine Test Fault)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine.csv",
-    "Case_Turbine_r1 (Turbine Test Fault Rev 1)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine_r1.csv",
+    "Case_0": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
+    "Case_Turbine": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine.csv",
+    "Case_Turbine_r1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine_r1.csv",
 }
 
 tab1, tab2, tab3 = st.tabs(
@@ -252,10 +252,10 @@ with tab2:
         feature_cols = st.session_state["active_feature_cols"]
         raw_train_df = st.session_state["active_raw_train_df"]
 
-        # 1. Default option: Selected Baseline Dataset (Self-Evaluation)
-        SELF_EVAL_LABEL = f"{active_train_key} (Selected Baseline - Self Eval)"
+        # Default option is clean active baseline name
+        SELF_EVAL_LABEL = active_train_key
 
-        # 2. Map strictly: Selected Baseline + Test Datasets ONLY
+        # Strictly build options map: Active Baseline + Test Datasets
         eval_options_map = {
             SELF_EVAL_LABEL: BASELINE_DATASETS[active_train_key]
         }
@@ -264,7 +264,7 @@ with tab2:
         selected_eval_label = st.selectbox(
             "Select Evaluation / Test Dataset to Compare Against Calibrated Baseline:",
             options=list(eval_options_map.keys()),
-            index=0,  # Defaults to selected baseline dataset
+            index=0,  # Defaults to active baseline dataset
         )
 
         selected_eval_url = eval_options_map[selected_eval_label]
