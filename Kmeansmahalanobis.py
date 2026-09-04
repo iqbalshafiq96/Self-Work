@@ -142,11 +142,19 @@ def get_clean_dataset(url):
     return df, features
 
 
-AVAILABLE_DATASETS = {
+# BASELINE / TRAINING DATASETS
+BASELINE_DATASETS = {
     "NOC6_1 (Normal Baseline 1)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
-    "Case_0 (Test Fault 1)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
     "NOC_Turbine (Turbine Baseline)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Turbine.csv",
+    "NOC_Turbine_r1 (Turbine Baseline Rev 1)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Turbine_r1.csv",
+    "NOC_Chiller (Chiller Baseline)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Chiller.csv",
+}
+
+# EVALUATION / TEST DATASETS
+TEST_DATASETS = {
+    "Case_0 (Test Fault 1)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
     "Case_Turbine (Turbine Test Fault)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine.csv",
+    "Case_Turbine_r1 (Turbine Test Fault Rev 1)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine_r1.csv",
 }
 
 tab1, tab2, tab3 = st.tabs(
@@ -168,8 +176,8 @@ with tab1:
 
     selected_train_key = st.selectbox(
         "Select Baseline / Training Dataset:",
-        options=list(AVAILABLE_DATASETS.keys()),
-        index=2,  # Default to NOC_Turbine
+        options=list(BASELINE_DATASETS.keys()),
+        index=1,  # Default to NOC_Turbine
         key="tab1_train_dataset_select",
     )
 
@@ -184,7 +192,7 @@ with tab1:
 
     try:
         raw_train_df, feature_cols = get_clean_dataset(
-            AVAILABLE_DATASETS[selected_train_key]
+            BASELINE_DATASETS[selected_train_key]
         )
     except Exception as e:
         st.error(f"Failed to load dataset: {e}")
@@ -244,25 +252,37 @@ with tab2:
         feature_cols = st.session_state["active_feature_cols"]
         raw_train_df = st.session_state["active_raw_train_df"]
 
-        # Directly pick or change evaluation data without re-calibrating
+        # Option mapping: default to self-evaluation baseline
         SELF_EVAL_OPTION = f"{active_train_key} (Self-Evaluation / Baseline)"
-        eval_options = [SELF_EVAL_OPTION] + [
-            k for k in AVAILABLE_DATASETS.keys() if k != active_train_key
-        ]
 
-        selected_eval_key = st.selectbox(
+        # Combine Self-Eval with Test datasets and remaining baseline datasets
+        eval_options_map = {
+            SELF_EVAL_OPTION: BASELINE_DATASETS[active_train_key]
+        }
+        eval_options_map.update(TEST_DATASETS)
+        
+        # Add other non-active baseline datasets as optional comparisons
+        for b_name, b_url in BASELINE_DATASETS.items():
+            if b_name != active_train_key:
+                eval_options_map[f"{b_name} (Other Baseline)"] = b_url
+
+        selected_eval_label = st.selectbox(
             "Select Evaluation / Test Dataset to Compare Against Calibrated Baseline:",
-            options=eval_options,
-            index=0,
+            options=list(eval_options_map.keys()),
+            index=0,  # Defaults to selected baseline dataset
         )
 
-        # Map selected eval choice to actual dataframe
-        if selected_eval_key == SELF_EVAL_OPTION:
+        selected_eval_url = eval_options_map[selected_eval_label]
+
+        # Load evaluation data
+        if selected_eval_label == SELF_EVAL_OPTION:
             raw_test_df = raw_train_df
         else:
-            raw_test_df, _ = get_clean_dataset(
-                AVAILABLE_DATASETS[selected_eval_key]
-            )
+            try:
+                raw_test_df, _ = get_clean_dataset(selected_eval_url)
+            except Exception as e:
+                st.error(f"Failed to load evaluation dataset: {e}")
+                st.stop()
 
         # Evaluate against current calibrated model
         progress_eval = st.progress(0)
