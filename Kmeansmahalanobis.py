@@ -68,7 +68,9 @@ class AVEVAPointToPointEngine:
         )
 
         if status_text:
-            status_text.text(f"Step 3/4: Computing {percentile}th percentile scale boundary...")
+            status_text.text(
+                f"Step 3/4: Computing {percentile}th percentile scale boundary..."
+            )
         if progress_bar:
             progress_bar.progress(75)
         time.sleep(0.1)
@@ -130,6 +132,16 @@ def load_and_clean_csv(url):
     return df
 
 
+def get_clean_dataset(url):
+    df = load_and_clean_csv(url)
+    features = [
+        c
+        for c in df.select_dtypes(include=[np.number]).columns
+        if c.lower() not in ["timestamp", "time", "date"]
+    ]
+    return df, features
+
+
 AVAILABLE_DATASETS = {
     "NOC6_1 (Normal Baseline 1)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
     "Case_0 (Test Fault 1)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
@@ -139,13 +151,6 @@ AVAILABLE_DATASETS = {
 
 st.sidebar.header("Asset Baseline Configuration")
 
-# Sidebar selects ONLY baseline calibration dataset
-selected_train_key = st.sidebar.selectbox(
-    "Select Baseline / Training Dataset:",
-    options=list(AVAILABLE_DATASETS.keys()),
-    index=2,  # Default to NOC_Turbine
-)
-
 percentile_thresh = st.sidebar.slider(
     "Baseline 10% Scale Boundary Percentile:",
     min_value=95.0,
@@ -153,22 +158,6 @@ percentile_thresh = st.sidebar.slider(
     value=99.0,
     step=0.1,
 )
-
-TRAIN_URL = AVAILABLE_DATASETS[selected_train_key]
-
-try:
-    raw_train_df = load_and_clean_csv(TRAIN_URL)
-    feature_cols = [
-        c
-        for c in raw_train_df.select_dtypes(include=[np.number]).columns
-        if c.lower() not in ["timestamp", "time", "date"]
-    ]
-    st.sidebar.success(
-        f"Ingested **{len(feature_cols)}** Tags across **{raw_train_df.shape[0]}** Baseline Rows."
-    )
-except Exception as e:
-    st.error(f"Failed to load dataset: {e}")
-    st.stop()
 
 tab1, tab2, tab3 = st.tabs(
     [
@@ -184,8 +173,23 @@ tab1, tab2, tab3 = st.tabs(
 with tab1:
     st.subheader("Point-to-Point Baseline Calibration")
     st.write(
-        "Calibrate the baseline model using the selected reference dataset from the sidebar."
+        "Select and calibrate a reference baseline model using the controls below."
     )
+
+    selected_train_key = st.selectbox(
+        "Select Baseline / Training Dataset:",
+        options=list(AVAILABLE_DATASETS.keys()),
+        index=2,  # Default to NOC_Turbine
+        key="tab1_train_dataset_select",
+    )
+
+    try:
+        raw_train_df, feature_cols = get_clean_dataset(
+            AVAILABLE_DATASETS[selected_train_key]
+        )
+    except Exception as e:
+        st.error(f"Failed to load dataset: {e}")
+        st.stop()
 
     c_c1, c_c2 = st.columns(2)
     with c_c1:
@@ -212,13 +216,18 @@ with tab1:
 
         st.session_state["p2p_engine"] = engine
         st.session_state["active_train_key"] = selected_train_key
+        st.session_state["active_feature_cols"] = feature_cols
+        st.session_state["active_raw_train_df"] = raw_train_df
         st.success("Point-to-Point Engine Calibrated Successfully!")
 
-    if (
-        "p2p_engine" in st.session_state
-        and st.session_state.get("active_train_key") == selected_train_key
-    ):
-        st.success(f"Active Baseline Model Ready ({selected_train_key}).")
+    if "p2p_engine" in st.session_state:
+        active_key = st.session_state.get("active_train_key")
+        if active_key == selected_train_key:
+            st.success(f"Active Baseline Model Ready ({active_key}).")
+        else:
+            st.info(
+                f"Currently Active Model: **{active_key}**. Click 'Calibrate Baseline Model' above to activate **{selected_train_key}**."
+            )
 
 # ---------------------------------------------------------
 # TAB 2: OMR TREND & DIAGNOSTICS
@@ -226,18 +235,18 @@ with tab1:
 with tab2:
     st.subheader("Overall Model Residual (OMR) Trend (%) & Diagnostics")
 
-    if (
-        "p2p_engine" not in st.session_state
-        or st.session_state.get("active_train_key") != selected_train_key
-    ):
+    if "p2p_engine" not in st.session_state:
         st.warning("Please calibrate the baseline model in **Tab 1** first.")
     else:
         engine = st.session_state["p2p_engine"]
+        active_train_key = st.session_state["active_train_key"]
+        feature_cols = st.session_state["active_feature_cols"]
+        raw_train_df = st.session_state["active_raw_train_df"]
 
         # Directly pick or change evaluation data without re-calibrating
-        SELF_EVAL_OPTION = f"{selected_train_key} (Self-Evaluation / Baseline)"
+        SELF_EVAL_OPTION = f"{active_train_key} (Self-Evaluation / Baseline)"
         eval_options = [SELF_EVAL_OPTION] + [
-            k for k in AVAILABLE_DATASETS.keys() if k != selected_train_key
+            k for k in AVAILABLE_DATASETS.keys() if k != active_train_key
         ]
 
         selected_eval_key = st.selectbox(
@@ -250,7 +259,9 @@ with tab2:
         if selected_eval_key == SELF_EVAL_OPTION:
             raw_test_df = raw_train_df
         else:
-            raw_test_df = load_and_clean_csv(AVAILABLE_DATASETS[selected_eval_key])
+            raw_test_df, _ = get_clean_dataset(
+                AVAILABLE_DATASETS[selected_eval_key]
+            )
 
         # Evaluate against current calibrated model
         progress_eval = st.progress(0)
@@ -396,13 +407,12 @@ with tab2:
 with tab3:
     st.subheader("3D Space: Live Sample vs. Nearest Baseline Point")
 
-    if (
-        "p2p_engine" not in st.session_state
-        or st.session_state.get("active_train_key") != selected_train_key
-    ):
+    if "p2p_engine" not in st.session_state:
         st.warning("Please calibrate the baseline model in **Tab 1** first.")
     else:
         engine = st.session_state["p2p_engine"]
+        feature_cols = st.session_state["active_feature_cols"]
+        raw_train_df = st.session_state["active_raw_train_df"]
         raw_eval_df = st.session_state.get("current_eval_df", raw_train_df)
 
         col_p1, col_p2, col_p3 = st.columns(3)
