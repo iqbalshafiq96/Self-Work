@@ -157,6 +157,10 @@ TEST_DATASETS = {
     "Case_0": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
     "Case_Turbine": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine.csv",
     "Case_Turbine_r1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine_r1.csv",
+    "Case_Chiller": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller.csv",
+    "Case_Chiller_Deviation": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller_deviation.csv",
+    "Case_Chiller_Highload": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller_highload.csv",
+    "Case_Chiller_Motor": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller_motor.csv",
 }
 
 tab1, tab2, tab3 = st.tabs(
@@ -285,7 +289,7 @@ with tab2:
         for i in range(n_samples):
             sample = raw_test_df[feature_cols].iloc[i].values
             res = engine.score_live_sample(sample)
-            
+
             omr_val = res["OMR_pct"]
             if omr_val > 10.0:
                 status_str = "ALERT BREACH (>10%)"
@@ -530,7 +534,6 @@ with tab3:
             )
         )
 
-        # CHANGED: height=700 and aspectmode="cube" applied inside update_layout
         fig_3d.update_layout(
             height=700,
             scene=dict(
