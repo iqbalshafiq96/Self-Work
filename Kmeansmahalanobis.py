@@ -57,7 +57,6 @@ class AVEVAPointToPointEngine:
 
         # 3. Calculate baseline noise threshold (distance to 2nd nearest neighbor in train data)
         distances, _ = self.nn_model.kneighbors(self.X_train_scaled)
-        # distances[:, 1] is distance to the closest distinct baseline point
         neighbor_dists = distances[:, 1]
 
         self.d_99 = max(np.percentile(neighbor_dists, percentile), 1e-6)
@@ -110,27 +109,32 @@ def load_and_clean_csv(url):
     return df
 
 
-st.sidebar.header("Asset Baseline Configuration")
-
-DATASET_MAP = {
-    "Baseline Dataset 1 (NOC6_1 & Case_0)": {
-        "train": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
-        "test": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
-    },
-    "Turbine Baseline Dataset 2 (NOC_Turbine & Case_Turbine)": {
-        "train": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Turbine.csv",
-        "test": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine.csv",
-    },
+# Available Data Source Repositories
+AVAILABLE_DATASETS = {
+    "NOC6_1 (Normal Baseline 1)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
+    "Case_0 (Test Fault 1)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
+    "NOC_Turbine (Turbine Baseline)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Turbine.csv",
+    "Case_Turbine (Turbine Test Fault)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine.csv",
 }
 
-selected_dataset_name = st.sidebar.selectbox(
-    "Select Asset Dataset Pair:", options=list(DATASET_MAP.keys()), index=1
+st.sidebar.header("Asset Baseline Configuration")
+
+# Dropdown for Baseline Training Data Selection
+selected_train_key = st.sidebar.selectbox(
+    "Select Baseline / Training Dataset:",
+    options=list(AVAILABLE_DATASETS.keys()),
+    index=2,  # Default to NOC_Turbine
 )
 
-use_train_as_test = st.sidebar.checkbox(
-    "Self-Evaluation Mode (Set Test = Train)",
-    value=False,
-    help="Enable to confirm zero residual on baseline data.",
+# Dropdown for Test / Evaluation Data Selection with "(Not Specified / None)" default
+NOT_SPECIFIED = "(Not Specified / None)"
+eval_options = [NOT_SPECIFIED] + list(AVAILABLE_DATASETS.keys())
+
+selected_test_key = st.sidebar.selectbox(
+    "Select Evaluation / Test Dataset:",
+    options=eval_options,
+    index=0,  # Default to Not Specified
+    help="If set to '(Not Specified / None)', the engine will run in Self-Evaluation Mode (Test = Train).",
 )
 
 percentile_thresh = st.sidebar.slider(
@@ -141,10 +145,15 @@ percentile_thresh = st.sidebar.slider(
     step=0.1,
 )
 
-TRAIN_URL = DATASET_MAP[selected_dataset_name]["train"]
-TEST_URL = (
-    TRAIN_URL if use_train_as_test else DATASET_MAP[selected_dataset_name]["test"]
-)
+# Ingestion Resolution
+TRAIN_URL = AVAILABLE_DATASETS[selected_train_key]
+
+if selected_test_key == NOT_SPECIFIED:
+    TEST_URL = TRAIN_URL
+    is_self_eval = True
+else:
+    TEST_URL = AVAILABLE_DATASETS[selected_test_key]
+    is_self_eval = selected_train_key == selected_test_key
 
 try:
     raw_train_df = load_and_clean_csv(TRAIN_URL)
@@ -182,12 +191,17 @@ with tab1:
 
     c_c1, c_c2 = st.columns(2)
     with c_c1:
-        st.info(f"**Selected Asset Pair:** {selected_dataset_name}")
+        st.info(f"**Selected Training Dataset:** {selected_train_key}")
+        st.write(
+            f"- **Evaluation Dataset:** {selected_test_key if not is_self_eval else f'{selected_train_key} (Self-Evaluation)'}"
+        )
         st.write(f"- Baseline Training Samples: **{raw_train_df.shape[0]}**")
         st.write(f"- Live Evaluation Samples: **{raw_test_df.shape[0]}**")
-        st.write(f"- Evaluation Mode: **{'Self-Evaluation (Test=Train)' if use_train_as_test else 'Standard Evaluation'}**")
 
     with c_c2:
+        st.write(
+            f"- Evaluation Mode: **{'Self-Evaluation (Test=Train)' if is_self_eval else 'Cross-Dataset Evaluation'}**"
+        )
         st.write(f"- **Total Operational Tags:** {len(feature_cols)}")
         st.write(f"- **Percentile Scale Boundary:** {percentile_thresh}%")
 
@@ -200,14 +214,14 @@ with tab1:
             percentile=percentile_thresh,
         )
         st.session_state["p2p_engine"] = engine
-        st.session_state["active_dataset_name"] = selected_dataset_name
-        st.session_state["active_eval_mode"] = use_train_as_test
+        st.session_state["active_train_key"] = selected_train_key
+        st.session_state["active_test_key"] = selected_test_key
         st.success("Point-to-Point Engine Calibrated Successfully!")
 
     if (
         "p2p_engine" in st.session_state
-        and st.session_state.get("active_dataset_name") == selected_dataset_name
-        and st.session_state.get("active_eval_mode") == use_train_as_test
+        and st.session_state.get("active_train_key") == selected_train_key
+        and st.session_state.get("active_test_key") == selected_test_key
     ):
         st.success("Active Point-to-Point Model Ready.")
 
@@ -219,8 +233,8 @@ with tab2:
 
     if (
         "p2p_engine" not in st.session_state
-        or st.session_state.get("active_dataset_name") != selected_dataset_name
-        or st.session_state.get("active_eval_mode") != use_train_as_test
+        or st.session_state.get("active_train_key") != selected_train_key
+        or st.session_state.get("active_test_key") != selected_test_key
     ):
         st.warning("Please calibrate the baseline model in **Tab 1** first.")
     else:
@@ -301,8 +315,8 @@ with tab2:
             {
                 "Sensor Tag": feature_cols,
                 "Actual Value (y)": raw_sample,
-                "Nearest Baseline Target (ŷ)": diag_res["raw_predicted"],
-                "Raw Residual (y - ŷ)": diag_res["raw_residuals"],
+                "Nearest Baseline Target (ŷ)": diag_res["raw_predicted"],
+                "Raw Residual (y - ŷ)": diag_res["raw_residuals"],
                 "Sensor Residual (%)": diag_res["pct_residuals"],
                 "Normalized Deviation (σ)": diag_res["std_residuals"],
                 "Abs Deviation (|σ|)": np.abs(diag_res["std_residuals"]),
@@ -344,8 +358,8 @@ with tab2:
             diag_df.drop(columns=["Abs Deviation (|σ|)"]).style.format(
                 {
                     "Actual Value (y)": "{:.4f}",
-                    "Nearest Baseline Target (ŷ)": "{:.4f}",
-                    "Raw Residual (y - ŷ)": "{:+.4f}",
+                    "Nearest Baseline Target (ŷ)": "{:.4f}",
+                    "Raw Residual (y - ŷ)": "{:+.4f}",
                     "Sensor Residual (%)": "{:+.2f}%",
                     "Normalized Deviation (σ)": "{:+.2f}σ",
                 }
@@ -362,8 +376,8 @@ with tab3:
 
     if (
         "p2p_engine" not in st.session_state
-        or st.session_state.get("active_dataset_name") != selected_dataset_name
-        or st.session_state.get("active_eval_mode") != use_train_as_test
+        or st.session_state.get("active_train_key") != selected_train_key
+        or st.session_state.get("active_test_key") != selected_test_key
     ):
         st.warning("Please calibrate the baseline model in **Tab 1** first.")
     else:
