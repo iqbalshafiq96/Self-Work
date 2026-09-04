@@ -149,16 +149,6 @@ AVAILABLE_DATASETS = {
     "Case_Turbine (Turbine Test Fault)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine.csv",
 }
 
-st.sidebar.header("Asset Baseline Configuration")
-
-percentile_thresh = st.sidebar.slider(
-    "Baseline 10% Scale Boundary Percentile:",
-    min_value=95.0,
-    max_value=99.9,
-    value=99.0,
-    step=0.1,
-)
-
 tab1, tab2, tab3 = st.tabs(
     [
         "1. Calibrate Baseline",
@@ -181,6 +171,15 @@ with tab1:
         options=list(AVAILABLE_DATASETS.keys()),
         index=2,  # Default to NOC_Turbine
         key="tab1_train_dataset_select",
+    )
+
+    percentile_thresh = st.slider(
+        "Baseline 10% Scale Boundary Percentile:",
+        min_value=95.0,
+        max_value=99.9,
+        value=99.0,
+        step=0.1,
+        key="tab1_percentile_slider",
     )
 
     try:
@@ -218,15 +217,17 @@ with tab1:
         st.session_state["active_train_key"] = selected_train_key
         st.session_state["active_feature_cols"] = feature_cols
         st.session_state["active_raw_train_df"] = raw_train_df
+        st.session_state["active_percentile"] = percentile_thresh
         st.success("Point-to-Point Engine Calibrated Successfully!")
 
     if "p2p_engine" in st.session_state:
         active_key = st.session_state.get("active_train_key")
-        if active_key == selected_train_key:
-            st.success(f"Active Baseline Model Ready ({active_key}).")
+        active_pct = st.session_state.get("active_percentile")
+        if active_key == selected_train_key and active_pct == percentile_thresh:
+            st.success(f"Active Baseline Model Ready ({active_key} @ {active_pct}%).")
         else:
             st.info(
-                f"Currently Active Model: **{active_key}**. Click 'Calibrate Baseline Model' above to activate **{selected_train_key}**."
+                f"Currently Active Model: **{active_key}** (@ {active_pct}%). Click 'Calibrate Baseline Model' above to apply changes."
             )
 
 # ---------------------------------------------------------
