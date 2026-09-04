@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -37,34 +38,64 @@ class AVEVAPointToPointEngine:
         self.X_train_scaled = None
         self.d_99 = 1.0
 
-    def fit_baseline(
+    def fit_baseline_with_progress(
         self,
         X_raw: pd.DataFrame,
         feature_cols: list,
         percentile: float = 99.0,
+        progress_bar=None,
+        status_text=None,
     ):
         self.feature_cols = feature_cols
         self.scaler = StandardScaler()
         self.X_train_raw = X_raw[feature_cols].copy().reset_index(drop=True)
 
-        # 1. Standardize Training Data
+        # Step 1: Standardize Training Data
+        if status_text:
+            status_text.text("Step 1/4: Standardizing feature tags...")
+        if progress_bar:
+            progress_bar.progress(25)
+        time.sleep(0.1)
+
         self.X_train_scaled = self.scaler.fit_transform(self.X_train_raw)
 
-        # 2. Fit Nearest Neighbor Engine (k=1 for exact point matching)
+        # Step 2: Fit Nearest Neighbor Engine (k=2 for distance calculation)
+        if status_text:
+            status_text.text("Step 2/4: Fitting 2-Nearest Neighbor graph...")
+        if progress_bar:
+            progress_bar.progress(50)
+        time.sleep(0.1)
+
         self.nn_model = NearestNeighbors(n_neighbors=2, algorithm="auto").fit(
             self.X_train_scaled
         )
 
-        # 3. Calculate baseline noise threshold (distance to 2nd nearest neighbor in train data)
+        # Step 3: Calculate baseline noise threshold
+        if status_text:
+            status_text.text(f"Step 3/4: Computing {percentile}th percentile scale boundary...")
+        if progress_bar:
+            progress_bar.progress(75)
+        time.sleep(0.1)
+
         distances, _ = self.nn_model.kneighbors(self.X_train_scaled)
         neighbor_dists = distances[:, 1]
-
         self.d_99 = max(np.percentile(neighbor_dists, percentile), 1e-6)
 
-        # Fit final single-neighbor lookup
+        # Step 4: Fit final single-neighbor lookup model
+        if status_text:
+            status_text.text("Step 4/4: Finalizing k=1 lookup index...")
+        if progress_bar:
+            progress_bar.progress(90)
+        time.sleep(0.1)
+
         self.nn_lookup = NearestNeighbors(n_neighbors=1, algorithm="auto").fit(
             self.X_train_scaled
         )
+
+        if progress_bar:
+            progress_bar.progress(100)
+        if status_text:
+            status_text.text("Calibration Complete!")
 
     def score_live_sample(self, raw_sample: np.ndarray):
         z_sample = self.scaler.transform(raw_sample.reshape(1, -1))
@@ -126,7 +157,7 @@ selected_train_key = st.sidebar.selectbox(
     index=2,  # Default to NOC_Turbine
 )
 
-# Dropdown for Test / Evaluation Data Selection with "(Not Specified / None)" default
+# Dropdown for Test / Evaluation Data Selection
 NOT_SPECIFIED = "(Not Specified / None)"
 eval_options = [NOT_SPECIFIED] + list(AVAILABLE_DATASETS.keys())
 
@@ -207,12 +238,18 @@ with tab1:
 
     st.markdown("---")
     if st.button("Calibrate Baseline Model", type="primary", use_container_width=True):
+        status_text = st.empty()
+        progress_bar = st.progress(0)
+
         engine = AVEVAPointToPointEngine()
-        engine.fit_baseline(
+        engine.fit_baseline_with_progress(
             X_raw=raw_train_df,
             feature_cols=feature_cols,
             percentile=percentile_thresh,
+            progress_bar=progress_bar,
+            status_text=status_text,
         )
+
         st.session_state["p2p_engine"] = engine
         st.session_state["active_train_key"] = selected_train_key
         st.session_state["active_test_key"] = selected_test_key
