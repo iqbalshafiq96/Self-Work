@@ -1,4 +1,3 @@
-import time
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -88,8 +87,6 @@ class OMRNearestNeighborEngine:
 
         if progress_bar:
             progress_bar.progress(100)
-        if status_text:
-            status_text.text("Calibration Complete!")
 
     def score_live_sample(self, raw_sample: np.ndarray):
         z_sample = self.scaler.transform(raw_sample.reshape(1, -1))
@@ -225,7 +222,6 @@ with tab1:
         st.session_state["active_raw_train_df"] = raw_train_df
         st.session_state["active_percentile"] = percentile_thresh
 
-        # Clear progress indicators immediately to release running lock
         progress_bar.empty()
         status_text.empty()
 
