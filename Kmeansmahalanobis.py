@@ -114,6 +114,7 @@ class OMRNearestNeighborEngine:
             "raw_dist": min_distance,
             "d_99_threshold": self.d_99,
             "OMR_pct": omr_pct,
+            "Is_Alarm": omr_pct > 5.0,
             "Is_Alert": omr_pct > 10.0,
             "raw_predicted": raw_predicted,
             "raw_residuals": raw_residuals,
@@ -284,14 +285,21 @@ with tab2:
         for i in range(n_samples):
             sample = raw_test_df[feature_cols].iloc[i].values
             res = engine.score_live_sample(sample)
+            
+            omr_val = res["OMR_pct"]
+            if omr_val > 10.0:
+                status_str = "ALERT BREACH (>10%)"
+            elif omr_val > 5.0:
+                status_str = "ALARM BREACH (5%–10%)"
+            else:
+                status_str = "Normal (≤5%)"
+
             eval_results.append(
                 {
                     "Sample": i,
                     "Matched Baseline Row": res["nearest_baseline_idx"],
-                    "OMR (%)": res["OMR_pct"],
-                    "Status": "ALARM BREACH (>10%)"
-                    if res["Is_Alert"]
-                    else "Normal (≤10%)",
+                    "OMR (%)": omr_val,
+                    "Status": status_str,
                 }
             )
             if i % max(1, n_samples // 10) == 0:
@@ -301,15 +309,23 @@ with tab2:
         results_df = pd.DataFrame(eval_results)
 
         total_samples = len(results_df)
-        total_alarms = (results_df["OMR (%)"] > 10.0).sum()
+        total_alarms = ((results_df["OMR (%)"] > 5.0) & (results_df["OMR (%)"] <= 10.0)).sum()
+        total_alerts = (results_df["OMR (%)"] > 10.0).sum()
+        total_normal = (results_df["OMR (%)"] <= 5.0).sum()
 
-        m1, m2, m3 = st.columns(3)
+        m1, m2, m3, m4 = st.columns(4)
         m1.metric("Evaluated Timestamps", total_samples)
-        m2.metric("Normal Operating Range (≤10%)", total_samples - total_alarms)
+        m2.metric("Normal Operating Range (≤5%)", total_normal)
         m3.metric(
-            "OMR Alarm Breaches (>10%)",
+            "Alarm Breaches (5%–10%)",
             total_alarms,
-            delta=f"{round((total_alarms/total_samples)*100, 1)}% Off-Normal",
+            delta=f"{round((total_alarms / total_samples) * 100, 1)}%",
+            delta_color="off",
+        )
+        m4.metric(
+            "Alert Breaches (>10%)",
+            total_alerts,
+            delta=f"{round((total_alerts / total_samples) * 100, 1)}%",
             delta_color="inverse",
         )
 
@@ -326,16 +342,25 @@ with tab2:
         fig_omr.add_trace(
             go.Scatter(
                 x=results_df["Sample"],
+                y=[5.0] * len(results_df),
+                mode="lines",
+                name="5% Alarm Threshold",
+                line=dict(color="orange", dash="dash", width=2),
+            )
+        )
+        fig_omr.add_trace(
+            go.Scatter(
+                x=results_df["Sample"],
                 y=[10.0] * len(results_df),
                 mode="lines",
-                name="10% Alarm Threshold",
+                name="10% Alert Threshold",
                 line=dict(color="red", dash="dash", width=2),
             )
         )
 
         fig_omr.update_layout(
             xaxis_title="Sample Index",
-            yaxis_title="OMR (%) [10% = Baseline Alarm Boundary]",
+            yaxis_title="OMR (%)",
             hovermode="x unified",
         )
         st.plotly_chart(fig_omr, use_container_width=True)
@@ -471,6 +496,13 @@ with tab3:
         target_y = target_row_raw[feature_cols.index(y_tag)]
         target_z = target_row_raw[feature_cols.index(z_tag)]
 
+        # Color live point by severity: Red for Alert (>10%), Orange for Alarm (>5%), Green for Normal
+        point_color = "green"
+        if live_res["Is_Alert"]:
+            point_color = "red"
+        elif live_res["Is_Alarm"]:
+            point_color = "orange"
+
         fig_3d.add_trace(
             go.Scatter3d(
                 x=[live_x],
@@ -479,7 +511,7 @@ with tab3:
                 mode="markers",
                 name=f"Live Sample #{live_sample_idx}",
                 marker=dict(
-                    color="red" if live_res["Is_Alert"] else "green",
+                    color=point_color,
                     size=8,
                     symbol="diamond",
                 ),
