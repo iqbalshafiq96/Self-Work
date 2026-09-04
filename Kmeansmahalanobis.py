@@ -9,12 +9,12 @@ from sklearn.preprocessing import StandardScaler
 
 # Page Configuration
 st.set_page_config(
-    page_title="Overall Model Residual Engine",
+    page_title="k-NN Normalized Residual & Diagnostic System",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.title("Overall Model Residual (OMR) Engine")
+st.title("k-NN Normalized Residual & Diagnostic System")
 st.caption(
     "Empirical Pattern Matching via k-Nearest Neighbor (k=1) Point-to-Point Baseline Alignment."
 )
