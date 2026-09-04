@@ -285,6 +285,7 @@ with tab2:
         progress_eval = st.progress(0)
         eval_results = []
         predicted_matrix = []
+        all_diag_list = []
         n_samples = len(raw_test_df)
 
         for i in range(n_samples):
@@ -308,6 +309,15 @@ with tab2:
                 }
             )
             predicted_matrix.append(res["raw_predicted"])
+
+            # Store sensor breakdown array for fast averaging
+            all_diag_list.append({
+                "Actual Value (y)": sample,
+                "Nearest Baseline Target (ŷ)": res["raw_predicted"],
+                "Raw Residual (y - ŷ)": res["raw_residuals"],
+                "Sensor Residual (%)": res["pct_residuals"],
+                "Normalized Deviation (σ)": res["std_residuals"]
+            })
 
             if i % max(1, n_samples // 10) == 0:
                 progress_eval.progress(int((i + 1) / n_samples * 100))
@@ -451,32 +461,60 @@ with tab2:
         st.markdown("---")
         st.subheader("Sensor Diagnostics for Selected Timestamp")
 
-        all_samples = results_df["Sample"].tolist()
+        # Create dropdown options with "Average Sensor Residual" as default (index 0)
+        AVG_LABEL = "Average Sensor Residual"
+        sample_options = [AVG_LABEL] + results_df["Sample"].tolist()
+
         sample_to_inspect = st.selectbox(
             "Select Timestamp to Inspect Sensor Breakdown:",
-            options=all_samples,
+            options=sample_options,
             index=0,
-            format_func=lambda x: f"Sample #{x} (Matched Baseline Row #{results_df.loc[x, 'Matched Baseline Row']})",
+            format_func=lambda x: AVG_LABEL if x == AVG_LABEL else f"Sample #{x} (Matched Baseline Row #{results_df.loc[x, 'Matched Baseline Row']})",
         )
 
-        raw_sample = raw_test_df[feature_cols].iloc[sample_to_inspect].values
-        diag_res = engine.score_live_sample(raw_sample)
+        if sample_to_inspect == AVG_LABEL:
+            # Calculate mean across all sample records
+            avg_actual = np.mean([d["Actual Value (y)"] for d in all_diag_list], axis=0)
+            avg_predicted = np.mean([d["Nearest Baseline Target (ŷ)"] for d in all_diag_list], axis=0)
+            avg_raw_res = np.mean([d["Raw Residual (y - ŷ)"] for d in all_diag_list], axis=0)
+            avg_pct_res = np.mean([d["Sensor Residual (%)"] for d in all_diag_list], axis=0)
+            avg_std_res = np.mean([d["Normalized Deviation (σ)"] for d in all_diag_list], axis=0)
+            avg_mr_pct = results_df["Model Residual (%)"].mean()
 
-        diag_df = pd.DataFrame(
-            {
-                "Sensor Tag": feature_cols,
-                "Actual Value (y)": raw_sample,
-                "Nearest Baseline Target (ŷ)": diag_res["raw_predicted"],
-                "Raw Residual (y - ŷ)": diag_res["raw_residuals"],
-                "Sensor Residual (%)": diag_res["pct_residuals"],
-                "Normalized Deviation (σ)": diag_res["std_residuals"],
-                "Abs Deviation (|σ|)": np.abs(diag_res["std_residuals"]),
-            }
-        ).sort_values(by="Abs Deviation (|σ|)", ascending=False)
+            diag_df = pd.DataFrame(
+                {
+                    "Sensor Tag": feature_cols,
+                    "Actual Value (y)": avg_actual,
+                    "Nearest Baseline Target (ŷ)": avg_predicted,
+                    "Raw Residual (y - ŷ)": avg_raw_res,
+                    "Sensor Residual (%)": avg_pct_res,
+                    "Normalized Deviation (σ)": avg_std_res,
+                    "Abs Deviation (|σ|)": np.abs(avg_std_res),
+                }
+            ).sort_values(by="Abs Deviation (|σ|)", ascending=False)
 
-        st.info(
-            f"Sample **#{sample_to_inspect}** matched to Baseline Timestamp **#{diag_res['nearest_baseline_idx']}** | Calculated Model Residual: **{diag_res['Model_Residual_pct']:.4f}%**"
-        )
+            st.info(
+                f"Displaying **{AVG_LABEL}** calculated across **{n_samples}** evaluated timestamps | Mean Model Residual: **{avg_mr_pct:.4f}%**"
+            )
+        else:
+            raw_sample = raw_test_df[feature_cols].iloc[sample_to_inspect].values
+            diag_res = engine.score_live_sample(raw_sample)
+
+            diag_df = pd.DataFrame(
+                {
+                    "Sensor Tag": feature_cols,
+                    "Actual Value (y)": raw_sample,
+                    "Nearest Baseline Target (ŷ)": diag_res["raw_predicted"],
+                    "Raw Residual (y - ŷ)": diag_res["raw_residuals"],
+                    "Sensor Residual (%)": diag_res["pct_residuals"],
+                    "Normalized Deviation (σ)": diag_res["std_residuals"],
+                    "Abs Deviation (|σ|)": np.abs(diag_res["std_residuals"]),
+                }
+            ).sort_values(by="Abs Deviation (|σ|)", ascending=False)
+
+            st.info(
+                f"Sample **#{sample_to_inspect}** matched to Baseline Timestamp **#{diag_res['nearest_baseline_idx']}** | Calculated Model Residual: **{diag_res['Model_Residual_pct']:.4f}%**"
+            )
 
         c_chart1, c_chart2 = st.columns(2)
         with c_chart1:
