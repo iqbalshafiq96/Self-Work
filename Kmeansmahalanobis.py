@@ -9,14 +9,14 @@ from sklearn.preprocessing import StandardScaler
 
 # Page Configuration
 st.set_page_config(
-    page_title="ProcessTwin: Multivariate Anomaly & Diagnostic Engine",
+    page_title="k-NN Normalized Residual & Diagnostic System",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.title("ProcessTwin: Multivariate Anomaly & Diagnostic Engine")
+st.title("k-NN Normalized Residual & Diagnostic System")
 st.caption(
-    "Real-time operational health monitoring and sensor fault localization via k-NN baseline matching."
+    "Empirical Pattern Matching via k-Nearest Neighbor (k=1) Point-to-Point Baseline Alignment."
 )
 
 
@@ -530,7 +530,7 @@ with tab3:
             )
         )
 
-        # High-aspect ratio layout update for a larger canvas
+        # CHANGED: height=700 and aspectmode="cube" applied inside update_layout
         fig_3d.update_layout(
             height=700,
             scene=dict(
