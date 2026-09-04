@@ -25,7 +25,7 @@ st.caption(
 # ---------------------------------------------------------
 class OMRNearestNeighborEngine:
     """
-    Overall Model Residual (OMR) Engine mapping live sample points 
+    Model Residual Engine mapping live sample points 
     to the single closest baseline timestamp using k-Nearest Neighbors.
     """
 
@@ -103,7 +103,7 @@ class OMRNearestNeighborEngine:
         nearest_idx = int(idx[0][0])
 
         raw_predicted = self.X_train_raw.iloc[nearest_idx].values
-        omr_pct = (min_distance / self.d_99) * 10.0
+        mr_pct = (min_distance / self.d_99) * 10.0
 
         raw_residuals = raw_sample - raw_predicted
         pct_residuals = (raw_residuals / (np.abs(raw_predicted) + 1e-6)) * 100.0
@@ -113,9 +113,9 @@ class OMRNearestNeighborEngine:
             "nearest_baseline_idx": nearest_idx,
             "raw_dist": min_distance,
             "d_99_threshold": self.d_99,
-            "OMR_pct": omr_pct,
-            "Is_Alarm": omr_pct > 5.0,
-            "Is_Alert": omr_pct > 10.0,
+            "Model_Residual_pct": mr_pct,
+            "Is_Alarm": mr_pct > 5.0,
+            "Is_Alert": mr_pct > 10.0,
             "raw_predicted": raw_predicted,
             "raw_residuals": raw_residuals,
             "pct_residuals": pct_residuals,
@@ -166,7 +166,7 @@ TEST_DATASETS = {
 tab1, tab2, tab3 = st.tabs(
     [
         "1. Calibrate Baseline",
-        "2. OMR Trend & Diagnostics",
+        "2. Model Residual Trend & Diagnostics",
         "3. 3D Operational Profile",
     ]
 )
@@ -232,7 +232,7 @@ with tab1:
         st.session_state["active_feature_cols"] = feature_cols
         st.session_state["active_raw_train_df"] = raw_train_df
         st.session_state["active_percentile"] = percentile_thresh
-        st.success("Overall Model Residual Engine Calibrated Successfully!")
+        st.success("Model Residual Engine Calibrated Successfully!")
 
     if "p2p_engine" in st.session_state:
         active_key = st.session_state.get("active_train_key")
@@ -245,10 +245,10 @@ with tab1:
             )
 
 # ---------------------------------------------------------
-# TAB 2: OMR TREND & DIAGNOSTICS
+# TAB 2: MODEL RESIDUAL TREND & DIAGNOSTICS
 # ---------------------------------------------------------
 with tab2:
-    st.subheader("Overall Model Residual (OMR) Trend (%) & Diagnostics")
+    st.subheader("Model Residual Trend (%) & Parameter Diagnostics")
 
     if "p2p_engine" not in st.session_state:
         st.warning("Please calibrate the baseline model in **Tab 1** first.")
@@ -284,16 +284,17 @@ with tab2:
 
         progress_eval = st.progress(0)
         eval_results = []
+        predicted_matrix = []
         n_samples = len(raw_test_df)
 
         for i in range(n_samples):
             sample = raw_test_df[feature_cols].iloc[i].values
             res = engine.score_live_sample(sample)
 
-            omr_val = res["OMR_pct"]
-            if omr_val > 10.0:
+            mr_val = res["Model_Residual_pct"]
+            if mr_val > 10.0:
                 status_str = "ALERT BREACH (>10%)"
-            elif omr_val > 5.0:
+            elif mr_val > 5.0:
                 status_str = "ALARM BREACH (5%–10%)"
             else:
                 status_str = "Normal (≤5%)"
@@ -302,20 +303,23 @@ with tab2:
                 {
                     "Sample": i,
                     "Matched Baseline Row": res["nearest_baseline_idx"],
-                    "OMR (%)": omr_val,
+                    "Model Residual (%)": mr_val,
                     "Status": status_str,
                 }
             )
+            predicted_matrix.append(res["raw_predicted"])
+
             if i % max(1, n_samples // 10) == 0:
                 progress_eval.progress(int((i + 1) / n_samples * 100))
         progress_eval.progress(100)
 
         results_df = pd.DataFrame(eval_results)
+        pred_df = pd.DataFrame(predicted_matrix, columns=feature_cols)
 
         total_samples = len(results_df)
-        total_alarms = ((results_df["OMR (%)"] > 5.0) & (results_df["OMR (%)"] <= 10.0)).sum()
-        total_alerts = (results_df["OMR (%)"] > 10.0).sum()
-        total_normal = (results_df["OMR (%)"] <= 5.0).sum()
+        total_alarms = ((results_df["Model Residual (%)"] > 5.0) & (results_df["Model Residual (%)"] <= 10.0)).sum()
+        total_alerts = (results_df["Model Residual (%)"] > 10.0).sum()
+        total_normal = (results_df["Model Residual (%)"] <= 5.0).sum()
 
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Evaluated Timestamps", total_samples)
@@ -333,17 +337,17 @@ with tab2:
             delta_color="inverse",
         )
 
-        fig_omr = go.Figure()
-        fig_omr.add_trace(
+        fig_mr = go.Figure()
+        fig_mr.add_trace(
             go.Scatter(
                 x=results_df["Sample"],
-                y=results_df["OMR (%)"],
+                y=results_df["Model Residual (%)"],
                 mode="lines",
-                name="Overall Model Residual (%)",
+                name="Model Residual (%)",
                 line=dict(color="#008080", width=1.5),
             )
         )
-        fig_omr.add_trace(
+        fig_mr.add_trace(
             go.Scatter(
                 x=results_df["Sample"],
                 y=[5.0] * len(results_df),
@@ -352,7 +356,7 @@ with tab2:
                 line=dict(color="orange", dash="dash", width=2),
             )
         )
-        fig_omr.add_trace(
+        fig_mr.add_trace(
             go.Scatter(
                 x=results_df["Sample"],
                 y=[10.0] * len(results_df),
@@ -362,12 +366,87 @@ with tab2:
             )
         )
 
-        fig_omr.update_layout(
+        fig_mr.update_layout(
             xaxis_title="Sample Index",
-            yaxis_title="OMR (%)",
+            yaxis_title="Model Residual (%)",
             hovermode="x unified",
         )
-        st.plotly_chart(fig_omr, use_container_width=True)
+        st.plotly_chart(fig_mr, use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("Parameter Trend Overlay: Actual vs. Predicted Target")
+
+        col_select, col_plot = st.columns([1, 3])
+
+        with col_select:
+            st.markdown("**Select Parameters to Compare:**")
+            
+            c_btn1, c_btn2 = st.columns(2)
+            if c_btn1.button("Select All", use_container_width=True):
+                for f in feature_cols:
+                    st.session_state[f"chk_{f}"] = True
+            if c_btn2.button("Clear All", use_container_width=True):
+                for f in feature_cols:
+                    st.session_state[f"chk_{f}"] = False
+
+            selected_tags = []
+            for idx, feature in enumerate(feature_cols):
+                default_state = True if idx == 0 else False
+                if f"chk_{feature}" not in st.session_state:
+                    st.session_state[f"chk_{feature}"] = default_state
+                
+                if st.checkbox(feature, key=f"chk_{feature}"):
+                    selected_tags.append(feature)
+
+        with col_plot:
+            if not selected_tags:
+                st.info("👈 Check one or more parameters on the left to display Actual vs. Predicted trends.")
+            else:
+                fig_trends = go.Figure()
+                
+                # Colors palette for dynamic tag assignment
+                colors = px.colors.qualitative.Plotly
+
+                for i, tag in enumerate(selected_tags):
+                    color = colors[i % len(colors)]
+                    
+                    # Actual Series
+                    fig_trends.add_trace(
+                        go.Scatter(
+                            x=results_df["Sample"],
+                            y=raw_test_df[tag],
+                            mode="lines",
+                            name=f"{tag} (Actual)",
+                            line=dict(color=color, width=2),
+                        )
+                    )
+                    
+                    # Predicted Baseline Target Series
+                    fig_trends.add_trace(
+                        go.Scatter(
+                            x=results_df["Sample"],
+                            y=pred_df[tag],
+                            mode="lines",
+                            name=f"{tag} (Predicted ŷ)",
+                            line=dict(color=color, width=1.5, dash="dash"),
+                        )
+                    )
+
+                fig_trends.update_layout(
+                    title="Actual vs. Predicted (Baseline Target) Across Timestamps",
+                    xaxis_title="Sample Index",
+                    yaxis_title="Parameter Value",
+                    hovermode="x unified",
+                    height=500,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    )
+                )
+                st.plotly_chart(fig_trends, use_container_width=True)
 
         st.markdown("---")
         st.subheader("Sensor Diagnostics for Selected Timestamp")
@@ -396,7 +475,7 @@ with tab2:
         ).sort_values(by="Abs Deviation (|σ|)", ascending=False)
 
         st.info(
-            f"Sample **#{sample_to_inspect}** matched to Baseline Timestamp **#{diag_res['nearest_baseline_idx']}** | Calculated OMR: **{diag_res['OMR_pct']:.4f}%**"
+            f"Sample **#{sample_to_inspect}** matched to Baseline Timestamp **#{diag_res['nearest_baseline_idx']}** | Calculated Model Residual: **{diag_res['Model_Residual_pct']:.4f}%**"
         )
 
         c_chart1, c_chart2 = st.columns(2)
