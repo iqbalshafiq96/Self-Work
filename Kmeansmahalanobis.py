@@ -142,7 +142,7 @@ def get_clean_dataset(url):
     return df, features
 
 
-# BASELINE / TRAINING DATASETS
+# BASELINE / TRAINING DATASETS (STRICT LIST)
 BASELINE_DATASETS = {
     "NOC6_1 (Normal Baseline 1)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
     "NOC_Turbine (Turbine Baseline)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Turbine.csv",
@@ -150,7 +150,7 @@ BASELINE_DATASETS = {
     "NOC_Chiller (Chiller Baseline)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Chiller.csv",
 }
 
-# EVALUATION / TEST DATASETS
+# EVALUATION / TEST DATASETS (STRICT LIST)
 TEST_DATASETS = {
     "Case_0 (Test Fault 1)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
     "Case_Turbine (Turbine Test Fault)": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine.csv",
@@ -252,19 +252,14 @@ with tab2:
         feature_cols = st.session_state["active_feature_cols"]
         raw_train_df = st.session_state["active_raw_train_df"]
 
-        # Option mapping: default to self-evaluation baseline
-        SELF_EVAL_OPTION = f"{active_train_key} (Self-Evaluation / Baseline)"
+        # 1. Default option: Selected Baseline Dataset (Self-Evaluation)
+        SELF_EVAL_LABEL = f"{active_train_key} (Selected Baseline - Self Eval)"
 
-        # Combine Self-Eval with Test datasets and remaining baseline datasets
+        # 2. Map strictly: Selected Baseline + Test Datasets ONLY
         eval_options_map = {
-            SELF_EVAL_OPTION: BASELINE_DATASETS[active_train_key]
+            SELF_EVAL_LABEL: BASELINE_DATASETS[active_train_key]
         }
         eval_options_map.update(TEST_DATASETS)
-        
-        # Add other non-active baseline datasets as optional comparisons
-        for b_name, b_url in BASELINE_DATASETS.items():
-            if b_name != active_train_key:
-                eval_options_map[f"{b_name} (Other Baseline)"] = b_url
 
         selected_eval_label = st.selectbox(
             "Select Evaluation / Test Dataset to Compare Against Calibrated Baseline:",
@@ -275,7 +270,7 @@ with tab2:
         selected_eval_url = eval_options_map[selected_eval_label]
 
         # Load evaluation data
-        if selected_eval_label == SELF_EVAL_OPTION:
+        if selected_eval_label == SELF_EVAL_LABEL:
             raw_test_df = raw_train_df
         else:
             try:
