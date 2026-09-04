@@ -43,77 +43,47 @@ class OMRNearestNeighborEngine:
         feature_cols: list,
         percentile: float = 99.0,
         progress_bar=None,
-        status_text=None,
+        status_container=None,
     ):
         self.feature_cols = feature_cols
         self.scaler = StandardScaler()
         self.X_train_raw = X_raw[feature_cols].copy().reset_index(drop=True)
 
-        if status_text:
-            status_text.text("Step 1/4: Standardizing feature tags...")
+        if status_container:
+            status_container.write("Step 1/4: Standardizing feature tags...")
         if progress_bar:
-            progress_bar.progress(25)
+            progress_bar.progress(20)
 
         self.X_train_scaled = self.scaler.fit_transform(self.X_train_raw)
 
-        if status_text:
-            status_text.text("Step 2/4: Fitting 2-Nearest Neighbor graph...")
+        if status_container:
+            status_container.write("Step 2/4: Fitting 2-Nearest Neighbor graph...")
         if progress_bar:
-            progress_bar.progress(50)
+            progress_bar.progress(40)
 
         self.nn_model = NearestNeighbors(n_neighbors=2, algorithm="auto").fit(
             self.X_train_scaled
         )
 
-        if status_text:
-            status_text.text(
+        if status_container:
+            status_container.write(
                 f"Step 3/4: Computing {percentile}th percentile scale boundary..."
             )
         if progress_bar:
-            progress_bar.progress(75)
+            progress_bar.progress(60)
 
         distances, _ = self.nn_model.kneighbors(self.X_train_scaled)
         neighbor_dists = distances[:, 1]
         self.d_99 = max(np.percentile(neighbor_dists, percentile), 1e-6)
 
-        if status_text:
-            status_text.text("Step 4/4: Finalizing k=1 lookup index...")
+        if status_container:
+            status_container.write("Step 4/4: Finalizing k=1 lookup index...")
         if progress_bar:
-            progress_bar.progress(90)
+            progress_bar.progress(80)
 
         self.nn_lookup = NearestNeighbors(n_neighbors=1, algorithm="auto").fit(
             self.X_train_scaled
         )
-
-        if progress_bar:
-            progress_bar.progress(100)
-
-    def score_live_sample(self, raw_sample: np.ndarray):
-        z_sample = self.scaler.transform(raw_sample.reshape(1, -1))
-
-        dist, idx = self.nn_lookup.kneighbors(z_sample)
-        min_distance = float(dist[0][0])
-        nearest_idx = int(idx[0][0])
-
-        raw_predicted = self.X_train_raw.iloc[nearest_idx].values
-        omr_pct = (min_distance / self.d_99) * 10.0
-
-        raw_residuals = raw_sample - raw_predicted
-        pct_residuals = (raw_residuals / (np.abs(raw_predicted) + 1e-6)) * 100.0
-        std_residuals = raw_residuals / self.scaler.scale_
-
-        return {
-            "nearest_baseline_idx": nearest_idx,
-            "raw_dist": min_distance,
-            "d_99_threshold": self.d_99,
-            "OMR_pct": omr_pct,
-            "Is_Alarm": omr_pct > 5.0,
-            "Is_Alert": omr_pct > 10.0,
-            "raw_predicted": raw_predicted,
-            "raw_residuals": raw_residuals,
-            "pct_residuals": pct_residuals,
-            "std_residuals": std_residuals,
-        }
 
 
 # ---------------------------------------------------------
@@ -204,28 +174,38 @@ with tab1:
 
     st.markdown("---")
     if st.button("Calibrate Baseline Model", type="primary", use_container_width=True):
-        status_text = st.empty()
-        progress_bar = st.progress(0)
+        # Using st.status ensures the UI stays in a running state until EVERYTHING finishes
+        with st.status("Calibrating Baseline Model...", expanded=True) as status:
+            progress_bar = st.progress(0)
 
-        engine = OMRNearestNeighborEngine()
-        engine.fit_baseline_with_progress(
-            X_raw=raw_train_df,
-            feature_cols=feature_cols,
-            percentile=percentile_thresh,
-            progress_bar=progress_bar,
-            status_text=status_text,
-        )
+            engine = OMRNearestNeighborEngine()
+            engine.fit_baseline_with_progress(
+                X_raw=raw_train_df,
+                feature_cols=feature_cols,
+                percentile=percentile_thresh,
+                progress_bar=progress_bar,
+                status_container=status,
+            )
 
-        st.session_state["p2p_engine"] = engine
-        st.session_state["active_train_key"] = selected_train_key
-        st.session_state["active_feature_cols"] = feature_cols
-        st.session_state["active_raw_train_df"] = raw_train_df
-        st.session_state["active_percentile"] = percentile_thresh
+            status.write("Finalizing session state and memory synchronization...")
+            progress_bar.progress(90)
 
-        progress_bar.empty()
-        status_text.empty()
+            # Store in session state
+            st.session_state["p2p_engine"] = engine
+            st.session_state["active_train_key"] = selected_train_key
+            st.session_state["active_feature_cols"] = feature_cols
+            st.session_state["active_raw_train_df"] = raw_train_df
+            st.session_state["active_percentile"] = percentile_thresh
 
-        st.success("Overall Model Residual Engine Calibrated Successfully!")
+            progress_bar.progress(100)
+            progress_bar.empty()
+            
+            # The status box turns green ONLY as the context block exits
+            status.update(
+                label="Overall Model Residual Engine Calibrated Successfully!",
+                state="complete",
+                expanded=False,
+            )
 
     if "p2p_engine" in st.session_state:
         active_key = st.session_state.get("active_train_key")
@@ -275,35 +255,37 @@ with tab2:
                 st.error(f"Failed to load evaluation dataset: {e}")
                 st.stop()
 
-        progress_eval = st.progress(0)
         eval_results = []
         n_samples = len(raw_test_df)
 
-        for i in range(n_samples):
-            sample = raw_test_df[feature_cols].iloc[i].values
-            res = engine.score_live_sample(sample)
-            
-            omr_val = res["OMR_pct"]
-            if omr_val > 10.0:
-                status_str = "ALERT BREACH (>10%)"
-            elif omr_val > 5.0:
-                status_str = "ALARM BREACH (5%–10%)"
-            else:
-                status_str = "Normal (≤5%)"
+        with st.status("Evaluating sample data...", expanded=False) as status_eval:
+            progress_eval = st.progress(0)
+            for i in range(n_samples):
+                sample = raw_test_df[feature_cols].iloc[i].values
+                res = engine.score_live_sample(sample)
+                
+                omr_val = res["OMR_pct"]
+                if omr_val > 10.0:
+                    status_str = "ALERT BREACH (>10%)"
+                elif omr_val > 5.0:
+                    status_str = "ALARM BREACH (5%–10%)"
+                else:
+                    status_str = "Normal (≤5%)"
 
-            eval_results.append(
-                {
-                    "Sample": i,
-                    "Matched Baseline Row": res["nearest_baseline_idx"],
-                    "OMR (%)": omr_val,
-                    "Status": status_str,
-                }
-            )
-            if i % max(1, n_samples // 10) == 0:
-                progress_eval.progress(int((i + 1) / n_samples * 100))
-        
-        progress_eval.progress(100)
-        progress_eval.empty()
+                eval_results.append(
+                    {
+                        "Sample": i,
+                        "Matched Baseline Row": res["nearest_baseline_idx"],
+                        "OMR (%)": omr_val,
+                        "Status": status_str,
+                    }
+                )
+                if i % max(1, n_samples // 10) == 0:
+                    progress_eval.progress(int((i + 1) / n_samples * 100))
+            
+            progress_eval.progress(100)
+            progress_eval.empty()
+            status_eval.update(label="Evaluation Complete!", state="complete")
 
         results_df = pd.DataFrame(eval_results)
 
