@@ -9,23 +9,24 @@ from sklearn.preprocessing import StandardScaler
 
 # Page Configuration
 st.set_page_config(
-    page_title="AVEVA OMR - Point-to-Point Nearest Baseline Engine",
+    page_title="Overall Model Residual Engine",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.title("AVEVA OMR Engine: Exact Point-to-Point Baseline Matching")
+st.title("Overall Model Residual (OMR) Engine")
 st.caption(
-    "Empirical Pattern Matching via k-Nearest Neighbor (k=1). Training Self-Evaluation yields 0% Residual."
+    "Empirical Pattern Matching via k-Nearest Neighbor (k=1) Point-to-Point Baseline Alignment."
 )
 
 
 # ---------------------------------------------------------
 # POINT-TO-POINT NEAREST NEIGHBOR ENGINE
 # ---------------------------------------------------------
-class AVEVAPointToPointEngine:
+class OMRNearestNeighborEngine:
     """
-    AVEVA OMR Engine mapping live samples to the single closest baseline timestamp.
+    Overall Model Residual (OMR) Engine mapping live sample points 
+    to the single closest baseline timestamp using k-Nearest Neighbors.
     """
 
     def __init__(self):
@@ -142,7 +143,7 @@ def get_clean_dataset(url):
     return df, features
 
 
-# BASELINE / TRAINING DATASETS (CLEAN DISPLAY NAMES)
+# BASELINE / TRAINING DATASETS
 BASELINE_DATASETS = {
     "NOC6_1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
     "NOC_Turbine": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Turbine.csv",
@@ -150,7 +151,7 @@ BASELINE_DATASETS = {
     "NOC_Chiller": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Chiller.csv",
 }
 
-# EVALUATION / TEST DATASETS (CLEAN DISPLAY NAMES)
+# EVALUATION / TEST DATASETS
 TEST_DATASETS = {
     "Case_0": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
     "Case_Turbine": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine.csv",
@@ -171,13 +172,13 @@ tab1, tab2, tab3 = st.tabs(
 with tab1:
     st.subheader("Point-to-Point Baseline Calibration")
     st.write(
-        "Select and calibrate a reference baseline model using the controls below."
+        "Select and calibrate a reference baseline model using nearest neighbor matching."
     )
 
     selected_train_key = st.selectbox(
         "Select Baseline / Training Dataset:",
         options=list(BASELINE_DATASETS.keys()),
-        index=1,  # Default to NOC_Turbine
+        index=1,
         key="tab1_train_dataset_select",
     )
 
@@ -212,7 +213,7 @@ with tab1:
         status_text = st.empty()
         progress_bar = st.progress(0)
 
-        engine = AVEVAPointToPointEngine()
+        engine = OMRNearestNeighborEngine()
         engine.fit_baseline_with_progress(
             X_raw=raw_train_df,
             feature_cols=feature_cols,
@@ -226,7 +227,7 @@ with tab1:
         st.session_state["active_feature_cols"] = feature_cols
         st.session_state["active_raw_train_df"] = raw_train_df
         st.session_state["active_percentile"] = percentile_thresh
-        st.success("Point-to-Point Engine Calibrated Successfully!")
+        st.success("Overall Model Residual Engine Calibrated Successfully!")
 
     if "p2p_engine" in st.session_state:
         active_key = st.session_state.get("active_train_key")
@@ -252,10 +253,8 @@ with tab2:
         feature_cols = st.session_state["active_feature_cols"]
         raw_train_df = st.session_state["active_raw_train_df"]
 
-        # Default option is clean active baseline name
         SELF_EVAL_LABEL = active_train_key
 
-        # Strictly build options map: Active Baseline + Test Datasets
         eval_options_map = {
             SELF_EVAL_LABEL: BASELINE_DATASETS[active_train_key]
         }
@@ -264,12 +263,11 @@ with tab2:
         selected_eval_label = st.selectbox(
             "Select Evaluation / Test Dataset to Compare Against Calibrated Baseline:",
             options=list(eval_options_map.keys()),
-            index=0,  # Defaults to active baseline dataset
+            index=0,
         )
 
         selected_eval_url = eval_options_map[selected_eval_label]
 
-        # Load evaluation data
         if selected_eval_label == SELF_EVAL_LABEL:
             raw_test_df = raw_train_df
         else:
@@ -279,7 +277,6 @@ with tab2:
                 st.error(f"Failed to load evaluation dataset: {e}")
                 st.stop()
 
-        # Evaluate against current calibrated model
         progress_eval = st.progress(0)
         eval_results = []
         n_samples = len(raw_test_df)
@@ -414,7 +411,6 @@ with tab2:
             height=300,
         )
 
-        # Cache test dataframe in session state for 3D Tab
         st.session_state["current_eval_df"] = raw_test_df
 
 # ---------------------------------------------------------
