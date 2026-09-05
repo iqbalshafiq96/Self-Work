@@ -144,19 +144,15 @@ def get_clean_dataset(url):
     return df, features
 
 
-# BASELINE / TRAINING DATASETS
+# BASELINE / TRAINING DATASETS (Turbine datasets removed)
 BASELINE_DATASETS = {
     "NOC6_1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
-    "NOC_Turbine": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Turbine.csv",
-    "NOC_Turbine_r1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Turbine_r1.csv",
     "NOC_Chiller": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Chiller.csv",
 }
 
-# EVALUATION / TEST DATASETS
+# EVALUATION / TEST DATASETS (Turbine cases removed)
 TEST_DATASETS = {
     "Case_0": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
-    "Case_Turbine": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine.csv",
-    "Case_Turbine_r1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Turbine_r1.csv",
     "Case_Chiller": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller.csv",
     "Case_Chiller_Deviation": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller_deviation.csv",
     "Case_Chiller_Highload": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller_highload.csv",
@@ -183,7 +179,7 @@ with tab1:
     selected_train_key = st.selectbox(
         "Select Baseline / Training Dataset:",
         options=list(BASELINE_DATASETS.keys()),
-        index=1,
+        index=0,
         key="tab1_train_dataset_select",
     )
 
@@ -260,10 +256,17 @@ with tab2:
 
         SELF_EVAL_LABEL = active_train_key
 
+        # Dynamic mapping based on active calibrated baseline dataset
         eval_options_map = {
             SELF_EVAL_LABEL: BASELINE_DATASETS[active_train_key]
         }
-        eval_options_map.update(TEST_DATASETS)
+        
+        if active_train_key == "NOC6_1":
+            eval_options_map["Case_0"] = TEST_DATASETS["Case_0"]
+        elif active_train_key == "NOC_Chiller":
+            for k, v in TEST_DATASETS.items():
+                if "chiller" in k.lower():
+                    eval_options_map[k] = v
 
         selected_eval_label = st.selectbox(
             "Select Evaluation / Test Dataset to Compare Against Calibrated Baseline:",
