@@ -167,7 +167,7 @@ tab1, tab2, tab3 = st.tabs(
     [
         "1. Calibrate Baseline",
         "2. Model Residual Trend & Diagnostics",
-        "3. 3D Operational Profile",
+        "3. Operational Profile",
     ]
 )
 
@@ -385,7 +385,7 @@ with tab2:
                     selected_tags.append(feature)
 
         with col_main:
-            st.markdown("### 📈 Overall Model Residual (%) Trend")
+            st.markdown("### 📈 Model Residual (%) Trend")
             fig_mr = go.Figure()
             fig_mr.add_trace(
                 go.Scatter(
