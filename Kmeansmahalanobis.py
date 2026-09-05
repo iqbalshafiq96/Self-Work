@@ -310,7 +310,6 @@ with tab2:
             )
             predicted_matrix.append(res["raw_predicted"])
 
-            # Store sensor breakdown array for fast averaging
             all_diag_list.append({
                 "Actual Value (y)": sample,
                 "Nearest Baseline Target (ŷ)": res["raw_predicted"],
@@ -347,50 +346,22 @@ with tab2:
             delta_color="inverse",
         )
 
-        fig_mr = go.Figure()
-        fig_mr.add_trace(
-            go.Scatter(
-                x=results_df["Sample"],
-                y=results_df["Model Residual (%)"],
-                mode="lines",
-                name="Model Residual (%)",
-                line=dict(color="#008080", width=1.5),
-            )
-        )
-        fig_mr.add_trace(
-            go.Scatter(
-                x=results_df["Sample"],
-                y=[5.0] * len(results_df),
-                mode="lines",
-                name="5% Alarm Threshold",
-                line=dict(color="orange", dash="dash", width=2),
-            )
-        )
-        fig_mr.add_trace(
-            go.Scatter(
-                x=results_df["Sample"],
-                y=[10.0] * len(results_df),
-                mode="lines",
-                name="10% Alert Threshold",
-                line=dict(color="red", dash="dash", width=2),
-            )
-        )
-
-        fig_mr.update_layout(
-            xaxis_title="Sample Index",
-            yaxis_title="Model Residual (%)",
-            hovermode="x unified",
-        )
-        st.plotly_chart(fig_mr, use_container_width=True)
-
         st.markdown("---")
-        st.subheader("Parameter Trend Overlay: Actual vs. Predicted Target")
 
-        col_select, col_plot = st.columns([1, 3])
+        # ---------------------------------------------------------
+        # TWO-COLUMN DASHBOARD LAYOUT
+        # ---------------------------------------------------------
+        col_sidebar, col_main = st.columns([1, 3])
 
-        with col_select:
-            st.markdown("**Select Parameters to Compare:**")
-            
+        # Calc global average deviation for top sensor selection
+        avg_std_res_all = np.mean([np.abs(d["Normalized Deviation (σ)"]) for d in all_diag_list], axis=0)
+        top_deviated_idx = np.argsort(avg_std_res_all)[::-1][:5]
+        top_deviated_tags = [feature_cols[idx] for idx in top_deviated_idx]
+
+        with col_sidebar:
+            st.markdown("### 🎛️ Sensor Selection")
+            st.caption("Tick sensors to overlay on the trend plot.")
+
             c_btn1, c_btn2 = st.columns(2)
             if c_btn1.button("Select All", use_container_width=True):
                 for f in feature_cols:
@@ -399,28 +370,70 @@ with tab2:
                 for f in feature_cols:
                     st.session_state[f"chk_{f}"] = False
 
+            if st.button("Top 5 Deviations (σ)", use_container_width=True, type="secondary"):
+                for f in feature_cols:
+                    st.session_state[f"chk_{f}"] = f in top_deviated_tags
+
+            st.markdown("---")
             selected_tags = []
             for idx, feature in enumerate(feature_cols):
                 default_state = True if idx == 0 else False
                 if f"chk_{feature}" not in st.session_state:
                     st.session_state[f"chk_{feature}"] = default_state
-                
+
                 if st.checkbox(feature, key=f"chk_{feature}"):
                     selected_tags.append(feature)
 
-        with col_plot:
+        with col_main:
+            st.markdown("### 📈 Overall Model Residual (%) Trend")
+            fig_mr = go.Figure()
+            fig_mr.add_trace(
+                go.Scatter(
+                    x=results_df["Sample"],
+                    y=results_df["Model Residual (%)"],
+                    mode="lines",
+                    name="Model Residual (%)",
+                    line=dict(color="#008080", width=1.5),
+                )
+            )
+            fig_mr.add_trace(
+                go.Scatter(
+                    x=results_df["Sample"],
+                    y=[5.0] * len(results_df),
+                    mode="lines",
+                    name="5% Alarm Threshold",
+                    line=dict(color="orange", dash="dash", width=1.5),
+                )
+            )
+            fig_mr.add_trace(
+                go.Scatter(
+                    x=results_df["Sample"],
+                    y=[10.0] * len(results_df),
+                    mode="lines",
+                    name="10% Alert Threshold",
+                    line=dict(color="red", dash="dash", width=1.5),
+                )
+            )
+
+            fig_mr.update_layout(
+                xaxis_title="Sample Index",
+                yaxis_title="Model Residual (%)",
+                hovermode="x unified",
+                height=350,
+                margin=dict(l=20, r=20, t=30, b=20),
+            )
+            st.plotly_chart(fig_mr, use_container_width=True)
+
+            st.markdown("### 📊 Actual vs. Predicted Parameter Trends")
             if not selected_tags:
-                st.info("👈 Check one or more parameters on the left to display Actual vs. Predicted trends.")
+                st.info("👈 Check one or more parameters in the left panel to render actual vs. predicted trends.")
             else:
                 fig_trends = go.Figure()
-                
-                # Colors palette for dynamic tag assignment
                 colors = px.colors.qualitative.Plotly
 
                 for i, tag in enumerate(selected_tags):
                     color = colors[i % len(colors)]
-                    
-                    # Actual Series
+
                     fig_trends.add_trace(
                         go.Scatter(
                             x=results_df["Sample"],
@@ -430,8 +443,7 @@ with tab2:
                             line=dict(color=color, width=2),
                         )
                     )
-                    
-                    # Predicted Baseline Target Series
+
                     fig_trends.add_trace(
                         go.Scatter(
                             x=results_df["Sample"],
@@ -443,11 +455,11 @@ with tab2:
                     )
 
                 fig_trends.update_layout(
-                    title="Actual vs. Predicted (Baseline Target) Across Timestamps",
                     xaxis_title="Sample Index",
                     yaxis_title="Parameter Value",
                     hovermode="x unified",
-                    height=500,
+                    height=450,
+                    margin=dict(l=20, r=20, t=30, b=20),
                     legend=dict(
                         orientation="h",
                         yanchor="bottom",
@@ -461,7 +473,6 @@ with tab2:
         st.markdown("---")
         st.subheader("Sensor Diagnostics for Selected Timestamp")
 
-        # Create dropdown options with "Average Sensor Residual" as default (index 0)
         AVG_LABEL = "Average Sensor Residual"
         sample_options = [AVG_LABEL] + results_df["Sample"].tolist()
 
@@ -473,7 +484,6 @@ with tab2:
         )
 
         if sample_to_inspect == AVG_LABEL:
-            # Calculate mean across all sample records
             avg_actual = np.mean([d["Actual Value (y)"] for d in all_diag_list], axis=0)
             avg_predicted = np.mean([d["Nearest Baseline Target (ŷ)"] for d in all_diag_list], axis=0)
             avg_raw_res = np.mean([d["Raw Residual (y - ŷ)"] for d in all_diag_list], axis=0)
@@ -617,7 +627,6 @@ with tab3:
         target_y = target_row_raw[feature_cols.index(y_tag)]
         target_z = target_row_raw[feature_cols.index(z_tag)]
 
-        # Color live point by severity: Red for Alert (>10%), Orange for Alarm (>5%), Green for Normal
         point_color = "green"
         if live_res["Is_Alert"]:
             point_color = "red"
