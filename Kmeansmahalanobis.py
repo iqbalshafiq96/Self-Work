@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import streamlit as st
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
@@ -361,7 +360,7 @@ with tab2:
 
         with col_sidebar:
             st.markdown("### 🎛️ Sensor Selection")
-            st.caption("Tick sensors to display individual parameter curves.")
+            st.caption("Tick sensors to overlay on the trend plot.")
 
             c_btn1, c_btn2 = st.columns(2)
             if c_btn1.button("Select All", use_container_width=True):
@@ -427,22 +426,13 @@ with tab2:
 
             st.markdown("### 📊 Actual vs. Predicted Parameter Trends")
             if not selected_tags:
-                st.info("👈 Check one or more parameters in the left panel to render individual actual vs. predicted trend subplots.")
+                st.info("👈 Check one or more parameters in the left panel to render actual vs. predicted trends.")
             else:
-                num_tags = len(selected_tags)
-                fig_trends = make_subplots(
-                    rows=num_tags,
-                    cols=1,
-                    shared_xaxes=False,
-                    vertical_spacing=max(0.03, 0.25 / num_tags),
-                    subplot_titles=[f"Tag: {tag}" for tag in selected_tags],
-                )
-
+                fig_trends = go.Figure()
                 colors = px.colors.qualitative.Plotly
 
                 for i, tag in enumerate(selected_tags):
                     color = colors[i % len(colors)]
-                    row_idx = i + 1
 
                     fig_trends.add_trace(
                         go.Scatter(
@@ -451,9 +441,7 @@ with tab2:
                             mode="lines",
                             name=f"{tag} (Actual)",
                             line=dict(color=color, width=2),
-                        ),
-                        row=row_idx,
-                        col=1,
+                        )
                     )
 
                     fig_trends.add_trace(
@@ -463,26 +451,22 @@ with tab2:
                             mode="lines",
                             name=f"{tag} (Predicted ŷ)",
                             line=dict(color=color, width=1.5, dash="dash"),
-                        ),
-                        row=row_idx,
-                        col=1,
+                        )
                     )
 
-                    fig_trends.update_xaxes(title_text="Sample Index", row=row_idx, col=1)
-                    fig_trends.update_yaxes(title_text="Value", row=row_idx, col=1)
-
                 fig_trends.update_layout(
+                    xaxis_title="Sample Index",
+                    yaxis_title="Parameter Value",
                     hovermode="x unified",
-                    height=300 * num_tags,
-                    margin=dict(l=20, r=20, t=40, b=20),
-                    showlegend=True,
+                    height=450,
+                    margin=dict(l=20, r=20, t=30, b=20),
                     legend=dict(
                         orientation="h",
                         yanchor="bottom",
-                        y=1.002,
+                        y=1.02,
                         xanchor="right",
-                        x=1,
-                    ),
+                        x=1
+                    )
                 )
                 st.plotly_chart(fig_trends, use_container_width=True)
 
