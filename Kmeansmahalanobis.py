@@ -144,16 +144,15 @@ def get_clean_dataset(url):
     return df, features
 
 
-# BASELINE / TRAINING DATASETS (Turbine datasets removed)
+# BASELINE / TRAINING DATASETS
 BASELINE_DATASETS = {
     "NOC6_1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
     "NOC_Chiller": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Chiller.csv",
 }
 
-# EVALUATION / TEST DATASETS (Turbine cases removed)
+# EVALUATION / TEST DATASETS (Case_Chiller removed)
 TEST_DATASETS = {
     "Case_0": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
-    "Case_Chiller": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller.csv",
     "Case_Chiller_Deviation": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller_deviation.csv",
     "Case_Chiller_Highload": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller_highload.csv",
     "Case_Chiller_Motor": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller_motor.csv",
