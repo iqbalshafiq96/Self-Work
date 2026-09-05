@@ -281,7 +281,7 @@ with tab2:
             "Select Evaluation / Test Dataset to Compare Against Calibrated Baseline:",
             options=list(eval_options_map.keys()),
             index=0,
-            format_func=lambda key: f"{key} — ({CASE_DESCRIPTIONS.get(key, 'Evaluation Case')})",
+            format_func=lambda key: f"{key} — {CASE_DESCRIPTIONS.get(key, 'Evaluation Case')}",
         )
 
         selected_eval_url = eval_options_map[selected_eval_label]
