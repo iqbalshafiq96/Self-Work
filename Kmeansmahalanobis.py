@@ -4,7 +4,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from plotly.subplots import make_subplots
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 
@@ -26,7 +25,7 @@ st.caption(
 # ---------------------------------------------------------
 class OMRNearestNeighborEngine:
     """
-    Model Residual Engine mapping live sample points
+    Model Residual Engine mapping live sample points 
     to the single closest baseline timestamp using k-Nearest Neighbors.
     """
 
@@ -346,3 +345,330 @@ with tab2:
             delta=f"{round((total_alerts / total_samples) * 100, 1)}%",
             delta_color="inverse",
         )
+
+        st.markdown("---")
+
+        # ---------------------------------------------------------
+        # TWO-COLUMN DASHBOARD LAYOUT
+        # ---------------------------------------------------------
+        col_sidebar, col_main = st.columns([1, 3])
+
+        # Calc global average deviation for top sensor selection
+        avg_std_res_all = np.mean([np.abs(d["Normalized Deviation (σ)"]) for d in all_diag_list], axis=0)
+        top_deviated_idx = np.argsort(avg_std_res_all)[::-1][:5]
+        top_deviated_tags = [feature_cols[idx] for idx in top_deviated_idx]
+
+        with col_sidebar:
+            st.markdown("### 🎛️ Sensor Selection")
+            st.caption("Tick sensors to overlay on the trend plot.")
+
+            c_btn1, c_btn2 = st.columns(2)
+            if c_btn1.button("Select All", use_container_width=True):
+                for f in feature_cols:
+                    st.session_state[f"chk_{f}"] = True
+            if c_btn2.button("Clear All", use_container_width=True):
+                for f in feature_cols:
+                    st.session_state[f"chk_{f}"] = False
+
+            if st.button("Top 5 Deviations (σ)", use_container_width=True, type="secondary"):
+                for f in feature_cols:
+                    st.session_state[f"chk_{f}"] = f in top_deviated_tags
+
+            st.markdown("---")
+            selected_tags = []
+            for idx, feature in enumerate(feature_cols):
+                default_state = True if idx == 0 else False
+                if f"chk_{feature}" not in st.session_state:
+                    st.session_state[f"chk_{feature}"] = default_state
+
+                if st.checkbox(feature, key=f"chk_{feature}"):
+                    selected_tags.append(feature)
+
+        with col_main:
+            st.markdown("### 📈 Overall Model Residual (%) Trend")
+            fig_mr = go.Figure()
+            fig_mr.add_trace(
+                go.Scatter(
+                    x=results_df["Sample"],
+                    y=results_df["Model Residual (%)"],
+                    mode="lines",
+                    name="Model Residual (%)",
+                    line=dict(color="#008080", width=1.5),
+                )
+            )
+            fig_mr.add_trace(
+                go.Scatter(
+                    x=results_df["Sample"],
+                    y=[5.0] * len(results_df),
+                    mode="lines",
+                    name="5% Alarm Threshold",
+                    line=dict(color="orange", dash="dash", width=1.5),
+                )
+            )
+            fig_mr.add_trace(
+                go.Scatter(
+                    x=results_df["Sample"],
+                    y=[10.0] * len(results_df),
+                    mode="lines",
+                    name="10% Alert Threshold",
+                    line=dict(color="red", dash="dash", width=1.5),
+                )
+            )
+
+            fig_mr.update_layout(
+                xaxis_title="Sample Index",
+                yaxis_title="Model Residual (%)",
+                hovermode="x unified",
+                height=350,
+                margin=dict(l=20, r=20, t=30, b=20),
+            )
+            st.plotly_chart(fig_mr, use_container_width=True)
+
+            st.markdown("### 📊 Actual vs. Predicted Parameter Trends")
+            if not selected_tags:
+                st.info("👈 Check one or more parameters in the left panel to render actual vs. predicted trends.")
+            else:
+                fig_trends = go.Figure()
+                colors = px.colors.qualitative.Plotly
+
+                for i, tag in enumerate(selected_tags):
+                    color = colors[i % len(colors)]
+
+                    fig_trends.add_trace(
+                        go.Scatter(
+                            x=results_df["Sample"],
+                            y=raw_test_df[tag],
+                            mode="lines",
+                            name=f"{tag} (Actual)",
+                            line=dict(color=color, width=2),
+                        )
+                    )
+
+                    fig_trends.add_trace(
+                        go.Scatter(
+                            x=results_df["Sample"],
+                            y=pred_df[tag],
+                            mode="lines",
+                            name=f"{tag} (Predicted ŷ)",
+                            line=dict(color=color, width=1.5, dash="dash"),
+                        )
+                    )
+
+                fig_trends.update_layout(
+                    xaxis_title="Sample Index",
+                    yaxis_title="Parameter Value",
+                    hovermode="x unified",
+                    height=450,
+                    margin=dict(l=20, r=20, t=30, b=20),
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    )
+                )
+                st.plotly_chart(fig_trends, use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("Sensor Diagnostics for Selected Timestamp")
+
+        AVG_LABEL = "Average Sensor Residual"
+        sample_options = [AVG_LABEL] + results_df["Sample"].tolist()
+
+        sample_to_inspect = st.selectbox(
+            "Select Timestamp to Inspect Sensor Breakdown:",
+            options=sample_options,
+            index=0,
+            format_func=lambda x: AVG_LABEL if x == AVG_LABEL else f"Sample #{x} (Matched Baseline Row #{results_df.loc[x, 'Matched Baseline Row']})",
+        )
+
+        if sample_to_inspect == AVG_LABEL:
+            avg_actual = np.mean([d["Actual Value (y)"] for d in all_diag_list], axis=0)
+            avg_predicted = np.mean([d["Nearest Baseline Target (ŷ)"] for d in all_diag_list], axis=0)
+            avg_raw_res = np.mean([d["Raw Residual (y - ŷ)"] for d in all_diag_list], axis=0)
+            avg_pct_res = np.mean([d["Sensor Residual (%)"] for d in all_diag_list], axis=0)
+            avg_std_res = np.mean([d["Normalized Deviation (σ)"] for d in all_diag_list], axis=0)
+            avg_mr_pct = results_df["Model Residual (%)"].mean()
+
+            diag_df = pd.DataFrame(
+                {
+                    "Sensor Tag": feature_cols,
+                    "Actual Value (y)": avg_actual,
+                    "Nearest Baseline Target (ŷ)": avg_predicted,
+                    "Raw Residual (y - ŷ)": avg_raw_res,
+                    "Sensor Residual (%)": avg_pct_res,
+                    "Normalized Deviation (σ)": avg_std_res,
+                    "Abs Deviation (|σ|)": np.abs(avg_std_res),
+                }
+            ).sort_values(by="Abs Deviation (|σ|)", ascending=False)
+
+            st.info(
+                f"Displaying **{AVG_LABEL}** calculated across **{n_samples}** evaluated timestamps | Mean Model Residual: **{avg_mr_pct:.4f}%**"
+            )
+        else:
+            raw_sample = raw_test_df[feature_cols].iloc[sample_to_inspect].values
+            diag_res = engine.score_live_sample(raw_sample)
+
+            diag_df = pd.DataFrame(
+                {
+                    "Sensor Tag": feature_cols,
+                    "Actual Value (y)": raw_sample,
+                    "Nearest Baseline Target (ŷ)": diag_res["raw_predicted"],
+                    "Raw Residual (y - ŷ)": diag_res["raw_residuals"],
+                    "Sensor Residual (%)": diag_res["pct_residuals"],
+                    "Normalized Deviation (σ)": diag_res["std_residuals"],
+                    "Abs Deviation (|σ|)": np.abs(diag_res["std_residuals"]),
+                }
+            ).sort_values(by="Abs Deviation (|σ|)", ascending=False)
+
+            st.info(
+                f"Sample **#{sample_to_inspect}** matched to Baseline Timestamp **#{diag_res['nearest_baseline_idx']}** | Calculated Model Residual: **{diag_res['Model_Residual_pct']:.4f}%**"
+            )
+
+        c_chart1, c_chart2 = st.columns(2)
+        with c_chart1:
+            fig_pct = px.bar(
+                diag_df.head(10),
+                x="Sensor Residual (%)",
+                y="Sensor Tag",
+                orientation="h",
+                title="Top 10 Sensor Residuals (%)",
+                color="Sensor Residual (%)",
+                color_continuous_scale="RdBu_r",
+            )
+            fig_pct.update_layout(yaxis={"categoryorder": "total ascending"})
+            st.plotly_chart(fig_pct, use_container_width=True)
+
+        with c_chart2:
+            fig_sigma = px.bar(
+                diag_df.head(10),
+                x="Normalized Deviation (σ)",
+                y="Sensor Tag",
+                orientation="h",
+                title="Top 10 Normalized Deviations (σ)",
+                color="Normalized Deviation (σ)",
+                color_continuous_scale="Reds",
+            )
+            fig_sigma.update_layout(yaxis={"categoryorder": "total ascending"})
+            st.plotly_chart(fig_sigma, use_container_width=True)
+
+        st.dataframe(
+            diag_df.drop(columns=["Abs Deviation (|σ|)"]).style.format(
+                {
+                    "Actual Value (y)": "{:.4f}",
+                    "Nearest Baseline Target (ŷ)": "{:.4f}",
+                    "Raw Residual (y - ŷ)": "{:+.4f}",
+                    "Sensor Residual (%)": "{:+.2f}%",
+                    "Normalized Deviation (σ)": "{:+.2f}σ",
+                }
+            ),
+            use_container_width=True,
+            height=300,
+        )
+
+        st.session_state["current_eval_df"] = raw_test_df
+
+# ---------------------------------------------------------
+# TAB 3: 3D OPERATIONAL PROFILE
+# ---------------------------------------------------------
+with tab3:
+    st.subheader("3D Space: Live Sample vs. Nearest Baseline Point")
+
+    if "p2p_engine" not in st.session_state:
+        st.warning("Please calibrate the baseline model in **Tab 1** first.")
+    else:
+        engine = st.session_state["p2p_engine"]
+        feature_cols = st.session_state["active_feature_cols"]
+        raw_train_df = st.session_state["active_raw_train_df"]
+        raw_eval_df = st.session_state.get("current_eval_df", raw_train_df)
+
+        col_p1, col_p2, col_p3 = st.columns(3)
+        with col_p1:
+            x_tag = st.selectbox("X-Axis Sensor Tag:", options=feature_cols, index=0)
+        with col_p2:
+            y_tag = st.selectbox(
+                "Y-Axis Sensor Tag:",
+                options=feature_cols,
+                index=min(1, len(feature_cols) - 1),
+            )
+        with col_p3:
+            z_tag = st.selectbox(
+                "Z-Axis Sensor Tag:",
+                options=feature_cols,
+                index=min(2, len(feature_cols) - 1),
+            )
+
+        live_sample_idx = st.selectbox(
+            "Select Live Timestamp to Overlay in 3D Space:",
+            options=list(range(len(raw_eval_df))),
+            format_func=lambda i: f"Sample #{i}",
+        )
+
+        fig_3d = px.scatter_3d(
+            engine.X_train_raw,
+            x=x_tag,
+            y=y_tag,
+            z=z_tag,
+            opacity=0.3,
+            title="Baseline Space with Live Point Match Vector",
+        )
+        fig_3d.update_traces(marker=dict(size=2, color="blue"))
+
+        raw_live_sample = raw_eval_df[feature_cols].iloc[live_sample_idx].values
+        live_res = engine.score_live_sample(raw_live_sample)
+
+        live_x = raw_eval_df[x_tag].iloc[live_sample_idx]
+        live_y = raw_eval_df[y_tag].iloc[live_sample_idx]
+        live_z = raw_eval_df[z_tag].iloc[live_sample_idx]
+
+        target_row_raw = live_res["raw_predicted"]
+        target_x = target_row_raw[feature_cols.index(x_tag)]
+        target_y = target_row_raw[feature_cols.index(y_tag)]
+        target_z = target_row_raw[feature_cols.index(z_tag)]
+
+        point_color = "green"
+        if live_res["Is_Alert"]:
+            point_color = "red"
+        elif live_res["Is_Alarm"]:
+            point_color = "orange"
+
+        fig_3d.add_trace(
+            go.Scatter3d(
+                x=[live_x],
+                y=[live_y],
+                z=[live_z],
+                mode="markers",
+                name=f"Live Sample #{live_sample_idx}",
+                marker=dict(
+                    color=point_color,
+                    size=8,
+                    symbol="diamond",
+                ),
+            )
+        )
+
+        fig_3d.add_trace(
+            go.Scatter3d(
+                x=[live_x, target_x],
+                y=[live_y, target_y],
+                z=[live_z, target_z],
+                mode="lines+markers",
+                name=f"Nearest Baseline Match (Row #{live_res['nearest_baseline_idx']})",
+                line=dict(color="orange", width=4),
+                marker=dict(size=4, color="orange"),
+            )
+        )
+
+        fig_3d.update_layout(
+            height=700,
+            scene=dict(
+                xaxis_title=x_tag,
+                yaxis_title=y_tag,
+                zaxis_title=z_tag,
+                aspectmode="cube",
+            ),
+            margin=dict(l=0, r=0, b=0, t=40),
+        )
+
+        st.plotly_chart(fig_3d, use_container_width=True)
