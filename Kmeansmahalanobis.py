@@ -25,7 +25,7 @@ st.caption(
 # ---------------------------------------------------------
 class OMRNearestNeighborEngine:
     """
-    Model Residual Engine mapping live sample points 
+    Model Residual Engine mapping live sample points
     to the single closest baseline timestamp using k-Nearest Neighbors.
     """
 
@@ -150,12 +150,22 @@ BASELINE_DATASETS = {
     "NOC_Chiller": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Chiller.csv",
 }
 
-# EVALUATION / TEST DATASETS (Case_Chiller removed)
+# EVALUATION / TEST DATASETS
 TEST_DATASETS = {
     "Case_0": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_0.csv",
     "Case_Chiller_Deviation": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller_deviation.csv",
     "Case_Chiller_Highload": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller_highload.csv",
     "Case_Chiller_Motor": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller_motor.csv",
+}
+
+# MAP DESCRIPTIONS FOR EVALUATION DATASETS
+CASE_DESCRIPTIONS = {
+    "NOC6_1": "Baseline self-evaluation case",
+    "NOC_Chiller": "Baseline chiller self-evaluation case",
+    "Case_0": "Test evaluation dataset 0",
+    "Case_Chiller_Deviation": "Chiller operating under standard baseline conditions",
+    "Case_Chiller_Highload": "Chiller operating under high thermal load conditions exceeding baseline limits",
+    "Case_Chiller_Motor": "Motor system degradation accompanied by elevated stator and bearing temperatures",
 }
 
 tab1, tab2, tab3 = st.tabs(
@@ -259,7 +269,7 @@ with tab2:
         eval_options_map = {
             SELF_EVAL_LABEL: BASELINE_DATASETS[active_train_key]
         }
-        
+
         if active_train_key == "NOC6_1":
             eval_options_map["Case_0"] = TEST_DATASETS["Case_0"]
         elif active_train_key == "NOC_Chiller":
@@ -271,6 +281,7 @@ with tab2:
             "Select Evaluation / Test Dataset to Compare Against Calibrated Baseline:",
             options=list(eval_options_map.keys()),
             index=0,
+            format_func=lambda key: f"{key} — ({CASE_DESCRIPTIONS.get(key, 'Evaluation Case')})",
         )
 
         selected_eval_url = eval_options_map[selected_eval_label]
