@@ -24,7 +24,7 @@ st.caption(
 # ---------------------------------------------------------
 # POINT-TO-POINT NEAREST NEIGHBOR ENGINE
 # ---------------------------------------------------------
-class OMRNearestNeighborEngine:
+class KNNNearestNeighborEngine:
     """
     Model Residual Engine mapping live sample points
     to the single closest baseline timestamp using k-Nearest Neighbors
@@ -321,7 +321,7 @@ with tab1:
         status_text = st.empty()
         progress_bar = st.progress(0)
 
-        engine = OMRNearestNeighborEngine()
+        engine = KNNNearestNeighborEngine()
         engine.fit_baseline_with_progress(
             X_raw=train_split_df,
             feature_cols=feature_cols,
