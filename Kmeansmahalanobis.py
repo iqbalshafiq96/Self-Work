@@ -95,14 +95,16 @@ class KNNNearestNeighborEngine:
 
         # Calculate calibration baseline distances
         distances, indices = self.nn_model_2k.kneighbors(self.X_train_scaled)
-        
+
         baseline_dists = []
         for i in range(len(self.X_train_scaled)):
             if self.metric == "mahalanobis":
                 # Compute distance between baseline point and its nearest neighbor
                 nn_idx = indices[i, 1]
                 z_res = self.X_train_scaled[i] - self.X_train_scaled[nn_idx]
-                m_dist = np.sqrt(np.maximum(0.0, np.dot(np.dot(z_res, self.cov_inv), z_res.T)))
+                m_dist = np.sqrt(
+                    np.maximum(0.0, np.dot(np.dot(z_res, self.cov_inv), z_res.T))
+                )
                 baseline_dists.append(m_dist)
             else:
                 baseline_dists.append(distances[i, 1])
@@ -143,7 +145,11 @@ class KNNNearestNeighborEngine:
         if self.metric == "mahalanobis":
             # Mahalanobis distance evaluated on the standardized residual vector
             calculated_dist = float(
-                np.sqrt(np.maximum(0.0, np.dot(np.dot(std_residuals, self.cov_inv), std_residuals.T)))
+                np.sqrt(
+                    np.maximum(
+                        0.0, np.dot(np.dot(std_residuals, self.cov_inv), std_residuals.T)
+                    )
+                )
             )
         else:
             calculated_dist = float(dist_euc[0][0])
@@ -168,15 +174,15 @@ class KNNNearestNeighborEngine:
 # DATA INGESTION PIPELINE
 # ---------------------------------------------------------
 @st.cache_data
-def load_and_clean_csv(url):
-    df = pd.read_csv(url)
+def load_and_clean_csv(file_input):
+    df = pd.read_csv(file_input)
     df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
     df.columns = df.columns.str.strip()
     return df
 
 
-def get_clean_dataset(url):
-    df = load_and_clean_csv(url)
+def get_clean_dataset(file_input):
+    df = load_and_clean_csv(file_input)
     features = [
         c
         for c in df.select_dtypes(include=[np.number]).columns
@@ -187,8 +193,8 @@ def get_clean_dataset(url):
 
 # BASELINE / TRAINING DATASETS
 BASELINE_DATASETS = {
-    "NOC6_1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
     "NOC_Chiller": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Chiller.csv",
+    "NOC6_1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
 }
 
 # EVALUATION / TEST DATASETS
@@ -223,18 +229,30 @@ tab1, tab2, tab3 = st.tabs(
 with tab1:
     st.subheader("Point-to-Point Baseline Calibration")
     st.write(
-        "Select and calibrate a reference baseline model using nearest neighbor matching."
+        "Select or upload a reference baseline model dataset using nearest neighbor matching."
     )
 
     col_cfg1, col_cfg2 = st.columns(2)
 
+    CUSTOM_BASELINE_KEY = "Upload Custom Baseline CSV..."
+
     with col_cfg1:
+        baseline_options = list(BASELINE_DATASETS.keys()) + [CUSTOM_BASELINE_KEY]
         selected_train_key = st.selectbox(
             "Select Baseline / Training Dataset:",
-            options=list(BASELINE_DATASETS.keys()),
-            index=0,
+            options=baseline_options,
+            index=0,  # Default to NOC_Chiller
             key="tab1_train_dataset_select",
         )
+
+        uploaded_baseline_file = None
+        if selected_train_key == CUSTOM_BASELINE_KEY:
+            uploaded_baseline_file = st.file_uploader(
+                "Upload Baseline CSV Data:",
+                type=["csv"],
+                key="tab1_baseline_file_uploader",
+                help="Upload a clean numerical CSV containing healthy baseline operation tags.",
+            )
 
         selected_metric = st.radio(
             "Residual Distance Scoring Method:",
@@ -285,13 +303,26 @@ with tab1:
         """
         )
 
-    try:
-        raw_train_df, feature_cols = get_clean_dataset(
-            BASELINE_DATASETS[selected_train_key]
-        )
-    except Exception as e:
-        st.error(f"Failed to load dataset: {e}")
-        st.stop()
+    # Ingest Data Source based on Selection
+    raw_train_df, feature_cols = None, []
+    if selected_train_key == CUSTOM_BASELINE_KEY:
+        if uploaded_baseline_file is not None:
+            try:
+                raw_train_df, feature_cols = get_clean_dataset(uploaded_baseline_file)
+            except Exception as e:
+                st.error(f"Failed to load custom baseline CSV: {e}")
+                st.stop()
+        else:
+            st.info(" Please upload a custom baseline CSV file to proceed.")
+            st.stop()
+    else:
+        try:
+            raw_train_df, feature_cols = get_clean_dataset(
+                BASELINE_DATASETS[selected_train_key]
+            )
+        except Exception as e:
+            st.error(f"Failed to load dataset: {e}")
+            st.stop()
 
     if train_split_pct == 100:
         train_split_df = raw_train_df.copy().reset_index(drop=True)
@@ -384,38 +415,86 @@ with tab2:
         raw_split_test_df = st.session_state["active_raw_test_df"]
 
         eval_options_map = {}
+        raw_test_df = None
 
-        if active_train_pct < 100 and not raw_split_test_df.empty:
-            EVAL_HOLDOUT_LABEL = f"{active_train_key} (Holdout {100 - active_train_pct}% Evaluation Set)"
-            eval_options_map[EVAL_HOLDOUT_LABEL] = raw_split_test_df
-        else:
-            EVAL_SELF_LABEL = f"{active_train_key} (Self-Evaluation Full Baseline)"
-            eval_options_map[EVAL_SELF_LABEL] = raw_train_df
+        # Check if active baseline is custom uploaded
+        if active_train_key == CUSTOM_BASELINE_KEY:
+            st.markdown("### 📤 Upload Custom Evaluation Dataset")
+            st.info(
+                "You calibrated a custom baseline model. Please upload your custom evaluation CSV dataset matching the same feature tags to perform diagnostic comparisons."
+            )
 
-        if active_train_key == "NOC6_1":
-            eval_options_map["Case_0"] = TEST_DATASETS["Case_0"]
-        elif active_train_key == "NOC_Chiller":
-            for k, v in TEST_DATASETS.items():
-                if "chiller" in k.lower():
-                    eval_options_map[k] = v
+            if active_train_pct < 100 and not raw_split_test_df.empty:
+                EVAL_HOLDOUT_LABEL = f"Custom Baseline (Holdout {100 - active_train_pct}% Evaluation Set)"
+                eval_options_map[EVAL_HOLDOUT_LABEL] = raw_split_test_df
 
-        selected_eval_label = st.selectbox(
-            "Select Evaluation / Test Dataset to Compare Against Calibrated Baseline:",
-            options=list(eval_options_map.keys()),
-            index=0,
-            format_func=lambda key: f"{key} — {CASE_DESCRIPTIONS.get(key, 'Evaluation Case')}" if key in CASE_DESCRIPTIONS else key,
-        )
+            uploaded_test_file = st.file_uploader(
+                "Upload Custom Evaluation CSV:",
+                type=["csv"],
+                key="tab2_custom_test_uploader",
+            )
 
-        selected_eval_val = eval_options_map[selected_eval_label]
+            if uploaded_test_file is not None:
+                try:
+                    custom_test_df, test_features = get_clean_dataset(uploaded_test_file)
+                    # Verify feature alignment
+                    missing_cols = set(feature_cols) - set(test_features)
+                    if missing_cols:
+                        st.error(
+                            f"Uploaded evaluation file is missing required baseline feature tags: {list(missing_cols)}"
+                        )
+                        st.stop()
+                    eval_options_map[uploaded_test_file.name] = custom_test_df
+                except Exception as e:
+                    st.error(f"Failed to read evaluation CSV: {e}")
+                    st.stop()
 
-        if isinstance(selected_eval_val, pd.DataFrame):
-            raw_test_df = selected_eval_val
-        else:
-            try:
-                raw_test_df, _ = get_clean_dataset(selected_eval_val)
-            except Exception as e:
-                st.error(f"Failed to load evaluation dataset: {e}")
+            if not eval_options_map:
+                st.warning("Please upload a custom evaluation CSV above to begin diagnostic evaluation.")
                 st.stop()
+
+            selected_eval_label = st.selectbox(
+                "Select Evaluation Dataset to Compare Against Calibrated Custom Baseline:",
+                options=list(eval_options_map.keys()),
+                index=0,
+            )
+            raw_test_df = eval_options_map[selected_eval_label]
+
+        else:
+            # Preset datasets map
+            if active_train_pct < 100 and not raw_split_test_df.empty:
+                EVAL_HOLDOUT_LABEL = f"{active_train_key} (Holdout {100 - active_train_pct}% Evaluation Set)"
+                eval_options_map[EVAL_HOLDOUT_LABEL] = raw_split_test_df
+            else:
+                EVAL_SELF_LABEL = f"{active_train_key} (Self-Evaluation Full Baseline)"
+                eval_options_map[EVAL_SELF_LABEL] = raw_train_df
+
+            if active_train_key == "NOC6_1":
+                eval_options_map["Case_0"] = TEST_DATASETS["Case_0"]
+            elif active_train_key == "NOC_Chiller":
+                for k, v in TEST_DATASETS.items():
+                    if "chiller" in k.lower():
+                        eval_options_map[k] = v
+
+            selected_eval_label = st.selectbox(
+                "Select Evaluation / Test Dataset to Compare Against Calibrated Baseline:",
+                options=list(eval_options_map.keys()),
+                index=0,
+                format_func=lambda key: f"{key} — {CASE_DESCRIPTIONS.get(key, 'Evaluation Case')}"
+                if key in CASE_DESCRIPTIONS
+                else key,
+            )
+
+            selected_eval_val = eval_options_map[selected_eval_label]
+
+            if isinstance(selected_eval_val, pd.DataFrame):
+                raw_test_df = selected_eval_val
+            else:
+                try:
+                    raw_test_df, _ = get_clean_dataset(selected_eval_val)
+                except Exception as e:
+                    st.error(f"Failed to load evaluation dataset: {e}")
+                    st.stop()
 
         progress_eval = st.progress(0)
         eval_results = []
@@ -445,13 +524,15 @@ with tab2:
             )
             predicted_matrix.append(res["raw_predicted"])
 
-            all_diag_list.append({
-                "Actual Value (y)": sample,
-                "Nearest Baseline Target (ŷ)": res["raw_predicted"],
-                "Raw Residual (y - ŷ)": res["raw_residuals"],
-                "Sensor Residual (%)": res["pct_residuals"],
-                "Normalized Deviation (σ)": res["std_residuals"]
-            })
+            all_diag_list.append(
+                {
+                    "Actual Value (y)": sample,
+                    "Nearest Baseline Target (ŷ)": res["raw_predicted"],
+                    "Raw Residual (y - ŷ)": res["raw_residuals"],
+                    "Sensor Residual (%)": res["pct_residuals"],
+                    "Normalized Deviation (σ)": res["std_residuals"],
+                }
+            )
 
             if i % max(1, n_samples // 10) == 0:
                 progress_eval.progress(int((i + 1) / n_samples * 100))
@@ -461,7 +542,10 @@ with tab2:
         pred_df = pd.DataFrame(predicted_matrix, columns=feature_cols)
 
         total_samples = len(results_df)
-        total_alarms = ((results_df["Model Residual (%)"] > 5.0) & (results_df["Model Residual (%)"] <= 10.0)).sum()
+        total_alarms = (
+            (results_df["Model Residual (%)"] > 5.0)
+            & (results_df["Model Residual (%)"] <= 10.0)
+        ).sum()
         total_alerts = (results_df["Model Residual (%)"] > 10.0).sum()
         total_normal = (results_df["Model Residual (%)"] <= 5.0).sum()
 
@@ -485,7 +569,9 @@ with tab2:
 
         col_sidebar, col_main = st.columns([1, 3])
 
-        avg_std_res_all = np.mean([np.abs(d["Normalized Deviation (σ)"]) for d in all_diag_list], axis=0)
+        avg_std_res_all = np.mean(
+            [np.abs(d["Normalized Deviation (σ)"]) for d in all_diag_list], axis=0
+        )
         top_deviated_idx = np.argsort(avg_std_res_all)[::-1][:5]
         top_deviated_tags = [feature_cols[idx] for idx in top_deviated_idx]
 
@@ -501,7 +587,9 @@ with tab2:
                 for f in feature_cols:
                     st.session_state[f"chk_{f}"] = False
 
-            if st.button("Top 5 Deviations (σ)", use_container_width=True, type="secondary"):
+            if st.button(
+                "Top 5 Deviations (σ)", use_container_width=True, type="secondary"
+            ):
                 for f in feature_cols:
                     st.session_state[f"chk_{f}"] = f in top_deviated_tags
 
@@ -557,7 +645,9 @@ with tab2:
 
             st.markdown("### 📊 Actual vs. Predicted Parameter Trends")
             if not selected_tags:
-                st.info("👈 Check one or more parameters in the left panel to render actual vs. predicted trends.")
+                st.info(
+                    "👈 Check one or more parameters in the left panel to render actual vs. predicted trends."
+                )
             else:
                 fig_trends = go.Figure()
                 colors = px.colors.qualitative.Plotly
@@ -596,8 +686,8 @@ with tab2:
                         yanchor="bottom",
                         y=1.02,
                         xanchor="right",
-                        x=1
-                    )
+                        x=1,
+                    ),
                 )
                 st.plotly_chart(fig_trends, use_container_width=True)
 
@@ -611,15 +701,27 @@ with tab2:
             "Select Timestamp to Inspect Sensor Breakdown:",
             options=sample_options,
             index=0,
-            format_func=lambda x: AVG_LABEL if x == AVG_LABEL else f"Sample #{x} (Matched Baseline Row #{results_df.loc[x, 'Matched Baseline Row']})",
+            format_func=lambda x: AVG_LABEL
+            if x == AVG_LABEL
+            else f"Sample #{x} (Matched Baseline Row #{results_df.loc[x, 'Matched Baseline Row']})",
         )
 
         if sample_to_inspect == AVG_LABEL:
-            avg_actual = np.mean([d["Actual Value (y)"] for d in all_diag_list], axis=0)
-            avg_predicted = np.mean([d["Nearest Baseline Target (ŷ)"] for d in all_diag_list], axis=0)
-            avg_raw_res = np.mean([d["Raw Residual (y - ŷ)"] for d in all_diag_list], axis=0)
-            avg_pct_res = np.mean([d["Sensor Residual (%)"] for d in all_diag_list], axis=0)
-            avg_std_res = np.mean([d["Normalized Deviation (σ)"] for d in all_diag_list], axis=0)
+            avg_actual = np.mean(
+                [d["Actual Value (y)"] for d in all_diag_list], axis=0
+            )
+            avg_predicted = np.mean(
+                [d["Nearest Baseline Target (ŷ)"] for d in all_diag_list], axis=0
+            )
+            avg_raw_res = np.mean(
+                [d["Raw Residual (y - ŷ)"] for d in all_diag_list], axis=0
+            )
+            avg_pct_res = np.mean(
+                [d["Sensor Residual (%)"] for d in all_diag_list], axis=0
+            )
+            avg_std_res = np.mean(
+                [d["Normalized Deviation (σ)"] for d in all_diag_list], axis=0
+            )
             avg_mr_pct = results_df["Model Residual (%)"].mean()
 
             diag_df = pd.DataFrame(
