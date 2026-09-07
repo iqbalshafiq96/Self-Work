@@ -26,7 +26,8 @@ st.caption(
 class OMRNearestNeighborEngine:
     """
     Model Residual Engine mapping live sample points
-    to the single closest baseline timestamp using k-Nearest Neighbors.
+    to the single closest baseline timestamp using k-Nearest Neighbors
+    with support for Euclidean or Mahalanobis distance metric.
     """
 
     def __init__(self):
@@ -37,16 +38,20 @@ class OMRNearestNeighborEngine:
         self.X_train_raw = None
         self.X_train_scaled = None
         self.d_99 = 1.0
+        self.metric = "euclidean"
+        self.cov_inv = None
 
     def fit_baseline_with_progress(
         self,
         X_raw: pd.DataFrame,
         feature_cols: list,
+        metric: str = "euclidean",
         percentile: float = 99.0,
         progress_bar=None,
         status_text=None,
     ):
         self.feature_cols = feature_cols
+        self.metric = metric.lower()
         self.scaler = StandardScaler()
         self.X_train_raw = X_raw[feature_cols].copy().reset_index(drop=True)
 
@@ -58,15 +63,35 @@ class OMRNearestNeighborEngine:
 
         self.X_train_scaled = self.scaler.fit_transform(self.X_train_raw)
 
+        # Build metric parameters for Scikit-Learn NearestNeighbors
+        metric_kwargs = {}
+        algorithm = "auto"
+
+        if self.metric == "mahalanobis":
+            # Compute empirical covariance matrix on standardized baseline features
+            cov_matrix = np.cov(self.X_train_scaled, rowvar=False)
+
+            # Add regularizing ridge (1e-6) to ensure invertibility in multi-collinear sensor tags
+            cov_matrix += np.eye(cov_matrix.shape[0]) * 1e-6
+            self.cov_inv = np.linalg.inv(cov_matrix)
+
+            metric_kwargs = {"VI": self.cov_inv}
+            algorithm = "brute"  # Mahalanobis requires brute-force search algorithm
+
         if status_text:
-            status_text.text("Step 2/4: Fitting 2-Nearest Neighbor graph...")
+            status_text.text(
+                f"Step 2/4: Fitting 2-Nearest Neighbor graph ({self.metric.title()})..."
+            )
         if progress_bar:
             progress_bar.progress(50)
         time.sleep(0.1)
 
-        self.nn_model = NearestNeighbors(n_neighbors=2, algorithm="auto").fit(
-            self.X_train_scaled
-        )
+        self.nn_model = NearestNeighbors(
+            n_neighbors=2,
+            algorithm=algorithm,
+            metric=self.metric,
+            metric_params=metric_kwargs if self.metric == "mahalanobis" else None,
+        ).fit(self.X_train_scaled)
 
         if status_text:
             status_text.text(
@@ -86,9 +111,12 @@ class OMRNearestNeighborEngine:
             progress_bar.progress(90)
         time.sleep(0.1)
 
-        self.nn_lookup = NearestNeighbors(n_neighbors=1, algorithm="auto").fit(
-            self.X_train_scaled
-        )
+        self.nn_lookup = NearestNeighbors(
+            n_neighbors=1,
+            algorithm=algorithm,
+            metric=self.metric,
+            metric_params=metric_kwargs if self.metric == "mahalanobis" else None,
+        ).fit(self.X_train_scaled)
 
         if progress_bar:
             progress_bar.progress(100)
@@ -185,21 +213,62 @@ with tab1:
         "Select and calibrate a reference baseline model using nearest neighbor matching."
     )
 
-    selected_train_key = st.selectbox(
-        "Select Baseline / Training Dataset:",
-        options=list(BASELINE_DATASETS.keys()),
-        index=0,
-        key="tab1_train_dataset_select",
-    )
+    col_cfg1, col_cfg2 = st.columns(2)
 
-    percentile_thresh = st.slider(
-        "Baseline 10% Scale Boundary Percentile:",
-        min_value=95.0,
-        max_value=99.9,
-        value=99.0,
-        step=0.1,
-        key="tab1_percentile_slider",
-    )
+    with col_cfg1:
+        selected_train_key = st.selectbox(
+            "Select Baseline / Training Dataset:",
+            options=list(BASELINE_DATASETS.keys()),
+            index=0,
+            key="tab1_train_dataset_select",
+        )
+
+        selected_metric = st.radio(
+            "Distance Calculation Method:",
+            options=["Euclidean", "Mahalanobis"],
+            index=0,
+            horizontal=True,
+            key="tab1_metric_radio",
+            help="Euclidean assumes uncorrelated variables. Mahalanobis accounts for cross-tag variance and inter-sensor correlations.",
+        )
+
+    with col_cfg2:
+        percentile_thresh = st.slider(
+            "Baseline Scale Boundary Percentile:",
+            min_value=95.0,
+            max_value=99.9,
+            value=99.0,
+            step=0.1,
+            key="tab1_percentile_slider",
+        )
+
+    # ---------------------------------------------------------
+    # METHODOLOGY EXPLANATION BOX
+    # ---------------------------------------------------------
+    with st.expander("📐 Calculation Method Details & Formulations", expanded=False):
+        st.markdown(
+            """
+        ### Distance Metric Comparison
+
+        #### 1. Euclidean Distance
+        Standard geometric distance calculation performed on Z-score standardized sensor tags:
+        
+        $$d_{\\text{Euclidean}}(\\mathbf{x}, \\mathbf{y}) = \\sqrt{\\sum_{i=1}^{p} (z_{x,i} - z_{y,i})^2}$$
+
+        * **Key Assumption:** Treats each operational sensor independently without accounting for covariance between variables.
+        * **Best For:** Uncorrelated sensor networks or general multi-variable baseline matching.
+
+        ---
+
+        #### 2. Mahalanobis Distance
+        Covariance-weighted distance metric measuring multivariate separation relative to the baseline covariance matrix $\\mathbf{\\Sigma}$:
+
+        $$d_{\\text{Mahalanobis}}(\\mathbf{x}, \\mathbf{y}) = \\sqrt{(\\mathbf{z}_x - \\mathbf{z}_y)^T \\mathbf{\\Sigma}^{-1} (\\mathbf{z}_x - \\mathbf{z}_y)}$$
+
+        * **Key Advantage:** Leverages cross-sensor correlation structures. Variance along correlated operating regimes (e.g., pressure vs. temperature along a saturation curve) is penalized less than orthogonal deviations.
+        * **Conditioning:** A small regularization factor ($10^{-6} \\mathbf{I}$) is automatically added to $\\mathbf{\\Sigma}$ to prevent singular matrix inversion issues under redundant sensor tags.
+        """
+        )
 
     try:
         raw_train_df, feature_cols = get_clean_dataset(
@@ -209,14 +278,20 @@ with tab1:
         st.error(f"Failed to load dataset: {e}")
         st.stop()
 
-    c_c1, c_c2 = st.columns(2)
+    c_c1, c_c2, c_c3 = st.columns(3)
     with c_c1:
-        st.info(f"**Selected Baseline Dataset:** {selected_train_key}")
+        st.info(f"**Selected Baseline:** {selected_train_key}")
         st.write(f"- Baseline Timestamps: **{raw_train_df.shape[0]}**")
 
     with c_c2:
         st.write(f"- **Total Operational Tags:** {len(feature_cols)}")
         st.write(f"- **Percentile Scale Boundary:** {percentile_thresh}%")
+
+    with c_c3:
+        st.write(f"- **Distance Metric:** {selected_metric}")
+        st.write(
+            f"- **Covariance Matrix:** {'Inverted' if selected_metric == 'Mahalanobis' else 'Unit (Identity)'}"
+        )
 
     st.markdown("---")
     if st.button("Calibrate Baseline Model", type="primary", use_container_width=True):
@@ -227,6 +302,7 @@ with tab1:
         engine.fit_baseline_with_progress(
             X_raw=raw_train_df,
             feature_cols=feature_cols,
+            metric=selected_metric.lower(),
             percentile=percentile_thresh,
             progress_bar=progress_bar,
             status_text=status_text,
@@ -237,16 +313,25 @@ with tab1:
         st.session_state["active_feature_cols"] = feature_cols
         st.session_state["active_raw_train_df"] = raw_train_df
         st.session_state["active_percentile"] = percentile_thresh
+        st.session_state["active_metric"] = selected_metric
         st.success("Model Residual Engine Calibrated Successfully!")
 
     if "p2p_engine" in st.session_state:
         active_key = st.session_state.get("active_train_key")
         active_pct = st.session_state.get("active_percentile")
-        if active_key == selected_train_key and active_pct == percentile_thresh:
-            st.success(f"Active Baseline Model Ready ({active_key} @ {active_pct}%).")
+        active_met = st.session_state.get("active_metric")
+
+        if (
+            active_key == selected_train_key
+            and active_pct == percentile_thresh
+            and active_met == selected_metric
+        ):
+            st.success(
+                f"Active Baseline Model Ready ({active_key} | {active_met} Metric @ {active_pct}%)."
+            )
         else:
             st.info(
-                f"Currently Active Model: **{active_key}** (@ {active_pct}%). Click 'Calibrate Baseline Model' above to apply changes."
+                f"Currently Active Model: **{active_key}** ({active_met} Metric @ {active_pct}%). Click 'Calibrate Baseline Model' above to apply changes."
             )
 
 # ---------------------------------------------------------
