@@ -17,7 +17,7 @@ st.set_page_config(
 
 st.title("k-NN Normalized Residual & Diagnostic System")
 st.caption(
-    "Empirical Pattern Matching via k-Nearest Neighbor (k=1) Point-to-Point Baseline Alignment."
+    "Empirical Pattern Matching via k-Nearest Neighbor Point-to-Point Baseline Alignment."
 )
 
 
@@ -27,27 +27,20 @@ st.caption(
 class KNNNearestNeighborEngine:
     """
     Model Residual Engine mapping live sample points
-    to the single closest baseline timestamp using k-Nearest Neighbors
-    with support for Euclidean or Mahalanobis distance metric.
+    to the single closest baseline timestamp using Euclidean Search 
+    for robust target matching, with Residual Mahalanobis scoring.
     """
 
     def __init__(self):
         self.scaler = None
-        self.nn_model = None
-        self.nn_lookup = None
+        self.nn_model_2k = None
+        self.nn_lookup_1k = None
         self.feature_cols = []
         self.X_train_raw = None
         self.X_train_scaled = None
-        self.X_train_transformed = None
+        self.cov_inv = None
         self.d_99 = 1.0
         self.metric = "euclidean"
-        self.L_inv = None  # Transformation matrix for Mahalanobis whitening
-
-    def _transform_features(self, X_scaled: np.ndarray) -> np.ndarray:
-        """Projects scaled space into Mahalanobis decorrelated space if active."""
-        if self.metric == "mahalanobis" and self.L_inv is not None:
-            return np.dot(X_scaled, self.L_inv.T)
-        return X_scaled
 
     def fit_baseline_with_progress(
         self,
@@ -71,36 +64,26 @@ class KNNNearestNeighborEngine:
 
         self.X_train_scaled = self.scaler.fit_transform(self.X_train_raw)
 
-        # Mahalanobis Whitening Transformation Matrix calculation
-        if self.metric == "mahalanobis":
-            cov_matrix = np.cov(self.X_train_scaled, rowvar=False)
-            # Add regularizing ridge to prevent zero-variance singular inversion
-            cov_matrix += np.eye(cov_matrix.shape[0]) * 1e-6
-            
-            # Cholesky Decomposition: Cov = L * L^T
-            L = np.linalg.cholesky(cov_matrix)
-            self.L_inv = np.linalg.inv(L)
-            
-            # Decorrelate training points
-            self.X_train_transformed = self._transform_features(self.X_train_scaled)
-        else:
-            self.L_inv = None
-            self.X_train_transformed = self.X_train_scaled.copy()
+        # Compute Inverse Covariance Matrix for Mahalanobis Residual Scoring
+        cov_matrix = np.cov(self.X_train_scaled, rowvar=False)
+        # Add regularizing ridge (1e-6) to prevent zero-variance singular inversion
+        cov_matrix += np.eye(cov_matrix.shape[0]) * 1e-6
+        self.cov_inv = np.linalg.inv(cov_matrix)
 
         if status_text:
             status_text.text(
-                f"Step 2/4: Fitting 2-Nearest Neighbor graph ({self.metric.title()})..."
+                "Step 2/4: Fitting 2-Nearest Neighbor Euclidean Graph for Baseline..."
             )
         if progress_bar:
             progress_bar.progress(50)
         time.sleep(0.1)
 
-        # In the transformed whitening space, Euclidean distance == Mahalanobis distance
-        self.nn_model = NearestNeighbors(
+        # Always use Euclidean distance for neighbor search to prevent space warping
+        self.nn_model_2k = NearestNeighbors(
             n_neighbors=2,
             algorithm="auto",
             metric="euclidean",
-        ).fit(self.X_train_transformed)
+        ).fit(self.X_train_scaled)
 
         if status_text:
             status_text.text(
@@ -110,9 +93,21 @@ class KNNNearestNeighborEngine:
             progress_bar.progress(75)
         time.sleep(0.1)
 
-        distances, _ = self.nn_model.kneighbors(self.X_train_transformed)
-        neighbor_dists = distances[:, 1]
-        self.d_99 = max(np.percentile(neighbor_dists, percentile), 1e-6)
+        # Calculate calibration baseline distances
+        distances, indices = self.nn_model_2k.kneighbors(self.X_train_scaled)
+        
+        baseline_dists = []
+        for i in range(len(self.X_train_scaled)):
+            if self.metric == "mahalanobis":
+                # Compute distance between baseline point and its nearest neighbor
+                nn_idx = indices[i, 1]
+                z_res = self.X_train_scaled[i] - self.X_train_scaled[nn_idx]
+                m_dist = np.sqrt(np.maximum(0.0, np.dot(np.dot(z_res, self.cov_inv), z_res.T)))
+                baseline_dists.append(m_dist)
+            else:
+                baseline_dists.append(distances[i, 1])
+
+        self.d_99 = max(np.percentile(baseline_dists, percentile), 1e-6)
 
         if status_text:
             status_text.text("Step 4/4: Finalizing k=1 lookup index...")
@@ -120,11 +115,11 @@ class KNNNearestNeighborEngine:
             progress_bar.progress(90)
         time.sleep(0.1)
 
-        self.nn_lookup = NearestNeighbors(
+        self.nn_lookup_1k = NearestNeighbors(
             n_neighbors=1,
             algorithm="auto",
             metric="euclidean",
-        ).fit(self.X_train_transformed)
+        ).fit(self.X_train_scaled)
 
         if progress_bar:
             progress_bar.progress(100)
@@ -132,23 +127,32 @@ class KNNNearestNeighborEngine:
             status_text.text("Calibration Complete!")
 
     def score_live_sample(self, raw_sample: np.ndarray):
-        z_sample = self.scaler.transform(raw_sample.reshape(1, -1))
-        z_transformed = self._transform_features(z_sample)
+        z_sample = self.scaler.transform(raw_sample.reshape(1, -1))[0]
 
-        dist, idx = self.nn_lookup.kneighbors(z_transformed)
-        min_distance = float(dist[0][0])
+        # 1. Physical pattern match: Always use Euclidean distance to find nearest healthy point
+        dist_euc, idx = self.nn_lookup_1k.kneighbors(z_sample.reshape(1, -1))
         nearest_idx = int(idx[0][0])
-
         raw_predicted = self.X_train_raw.iloc[nearest_idx].values
-        mr_pct = (min_distance / self.d_99) * 10.0
 
+        # 2. Residual Vector Computation
         raw_residuals = raw_sample - raw_predicted
         pct_residuals = (raw_residuals / (np.abs(raw_predicted) + 1e-6)) * 100.0
         std_residuals = raw_residuals / self.scaler.scale_
 
+        # 3. Distance Metric Scoring on the Residual Vector
+        if self.metric == "mahalanobis":
+            # Mahalanobis distance evaluated on the standardized residual vector
+            calculated_dist = float(
+                np.sqrt(np.maximum(0.0, np.dot(np.dot(std_residuals, self.cov_inv), std_residuals.T)))
+            )
+        else:
+            calculated_dist = float(dist_euc[0][0])
+
+        mr_pct = (calculated_dist / self.d_99) * 10.0
+
         return {
             "nearest_baseline_idx": nearest_idx,
-            "raw_dist": min_distance,
+            "raw_dist": calculated_dist,
             "d_99_threshold": self.d_99,
             "Model_Residual_pct": mr_pct,
             "Is_Alarm": mr_pct > 5.0,
@@ -233,12 +237,12 @@ with tab1:
         )
 
         selected_metric = st.radio(
-            "Distance Calculation Method:",
+            "Residual Distance Scoring Method:",
             options=["Euclidean", "Mahalanobis"],
             index=0,
             horizontal=True,
             key="tab1_metric_radio",
-            help="Euclidean assumes uncorrelated variables. Mahalanobis accounts for cross-tag variance and inter-sensor correlations via Cholesky whitening projection.",
+            help="Euclidean uses standard standardized residual distance. Mahalanobis evaluates residuals against the cross-sensor inverse covariance matrix (Σ^-1).",
         )
 
     with col_cfg2:
@@ -261,31 +265,23 @@ with tab1:
             key="tab1_percentile_slider",
         )
 
-    # ---------------------------------------------------------
-    # METHODOLOGY EXPLANATION BOX
-    # ---------------------------------------------------------
     with st.expander("📐 Calculation Method Details & Formulations", expanded=False):
         st.markdown(
             """
-        ### Distance Metric Comparison
+        ### Robust Distance Architecture
 
-        #### 1. Euclidean Distance
-        Standard geometric distance calculation performed on Z-score standardized sensor tags:
-        
-        $$d_{\\text{Euclidean}}(\\mathbf{x}, \\mathbf{y}) = \\sqrt{\\sum_{i=1}^{p} (z_{x,i} - z_{y,i})^2}$$
+        To prevent artificial fault suppression during parameter degradation, pattern matching is decoupled from residual scoring:
 
-        * **Key Assumption:** Treats each operational sensor independently without accounting for covariance between variables.
-        * **Best For:** Uncorrelated sensor networks or general multi-variable baseline matching.
+        1. **Target Matching (Euclidean Space):**
+           The nearest healthy baseline state $\\mathbf{\\hat{x}}$ is identified using Euclidean distance on $Z$-score standardized variables:
+           
+           $$d_{\\text{Match}}(\\mathbf{x}, \\mathbf{y}) = \\sqrt{\\sum_{i=1}^{p} (z_{x,i} - z_{y,i})^2}$$
 
-        ---
+        2. **Residual Scoring:**
+           Once the true physical target $\\mathbf{\\hat{x}}$ is isolated, the residual vector $\\mathbf{r} = \\mathbf{z}_x - \\mathbf{z}_{\\hat{x}}$ is evaluated using your selected metric:
 
-        #### 2. Mahalanobis Distance (Cholesky Decorrelation Projection)
-        Covariance-weighted distance metric measuring multivariate separation relative to the baseline covariance matrix $\\mathbf{\\Sigma}$:
-
-        $$d_{\\text{Mahalanobis}}(\\mathbf{x}, \\mathbf{y}) = \\sqrt{(\\mathbf{z}_x - \\mathbf{z}_y)^T \\mathbf{\\Sigma}^{-1} (\\mathbf{z}_x - \\mathbf{z}_y)}$$
-
-        * **Implementation:** Decomposes regularized $\\mathbf{\\Sigma} = \\mathbf{L}\\mathbf{L}^T$ and transforms feature vectors: $\\mathbf{z}_{\\text{trans}} = \\mathbf{z} \\mathbf{L}^{-T}$.
-        * **Key Advantage:** Leverages cross-sensor correlation structures. Variance along correlated operating regimes is penalized less than orthogonal deviations.
+           * **Euclidean Residual:** $d_{\\text{Residual}} = \\sqrt{\\mathbf{r}^T \\mathbf{r}}$
+           * **Mahalanobis Residual:** $d_{\\text{Residual}} = \\sqrt{\\mathbf{r}^T \\mathbf{\\Sigma}^{-1} \\mathbf{r}}$
         """
         )
 
@@ -315,7 +311,7 @@ with tab1:
     with c_c1:
         st.info(f"**Selected Baseline:** {selected_train_key}")
         st.write(f"- Total Raw Samples: **{raw_train_df.shape[0]}**")
-        st.write(f"- {train_split_pct}% Training Baseline (Randomized): **{train_split_df.shape[0]}**")
+        st.write(f"- {train_split_pct}% Training Baseline: **{train_split_df.shape[0]}**")
         st.write(f"- {100 - train_split_pct}% Evaluation Test Set: **{test_split_df.shape[0]}**")
 
     with c_c2:
@@ -323,10 +319,8 @@ with tab1:
         st.write(f"- **Percentile Scale Boundary:** {percentile_thresh}%")
 
     with c_c3:
-        st.write(f"- **Distance Metric:** {selected_metric}")
-        st.write(
-            f"- **Covariance Matrix:** {'Whitened (Cholesky L^-1)' if selected_metric == 'Mahalanobis' else 'Unit (Identity)'}"
-        )
+        st.write(f"- **Residual Metric:** {selected_metric}")
+        st.write("- **Match Strategy:** Unwarped Euclidean Search")
 
     st.markdown("---")
     if st.button("Calibrate Baseline Model", type="primary", use_container_width=True):
@@ -366,7 +360,7 @@ with tab1:
             and active_split == train_split_pct
         ):
             st.success(
-                f"Active Baseline Model Ready ({active_key} | {active_split}% Train Split | {active_met} Metric @ {active_pct}%)."
+                f"Active Baseline Model Ready ({active_key} | {active_split}% Split | {active_met} Metric @ {active_pct}%)."
             )
         else:
             st.info(
