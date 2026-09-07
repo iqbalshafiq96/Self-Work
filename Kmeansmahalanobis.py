@@ -38,9 +38,16 @@ class KNNNearestNeighborEngine:
         self.feature_cols = []
         self.X_train_raw = None
         self.X_train_scaled = None
+        self.X_train_transformed = None
         self.d_99 = 1.0
         self.metric = "euclidean"
-        self.cov_inv = None
+        self.L_inv = None  # Transformation matrix for Mahalanobis whitening
+
+    def _transform_features(self, X_scaled: np.ndarray) -> np.ndarray:
+        """Projects scaled space into Mahalanobis decorrelated space if active."""
+        if self.metric == "mahalanobis" and self.L_inv is not None:
+            return np.dot(X_scaled, self.L_inv.T)
+        return X_scaled
 
     def fit_baseline_with_progress(
         self,
@@ -64,20 +71,21 @@ class KNNNearestNeighborEngine:
 
         self.X_train_scaled = self.scaler.fit_transform(self.X_train_raw)
 
-        # Build metric parameters for Scikit-Learn NearestNeighbors
-        metric_kwargs = {}
-        algorithm = "auto"
-
+        # Mahalanobis Whitening Transformation Matrix calculation
         if self.metric == "mahalanobis":
-            # Compute empirical covariance matrix on standardized baseline features
             cov_matrix = np.cov(self.X_train_scaled, rowvar=False)
-
-            # Add regularizing ridge (1e-6) to ensure invertibility in multi-collinear sensor tags
+            # Add regularizing ridge to prevent zero-variance singular inversion
             cov_matrix += np.eye(cov_matrix.shape[0]) * 1e-6
-            self.cov_inv = np.linalg.inv(cov_matrix)
-
-            metric_kwargs = {"VI": self.cov_inv}
-            algorithm = "brute"  # Mahalanobis requires brute-force search algorithm
+            
+            # Cholesky Decomposition: Cov = L * L^T
+            L = np.linalg.cholesky(cov_matrix)
+            self.L_inv = np.linalg.inv(L)
+            
+            # Decorrelate training points
+            self.X_train_transformed = self._transform_features(self.X_train_scaled)
+        else:
+            self.L_inv = None
+            self.X_train_transformed = self.X_train_scaled.copy()
 
         if status_text:
             status_text.text(
@@ -87,12 +95,12 @@ class KNNNearestNeighborEngine:
             progress_bar.progress(50)
         time.sleep(0.1)
 
+        # In the transformed whitening space, Euclidean distance == Mahalanobis distance
         self.nn_model = NearestNeighbors(
             n_neighbors=2,
-            algorithm=algorithm,
-            metric=self.metric,
-            metric_params=metric_kwargs if self.metric == "mahalanobis" else None,
-        ).fit(self.X_train_scaled)
+            algorithm="auto",
+            metric="euclidean",
+        ).fit(self.X_train_transformed)
 
         if status_text:
             status_text.text(
@@ -102,7 +110,7 @@ class KNNNearestNeighborEngine:
             progress_bar.progress(75)
         time.sleep(0.1)
 
-        distances, _ = self.nn_model.kneighbors(self.X_train_scaled)
+        distances, _ = self.nn_model.kneighbors(self.X_train_transformed)
         neighbor_dists = distances[:, 1]
         self.d_99 = max(np.percentile(neighbor_dists, percentile), 1e-6)
 
@@ -114,10 +122,9 @@ class KNNNearestNeighborEngine:
 
         self.nn_lookup = NearestNeighbors(
             n_neighbors=1,
-            algorithm=algorithm,
-            metric=self.metric,
-            metric_params=metric_kwargs if self.metric == "mahalanobis" else None,
-        ).fit(self.X_train_scaled)
+            algorithm="auto",
+            metric="euclidean",
+        ).fit(self.X_train_transformed)
 
         if progress_bar:
             progress_bar.progress(100)
@@ -126,8 +133,9 @@ class KNNNearestNeighborEngine:
 
     def score_live_sample(self, raw_sample: np.ndarray):
         z_sample = self.scaler.transform(raw_sample.reshape(1, -1))
+        z_transformed = self._transform_features(z_sample)
 
-        dist, idx = self.nn_lookup.kneighbors(z_sample)
+        dist, idx = self.nn_lookup.kneighbors(z_transformed)
         min_distance = float(dist[0][0])
         nearest_idx = int(idx[0][0])
 
@@ -230,7 +238,7 @@ with tab1:
             index=0,
             horizontal=True,
             key="tab1_metric_radio",
-            help="Euclidean assumes uncorrelated variables. Mahalanobis accounts for cross-tag variance and inter-sensor correlations.",
+            help="Euclidean assumes uncorrelated variables. Mahalanobis accounts for cross-tag variance and inter-sensor correlations via Cholesky whitening projection.",
         )
 
     with col_cfg2:
@@ -271,13 +279,13 @@ with tab1:
 
         ---
 
-        #### 2. Mahalanobis Distance
+        #### 2. Mahalanobis Distance (Cholesky Decorrelation Projection)
         Covariance-weighted distance metric measuring multivariate separation relative to the baseline covariance matrix $\\mathbf{\\Sigma}$:
 
         $$d_{\\text{Mahalanobis}}(\\mathbf{x}, \\mathbf{y}) = \\sqrt{(\\mathbf{z}_x - \\mathbf{z}_y)^T \\mathbf{\\Sigma}^{-1} (\\mathbf{z}_x - \\mathbf{z}_y)}$$
 
-        * **Key Advantage:** Leverages cross-sensor correlation structures. Variance along correlated operating regimes (e.g., pressure vs. temperature along a saturation curve) is penalized less than orthogonal deviations.
-        * **Conditioning:** A small regularization factor ($10^{-6} \\mathbf{I}$) is automatically added to $\\mathbf{\\Sigma}$ to prevent singular matrix inversion issues under redundant sensor tags.
+        * **Implementation:** Decomposes regularized $\\mathbf{\\Sigma} = \\mathbf{L}\\mathbf{L}^T$ and transforms feature vectors: $\\mathbf{z}_{\\text{trans}} = \\mathbf{z} \\mathbf{L}^{-T}$.
+        * **Key Advantage:** Leverages cross-sensor correlation structures. Variance along correlated operating regimes is penalized less than orthogonal deviations.
         """
         )
 
@@ -289,7 +297,6 @@ with tab1:
         st.error(f"Failed to load dataset: {e}")
         st.stop()
 
-    # Perform randomized split based on slider ratio
     if train_split_pct == 100:
         train_split_df = raw_train_df.copy().reset_index(drop=True)
         test_split_df = pd.DataFrame(columns=raw_train_df.columns)
@@ -318,7 +325,7 @@ with tab1:
     with c_c3:
         st.write(f"- **Distance Metric:** {selected_metric}")
         st.write(
-            f"- **Covariance Matrix:** {'Inverted' if selected_metric == 'Mahalanobis' else 'Unit (Identity)'}"
+            f"- **Covariance Matrix:** {'Whitened (Cholesky L^-1)' if selected_metric == 'Mahalanobis' else 'Unit (Identity)'}"
         )
 
     st.markdown("---")
@@ -482,12 +489,8 @@ with tab2:
 
         st.markdown("---")
 
-        # ---------------------------------------------------------
-        # TWO-COLUMN DASHBOARD LAYOUT
-        # ---------------------------------------------------------
         col_sidebar, col_main = st.columns([1, 3])
 
-        # Calc global average deviation for top sensor selection
         avg_std_res_all = np.mean([np.abs(d["Normalized Deviation (σ)"]) for d in all_diag_list], axis=0)
         top_deviated_idx = np.argsort(avg_std_res_all)[::-1][:5]
         top_deviated_tags = [feature_cols[idx] for idx in top_deviated_idx]
