@@ -289,21 +289,26 @@ with tab1:
         st.error(f"Failed to load dataset: {e}")
         st.stop()
 
-    # Perform sequential split based on slider ratio
+    # Perform randomized split based on slider ratio
     if train_split_pct == 100:
-        train_split_df = raw_train_df.copy()
+        train_split_df = raw_train_df.copy().reset_index(drop=True)
         test_split_df = pd.DataFrame(columns=raw_train_df.columns)
     else:
         test_size_ratio = (100 - train_split_pct) / 100.0
         train_split_df, test_split_df = train_test_split(
-            raw_train_df, test_size=test_size_ratio, shuffle=False
+            raw_train_df,
+            test_size=test_size_ratio,
+            shuffle=True,
+            random_state=42,
         )
+        train_split_df = train_split_df.reset_index(drop=True)
+        test_split_df = test_split_df.reset_index(drop=True)
 
     c_c1, c_c2, c_c3 = st.columns(3)
     with c_c1:
         st.info(f"**Selected Baseline:** {selected_train_key}")
         st.write(f"- Total Raw Samples: **{raw_train_df.shape[0]}**")
-        st.write(f"- {train_split_pct}% Training Baseline: **{train_split_df.shape[0]}**")
+        st.write(f"- {train_split_pct}% Training Baseline (Randomized): **{train_split_df.shape[0]}**")
         st.write(f"- {100 - train_split_pct}% Evaluation Test Set: **{test_split_df.shape[0]}**")
 
     with c_c2:
