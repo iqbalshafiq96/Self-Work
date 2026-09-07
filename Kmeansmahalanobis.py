@@ -234,6 +234,16 @@ with tab1:
         )
 
     with col_cfg2:
+        train_split_pct = st.slider(
+            "Training Data Ratio (%):",
+            min_value=50,
+            max_value=95,
+            value=80,
+            step=5,
+            key="tab1_train_split_slider",
+            help="Select percentage of dataset used to calibrate baseline model. Remaining portion serves as holdout evaluation dataset.",
+        )
+
         percentile_thresh = st.slider(
             "Baseline Scale Boundary Percentile:",
             min_value=95.0,
@@ -279,17 +289,18 @@ with tab1:
         st.error(f"Failed to load dataset: {e}")
         st.stop()
 
-    # Perform 80/20 sequential split to preserve temporal continuity
+    # Perform sequential split based on slider ratio to preserve temporal continuity
+    test_size_ratio = (100 - train_split_pct) / 100.0
     train_split_df, test_split_df = train_test_split(
-        raw_train_df, test_size=0.20, shuffle=False
+        raw_train_df, test_size=test_size_ratio, shuffle=False
     )
 
     c_c1, c_c2, c_c3 = st.columns(3)
     with c_c1:
         st.info(f"**Selected Baseline:** {selected_train_key}")
         st.write(f"- Total Raw Samples: **{raw_train_df.shape[0]}**")
-        st.write(f"- 80% Training Baseline: **{train_split_df.shape[0]}**")
-        st.write(f"- 20% Evaluation Test Set: **{test_split_df.shape[0]}**")
+        st.write(f"- {train_split_pct}% Training Baseline: **{train_split_df.shape[0]}**")
+        st.write(f"- {100 - train_split_pct}% Evaluation Test Set: **{test_split_df.shape[0]}**")
 
     with c_c2:
         st.write(f"- **Total Operational Tags:** {len(feature_cols)}")
@@ -323,24 +334,27 @@ with tab1:
         st.session_state["active_raw_test_df"] = test_split_df
         st.session_state["active_percentile"] = percentile_thresh
         st.session_state["active_metric"] = selected_metric
+        st.session_state["active_train_pct"] = train_split_pct
         st.success("Model Residual Engine Calibrated Successfully!")
 
     if "p2p_engine" in st.session_state:
         active_key = st.session_state.get("active_train_key")
         active_pct = st.session_state.get("active_percentile")
         active_met = st.session_state.get("active_metric")
+        active_split = st.session_state.get("active_train_pct")
 
         if (
             active_key == selected_train_key
             and active_pct == percentile_thresh
             and active_met == selected_metric
+            and active_split == train_split_pct
         ):
             st.success(
-                f"Active Baseline Model Ready ({active_key} | {active_met} Metric @ {active_pct}%)."
+                f"Active Baseline Model Ready ({active_key} | {active_split}% Train Split | {active_met} Metric @ {active_pct}%)."
             )
         else:
             st.info(
-                f"Currently Active Model: **{active_key}** ({active_met} Metric @ {active_pct}%). Click 'Calibrate Baseline Model' above to apply changes."
+                f"Currently Active Model: **{active_key}** ({active_split}% Split | {active_met} Metric @ {active_pct}%). Click 'Calibrate Baseline Model' above to apply changes."
             )
 
 # ---------------------------------------------------------
@@ -354,15 +368,16 @@ with tab2:
     else:
         engine = st.session_state["p2p_engine"]
         active_train_key = st.session_state["active_train_key"]
+        active_train_pct = st.session_state.get("active_train_pct", 80)
         feature_cols = st.session_state["active_feature_cols"]
         raw_train_df = st.session_state["active_raw_train_df"]
         raw_split_test_df = st.session_state["active_raw_test_df"]
 
-        EVAL_20_LABEL = f"{active_train_key} (Holdout 20% Evaluation Set)"
+        EVAL_HOLDOUT_LABEL = f"{active_train_key} (Holdout {100 - active_train_pct}% Evaluation Set)"
 
         # Dynamic mapping based on active calibrated baseline dataset
         eval_options_map = {
-            EVAL_20_LABEL: raw_split_test_df
+            EVAL_HOLDOUT_LABEL: raw_split_test_df
         }
 
         if active_train_key == "NOC6_1":
