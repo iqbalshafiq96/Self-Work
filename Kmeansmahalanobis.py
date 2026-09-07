@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from sklearn.model_selection import train_test_split
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 
@@ -278,10 +279,17 @@ with tab1:
         st.error(f"Failed to load dataset: {e}")
         st.stop()
 
+    # Perform 80/20 sequential split to preserve temporal continuity
+    train_split_df, test_split_df = train_test_split(
+        raw_train_df, test_size=0.20, shuffle=False
+    )
+
     c_c1, c_c2, c_c3 = st.columns(3)
     with c_c1:
         st.info(f"**Selected Baseline:** {selected_train_key}")
-        st.write(f"- Baseline Timestamps: **{raw_train_df.shape[0]}**")
+        st.write(f"- Total Raw Samples: **{raw_train_df.shape[0]}**")
+        st.write(f"- 80% Training Baseline: **{train_split_df.shape[0]}**")
+        st.write(f"- 20% Evaluation Test Set: **{test_split_df.shape[0]}**")
 
     with c_c2:
         st.write(f"- **Total Operational Tags:** {len(feature_cols)}")
@@ -300,7 +308,7 @@ with tab1:
 
         engine = OMRNearestNeighborEngine()
         engine.fit_baseline_with_progress(
-            X_raw=raw_train_df,
+            X_raw=train_split_df,
             feature_cols=feature_cols,
             metric=selected_metric.lower(),
             percentile=percentile_thresh,
@@ -311,7 +319,8 @@ with tab1:
         st.session_state["p2p_engine"] = engine
         st.session_state["active_train_key"] = selected_train_key
         st.session_state["active_feature_cols"] = feature_cols
-        st.session_state["active_raw_train_df"] = raw_train_df
+        st.session_state["active_raw_train_df"] = train_split_df
+        st.session_state["active_raw_test_df"] = test_split_df
         st.session_state["active_percentile"] = percentile_thresh
         st.session_state["active_metric"] = selected_metric
         st.success("Model Residual Engine Calibrated Successfully!")
@@ -347,12 +356,13 @@ with tab2:
         active_train_key = st.session_state["active_train_key"]
         feature_cols = st.session_state["active_feature_cols"]
         raw_train_df = st.session_state["active_raw_train_df"]
+        raw_split_test_df = st.session_state["active_raw_test_df"]
 
-        SELF_EVAL_LABEL = active_train_key
+        EVAL_20_LABEL = f"{active_train_key} (Holdout 20% Evaluation Set)"
 
         # Dynamic mapping based on active calibrated baseline dataset
         eval_options_map = {
-            SELF_EVAL_LABEL: BASELINE_DATASETS[active_train_key]
+            EVAL_20_LABEL: raw_split_test_df
         }
 
         if active_train_key == "NOC6_1":
@@ -366,16 +376,16 @@ with tab2:
             "Select Evaluation / Test Dataset to Compare Against Calibrated Baseline:",
             options=list(eval_options_map.keys()),
             index=0,
-            format_func=lambda key: f"{key} — {CASE_DESCRIPTIONS.get(key, 'Evaluation Case')}",
+            format_func=lambda key: f"{key} — {CASE_DESCRIPTIONS.get(key, 'Evaluation Case')}" if key in CASE_DESCRIPTIONS else key,
         )
 
-        selected_eval_url = eval_options_map[selected_eval_label]
+        selected_eval_val = eval_options_map[selected_eval_label]
 
-        if selected_eval_label == SELF_EVAL_LABEL:
-            raw_test_df = raw_train_df
+        if isinstance(selected_eval_val, pd.DataFrame):
+            raw_test_df = selected_eval_val
         else:
             try:
-                raw_test_df, _ = get_clean_dataset(selected_eval_url)
+                raw_test_df, _ = get_clean_dataset(selected_eval_val)
             except Exception as e:
                 st.error(f"Failed to load evaluation dataset: {e}")
                 st.stop()
