@@ -237,11 +237,11 @@ with tab1:
         train_split_pct = st.slider(
             "Training Data Ratio (%):",
             min_value=50,
-            max_value=95,
+            max_value=100,
             value=80,
             step=5,
             key="tab1_train_split_slider",
-            help="Select percentage of dataset used to calibrate baseline model. Remaining portion serves as holdout evaluation dataset.",
+            help="Select percentage of dataset used to calibrate baseline model. Set to 100% to use full baseline dataset.",
         )
 
         percentile_thresh = st.slider(
@@ -289,11 +289,15 @@ with tab1:
         st.error(f"Failed to load dataset: {e}")
         st.stop()
 
-    # Perform sequential split based on slider ratio to preserve temporal continuity
-    test_size_ratio = (100 - train_split_pct) / 100.0
-    train_split_df, test_split_df = train_test_split(
-        raw_train_df, test_size=test_size_ratio, shuffle=False
-    )
+    # Perform sequential split based on slider ratio
+    if train_split_pct == 100:
+        train_split_df = raw_train_df.copy()
+        test_split_df = pd.DataFrame(columns=raw_train_df.columns)
+    else:
+        test_size_ratio = (100 - train_split_pct) / 100.0
+        train_split_df, test_split_df = train_test_split(
+            raw_train_df, test_size=test_size_ratio, shuffle=False
+        )
 
     c_c1, c_c2, c_c3 = st.columns(3)
     with c_c1:
@@ -373,12 +377,14 @@ with tab2:
         raw_train_df = st.session_state["active_raw_train_df"]
         raw_split_test_df = st.session_state["active_raw_test_df"]
 
-        EVAL_HOLDOUT_LABEL = f"{active_train_key} (Holdout {100 - active_train_pct}% Evaluation Set)"
+        eval_options_map = {}
 
-        # Dynamic mapping based on active calibrated baseline dataset
-        eval_options_map = {
-            EVAL_HOLDOUT_LABEL: raw_split_test_df
-        }
+        if active_train_pct < 100 and not raw_split_test_df.empty:
+            EVAL_HOLDOUT_LABEL = f"{active_train_key} (Holdout {100 - active_train_pct}% Evaluation Set)"
+            eval_options_map[EVAL_HOLDOUT_LABEL] = raw_split_test_df
+        else:
+            EVAL_SELF_LABEL = f"{active_train_key} (Self-Evaluation Full Baseline)"
+            eval_options_map[EVAL_SELF_LABEL] = raw_train_df
 
         if active_train_key == "NOC6_1":
             eval_options_map["Case_0"] = TEST_DATASETS["Case_0"]
