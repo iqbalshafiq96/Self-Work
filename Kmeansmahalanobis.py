@@ -283,13 +283,8 @@ with tab1:
             value=80,
             step=5,
             key="tab1_train_split_slider",
-            help="Select percentage of dataset used to calibrate baseline model. Set to 100% to use full baseline dataset.",
-        )
-        st.caption(
-            "💡 **Good practice:** an 80% / 20% training-validation split is commonly "
-            "recommended — 80% to calibrate the baseline model and the remaining 20% "
-            "held out to validate it, balancing model reliability with sufficient "
-            "validation coverage."
+            help="Select percentage of dataset used to calibrate baseline model. Set to 100% to use full baseline dataset. "
+            "💡 Good practice: an 80/20 training-validation split is commonly recommended.",
         )
         percentile_thresh = st.slider(
             "Baseline Scale Boundary Percentile:",
