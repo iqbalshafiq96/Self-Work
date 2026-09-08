@@ -228,7 +228,8 @@ tab1, tab2, tab3, tab4 = st.tabs(
 with tab1:
     st.subheader("Point-to-Point Baseline Calibration")
     st.write(
-        "Select or upload a reference baseline model dataset using nearest neighbor matching."
+        "Select or upload a reference baseline model dataset using nearest neighbor matching, "
+        "then click **Calibrate Baseline Model** below to fit the engine."
     )
     col_cfg1, col_cfg2 = st.columns(2)
     CUSTOM_BASELINE_KEY = "Upload Custom Baseline CSV..."
@@ -241,12 +242,23 @@ with tab1:
             if default_baseline_key in baseline_options
             else 0
         )
-        selected_train_key = st.selectbox(
-            "Select Baseline / Training Dataset:",
-            options=baseline_options,
-            index=default_baseline_index,  # Default to NOC_HX (Heat Exchanger)
-            key="tab1_train_dataset_select",
-        )
+        sel_label_col, sel_link_col = st.columns([3, 1])
+        with sel_label_col:
+            selected_train_key = st.selectbox(
+                "Select Baseline / Training Dataset:",
+                options=baseline_options,
+                index=default_baseline_index,  # Default to NOC_HX (Heat Exchanger)
+                key="tab1_train_dataset_select",
+            )
+        with sel_link_col:
+            if selected_train_key != CUSTOM_BASELINE_KEY:
+                st.markdown(
+                    f"<div style='padding-top: 28px;'>"
+                    f"<a href='{BASELINE_DATASETS[selected_train_key]}' target='_blank' "
+                    f"style='color:#1a73e8; font-weight:600; text-decoration:underline;'>"
+                    f"📥 Download {selected_train_key}.csv</a></div>",
+                    unsafe_allow_html=True,
+                )
         uploaded_baseline_file = None
         if selected_train_key == CUSTOM_BASELINE_KEY:
             uploaded_baseline_file = st.file_uploader(
@@ -272,6 +284,12 @@ with tab1:
             step=5,
             key="tab1_train_split_slider",
             help="Select percentage of dataset used to calibrate baseline model. Set to 100% to use full baseline dataset.",
+        )
+        st.caption(
+            "💡 **Good practice:** an 80% / 20% training-validation split is commonly "
+            "recommended — 80% to calibrate the baseline model and the remaining 20% "
+            "held out to validate it, balancing model reliability with sufficient "
+            "validation coverage."
         )
         percentile_thresh = st.slider(
             "Baseline Scale Boundary Percentile:",
