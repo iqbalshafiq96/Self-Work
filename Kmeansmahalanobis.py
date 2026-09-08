@@ -202,11 +202,12 @@ CASE_DESCRIPTIONS = {
     "Case_HX_Fouling": "Heat exchanger operating under fouling deterioration conditions exceeding baseline limits",
 }
 
-tab1, tab2, tab3 = st.tabs(
+tab1, tab2, tab3, tab4 = st.tabs(
     [
         "1. Calibrate Baseline",
         "2. Model Residual Trend & Diagnostics",
         "3. Operational Profile",
+        "4. Operating Path (All Samples)",
     ]
 )
 
@@ -817,3 +818,134 @@ with tab3:
             margin=dict(l=0, r=0, b=0, t=40),
         )
         st.plotly_chart(fig_3d, use_container_width=True)
+
+# ---------------------------------------------------------
+# TAB 4: 3D OPERATING PATH (ALL SAMPLES, GRADIENT BY TIME)
+# ---------------------------------------------------------
+with tab4:
+    st.subheader("3D Space: Live Sample vs. Nearest Baseline Point (All Test Samples Overlaid)")
+    if "p2p_engine" not in st.session_state:
+        st.warning("Please calibrate the baseline model in **Tab 1** first.")
+    else:
+        engine = st.session_state["p2p_engine"]
+        feature_cols = st.session_state["active_feature_cols"]
+        raw_train_df = st.session_state["active_raw_train_df"]
+        raw_eval_df = st.session_state.get("current_eval_df", raw_train_df)
+        col_q1, col_q2, col_q3 = st.columns(3)
+        with col_q1:
+            x_tag4 = st.selectbox(
+                "X-Axis Sensor Tag:", options=feature_cols, index=0, key="tab4_x_tag"
+            )
+        with col_q2:
+            y_tag4 = st.selectbox(
+                "Y-Axis Sensor Tag:",
+                options=feature_cols,
+                index=min(1, len(feature_cols) - 1),
+                key="tab4_y_tag",
+            )
+        with col_q3:
+            z_tag4 = st.selectbox(
+                "Z-Axis Sensor Tag:",
+                options=feature_cols,
+                index=min(2, len(feature_cols) - 1),
+                key="tab4_z_tag",
+            )
+        live_sample_idx4 = st.selectbox(
+            "Select Live Timestamp to Overlay in 3D Space:",
+            options=list(range(len(raw_eval_df))),
+            format_func=lambda i: f"Sample #{i}",
+            key="tab4_live_sample_select",
+        )
+        fig_4d = px.scatter_3d(
+            engine.X_train_raw,
+            x=x_tag4,
+            y=y_tag4,
+            z=z_tag4,
+            opacity=0.25,
+            title="Baseline Space with Full Test Sample Operating Path",
+        )
+        fig_4d.update_traces(marker=dict(size=2, color="lightgray"))
+
+        # Overlay ALL test/evaluation samples, colored by sample order using a
+        # light-green (earliest) to strong-green (latest) gradient.
+        n_eval_samples = len(raw_eval_df)
+        sample_indices = np.arange(n_eval_samples)
+        fig_4d.add_trace(
+            go.Scatter3d(
+                x=raw_eval_df[x_tag4],
+                y=raw_eval_df[y_tag4],
+                z=raw_eval_df[z_tag4],
+                mode="markers",
+                name="Test Samples (Earliest → Latest)",
+                marker=dict(
+                    size=4,
+                    color=sample_indices,
+                    colorscale="Greens",
+                    cmin=0,
+                    cmax=max(n_eval_samples - 1, 1),
+                    showscale=True,
+                    colorbar=dict(title="Sample Index<br>(Earliest → Latest)"),
+                    opacity=0.85,
+                ),
+                text=[f"Sample #{i}" for i in sample_indices],
+                hovertemplate="%{text}<br>"
+                + f"{x_tag4}: "
+                + "%{x}<br>"
+                + f"{y_tag4}: "
+                + "%{y}<br>"
+                + f"{z_tag4}: "
+                + "%{z}<extra></extra>",
+            )
+        )
+
+        raw_live_sample4 = raw_eval_df[feature_cols].iloc[live_sample_idx4].values
+        live_res4 = engine.score_live_sample(raw_live_sample4)
+        live_x4 = raw_eval_df[x_tag4].iloc[live_sample_idx4]
+        live_y4 = raw_eval_df[y_tag4].iloc[live_sample_idx4]
+        live_z4 = raw_eval_df[z_tag4].iloc[live_sample_idx4]
+        target_row_raw4 = live_res4["raw_predicted"]
+        target_x4 = target_row_raw4[feature_cols.index(x_tag4)]
+        target_y4 = target_row_raw4[feature_cols.index(y_tag4)]
+        target_z4 = target_row_raw4[feature_cols.index(z_tag4)]
+        point_color4 = "green"
+        if live_res4["Is_Alert"]:
+            point_color4 = "red"
+        elif live_res4["Is_Alarm"]:
+            point_color4 = "orange"
+        fig_4d.add_trace(
+            go.Scatter3d(
+                x=[live_x4],
+                y=[live_y4],
+                z=[live_z4],
+                mode="markers",
+                name=f"Live Sample #{live_sample_idx4}",
+                marker=dict(
+                    color=point_color4,
+                    size=9,
+                    symbol="diamond",
+                    line=dict(color="black", width=1),
+                ),
+            )
+        )
+        fig_4d.add_trace(
+            go.Scatter3d(
+                x=[live_x4, target_x4],
+                y=[live_y4, target_y4],
+                z=[live_z4, target_z4],
+                mode="lines+markers",
+                name=f"Nearest Baseline Match (Row #{live_res4['nearest_baseline_idx']})",
+                line=dict(color="orange", width=4),
+                marker=dict(size=4, color="orange"),
+            )
+        )
+        fig_4d.update_layout(
+            height=700,
+            scene=dict(
+                xaxis_title=x_tag4,
+                yaxis_title=y_tag4,
+                zaxis_title=z_tag4,
+                aspectmode="cube",
+            ),
+            margin=dict(l=0, r=0, b=0, t=40),
+        )
+        st.plotly_chart(fig_4d, use_container_width=True)
