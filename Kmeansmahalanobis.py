@@ -27,7 +27,7 @@ st.caption(
 class KNNNearestNeighborEngine:
     """
     Model Residual Engine mapping live sample points
-    to the single closest baseline timestamp using Euclidean Search 
+    to the single closest baseline timestamp using Euclidean Search
     for robust target matching, with Residual Mahalanobis scoring.
     """
 
@@ -202,6 +202,17 @@ CASE_DESCRIPTIONS = {
     "Case_HX_Fouling": "Heat exchanger operating under fouling deterioration conditions exceeding baseline limits",
 }
 
+# DEFAULT EVALUATION/TEST DATASET TO PRE-SELECT IN TAB 2, KEYED BY THE
+# BASELINE DATASET ACTIVE FROM TAB 1 (per user request):
+#   - NOC6_1     baseline -> default to Case_0
+#   - NOC_Chiller baseline -> default to Case_Chiller_Motor
+#   - NOC_HX      baseline -> default to Case_HX_Fouling
+DEFAULT_EVAL_KEY_BY_BASELINE = {
+    "NOC6_1": "Case_0",
+    "NOC_Chiller": "Case_Chiller_Motor",
+    "NOC_HX": "Case_HX_Fouling",
+}
+
 tab1, tab2, tab3, tab4 = st.tabs(
     [
         "1. Calibrate Baseline",
@@ -272,7 +283,7 @@ with tab1:
 
         1. **Target Matching (Euclidean Space):**
            The nearest healthy baseline state $\\mathbf{\\hat{x}}$ is identified using Euclidean distance on $Z$-score standardized variables:
-           
+
            $$d_{\\text{Match}}(\\mathbf{x}, \\mathbf{y}) = \\sqrt{\\sum_{i=1}^{p} (z_{x,i} - z_{y,i})^2}$$
 
         2. **Residual Scoring:**
@@ -439,10 +450,19 @@ with tab2:
                 for k, v in TEST_DATASETS.items():
                     if "hx" in k.lower():
                         eval_options_map[k] = v
+            # Determine which entry should be pre-selected by default based on
+            # the active Tab 1 baseline dataset (see DEFAULT_EVAL_KEY_BY_BASELINE).
+            eval_keys_list = list(eval_options_map.keys())
+            preferred_default_key = DEFAULT_EVAL_KEY_BY_BASELINE.get(active_train_key)
+            default_eval_index = (
+                eval_keys_list.index(preferred_default_key)
+                if preferred_default_key in eval_keys_list
+                else 0
+            )
             selected_eval_label = st.selectbox(
                 "Select Evaluation / Test Dataset to Compare Against Calibrated Baseline:",
-                options=list(eval_options_map.keys()),
-                index=0,
+                options=eval_keys_list,
+                index=default_eval_index,
                 format_func=lambda key: f"{key} — {CASE_DESCRIPTIONS.get(key, 'Evaluation Case')}"
                 if key in CASE_DESCRIPTIONS
                 else key,
