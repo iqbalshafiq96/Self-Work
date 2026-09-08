@@ -242,23 +242,30 @@ with tab1:
             if default_baseline_key in baseline_options
             else 0
         )
-        sel_label_col, sel_link_col = st.columns([3, 1])
-        with sel_label_col:
-            selected_train_key = st.selectbox(
-                "Select Baseline / Training Dataset:",
-                options=baseline_options,
-                index=default_baseline_index,  # Default to NOC_HX (Heat Exchanger)
-                key="tab1_train_dataset_select",
-            )
-        with sel_link_col:
-            if selected_train_key != CUSTOM_BASELINE_KEY:
+        # Pre-compute the download link (if applicable) so it can be rendered
+        # inline, right beside the "Select Baseline / Training Dataset:" label.
+        _prev_selected_key = st.session_state.get(
+            "tab1_train_dataset_select", default_baseline_key
+        )
+        label_col, link_col = st.columns([3, 1])
+        with label_col:
+            st.markdown("Select Baseline / Training Dataset:")
+        with link_col:
+            if _prev_selected_key != CUSTOM_BASELINE_KEY:
                 st.markdown(
-                    f"<div style='padding-top: 28px;'>"
-                    f"<a href='{BASELINE_DATASETS[selected_train_key]}' target='_blank' "
+                    f"<div style='text-align:right;'>"
+                    f"<a href='{BASELINE_DATASETS[_prev_selected_key]}' target='_blank' "
                     f"style='color:#1a73e8; font-weight:600; text-decoration:underline;'>"
-                    f"📥 Download {selected_train_key}.csv</a></div>",
+                    f"📊 Download {_prev_selected_key}.csv</a></div>",
                     unsafe_allow_html=True,
                 )
+        selected_train_key = st.selectbox(
+            "Select Baseline / Training Dataset:",
+            options=baseline_options,
+            index=default_baseline_index,  # Default to NOC_HX (Heat Exchanger)
+            key="tab1_train_dataset_select",
+            label_visibility="collapsed",
+        )
         uploaded_baseline_file = None
         if selected_train_key == CUSTOM_BASELINE_KEY:
             uploaded_baseline_file = st.file_uploader(
