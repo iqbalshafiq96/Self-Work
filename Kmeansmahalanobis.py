@@ -595,6 +595,10 @@ with tab2:
                     selected_tags.append(feature)
         with col_main:
             st.markdown("### 📈 Model Residual (%) Trend")
+            st.caption(
+                "Tracks the overall deviation of each sample from its nearest healthy "
+                "baseline point over time, flagged against the Alarm (5%) and Alert (10%) thresholds."
+            )
             fig_mr = go.Figure()
             fig_mr.add_trace(
                 go.Scatter(
@@ -632,6 +636,10 @@ with tab2:
             )
             st.plotly_chart(fig_mr, use_container_width=True)
             st.markdown("### 📊 Actual vs. Predicted Parameter Trends")
+            st.caption(
+                "Compares each selected sensor's actual reading against its matched "
+                "baseline (predicted) value to reveal where and how the live data diverges."
+            )
             if not selected_tags:
                 st.info(
                     "👈 Check one or more parameters in the left panel to render actual vs. predicted trends."
