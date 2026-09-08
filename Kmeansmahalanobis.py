@@ -864,7 +864,7 @@ with tab4:
             opacity=0.25,
             title="Baseline Space with Full Test Sample Operating Path",
         )
-        fig_4d.update_traces(marker=dict(size=2, color="lightgray"))
+        fig_4d.update_traces(marker=dict(size=2, color="blue"))
 
         # Overlay ALL test/evaluation samples, colored by sample order using a
         # light-green (earliest) to strong-green (latest) gradient.
