@@ -55,21 +55,17 @@ class KNNNearestNeighborEngine:
         self.metric = metric.lower()
         self.scaler = StandardScaler()
         self.X_train_raw = X_raw[feature_cols].copy().reset_index(drop=True)
-
         if status_text:
             status_text.text("Step 1/4: Standardizing feature tags...")
         if progress_bar:
             progress_bar.progress(25)
         time.sleep(0.1)
-
         self.X_train_scaled = self.scaler.fit_transform(self.X_train_raw)
-
         # Compute Inverse Covariance Matrix for Mahalanobis Residual Scoring
         cov_matrix = np.cov(self.X_train_scaled, rowvar=False)
         # Add regularizing ridge (1e-6) to prevent zero-variance singular inversion
         cov_matrix += np.eye(cov_matrix.shape[0]) * 1e-6
         self.cov_inv = np.linalg.inv(cov_matrix)
-
         if status_text:
             status_text.text(
                 "Step 2/4: Fitting 2-Nearest Neighbor Euclidean Graph for Baseline..."
@@ -77,14 +73,12 @@ class KNNNearestNeighborEngine:
         if progress_bar:
             progress_bar.progress(50)
         time.sleep(0.1)
-
         # Always use Euclidean distance for neighbor search to prevent space warping
         self.nn_model_2k = NearestNeighbors(
             n_neighbors=2,
             algorithm="auto",
             metric="euclidean",
         ).fit(self.X_train_scaled)
-
         if status_text:
             status_text.text(
                 f"Step 3/4: Computing {percentile}th percentile scale boundary..."
@@ -92,10 +86,8 @@ class KNNNearestNeighborEngine:
         if progress_bar:
             progress_bar.progress(75)
         time.sleep(0.1)
-
         # Calculate calibration baseline distances
         distances, indices = self.nn_model_2k.kneighbors(self.X_train_scaled)
-
         baseline_dists = []
         for i in range(len(self.X_train_scaled)):
             if self.metric == "mahalanobis":
@@ -108,21 +100,17 @@ class KNNNearestNeighborEngine:
                 baseline_dists.append(m_dist)
             else:
                 baseline_dists.append(distances[i, 1])
-
         self.d_99 = max(np.percentile(baseline_dists, percentile), 1e-6)
-
         if status_text:
             status_text.text("Step 4/4: Finalizing k=1 lookup index...")
         if progress_bar:
             progress_bar.progress(90)
         time.sleep(0.1)
-
         self.nn_lookup_1k = NearestNeighbors(
             n_neighbors=1,
             algorithm="auto",
             metric="euclidean",
         ).fit(self.X_train_scaled)
-
         if progress_bar:
             progress_bar.progress(100)
         if status_text:
@@ -130,17 +118,14 @@ class KNNNearestNeighborEngine:
 
     def score_live_sample(self, raw_sample: np.ndarray):
         z_sample = self.scaler.transform(raw_sample.reshape(1, -1))[0]
-
         # 1. Physical pattern match: Always use Euclidean distance to find nearest healthy point
         dist_euc, idx = self.nn_lookup_1k.kneighbors(z_sample.reshape(1, -1))
         nearest_idx = int(idx[0][0])
         raw_predicted = self.X_train_raw.iloc[nearest_idx].values
-
         # 2. Residual Vector Computation
         raw_residuals = raw_sample - raw_predicted
         pct_residuals = (raw_residuals / (np.abs(raw_predicted) + 1e-6)) * 100.0
         std_residuals = raw_residuals / self.scaler.scale_
-
         # 3. Distance Metric Scoring on the Residual Vector
         if self.metric == "mahalanobis":
             # Mahalanobis distance evaluated on the standardized residual vector
@@ -153,9 +138,7 @@ class KNNNearestNeighborEngine:
             )
         else:
             calculated_dist = float(dist_euc[0][0])
-
         mr_pct = (calculated_dist / self.d_99) * 10.0
-
         return {
             "nearest_baseline_idx": nearest_idx,
             "raw_dist": calculated_dist,
@@ -195,6 +178,7 @@ def get_clean_dataset(file_input):
 BASELINE_DATASETS = {
     "NOC_Chiller": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_Chiller.csv",
     "NOC6_1": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC6_1.csv",
+    "NOC_HX": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_NOC_hx_normal_operation.csv",
 }
 
 # EVALUATION / TEST DATASETS
@@ -203,16 +187,19 @@ TEST_DATASETS = {
     "Case_Chiller_Deviation": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller_deviation.csv",
     "Case_Chiller_Highload": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller_highload.csv",
     "Case_Chiller_Motor": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_Chiller_motor.csv",
+    "Case_HX_Fouling": "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Multivariate_Case_hx_fouling_deterioration.csv",
 }
 
 # MAP DESCRIPTIONS FOR EVALUATION DATASETS
 CASE_DESCRIPTIONS = {
     "NOC6_1": "Baseline self-evaluation case",
     "NOC_Chiller": "Baseline chiller self-evaluation case",
+    "NOC_HX": "Baseline heat exchanger self-evaluation case",
     "Case_0": "Test evaluation dataset 0",
     "Case_Chiller_Deviation": "Chiller operating under standard baseline conditions",
     "Case_Chiller_Highload": "Chiller operating under high thermal load conditions exceeding baseline limits",
     "Case_Chiller_Motor": "Motor system degradation accompanied by elevated stator and bearing temperatures",
+    "Case_HX_Fouling": "Heat exchanger operating under fouling deterioration conditions exceeding baseline limits",
 }
 
 tab1, tab2, tab3 = st.tabs(
@@ -231,11 +218,8 @@ with tab1:
     st.write(
         "Select or upload a reference baseline model dataset using nearest neighbor matching."
     )
-
     col_cfg1, col_cfg2 = st.columns(2)
-
     CUSTOM_BASELINE_KEY = "Upload Custom Baseline CSV..."
-
     with col_cfg1:
         baseline_options = list(BASELINE_DATASETS.keys()) + [CUSTOM_BASELINE_KEY]
         selected_train_key = st.selectbox(
@@ -244,7 +228,6 @@ with tab1:
             index=0,  # Default to NOC_Chiller
             key="tab1_train_dataset_select",
         )
-
         uploaded_baseline_file = None
         if selected_train_key == CUSTOM_BASELINE_KEY:
             uploaded_baseline_file = st.file_uploader(
@@ -253,7 +236,6 @@ with tab1:
                 key="tab1_baseline_file_uploader",
                 help="Upload a clean numerical CSV containing healthy baseline operation tags.",
             )
-
         selected_metric = st.radio(
             "Residual Distance Scoring Method:",
             options=["Euclidean", "Mahalanobis"],
@@ -262,7 +244,6 @@ with tab1:
             key="tab1_metric_radio",
             help="Euclidean uses standard standardized residual distance. Mahalanobis evaluates residuals against the cross-sensor inverse covariance matrix (Σ^-1).",
         )
-
     with col_cfg2:
         train_split_pct = st.slider(
             "Training Data Ratio (%):",
@@ -273,7 +254,6 @@ with tab1:
             key="tab1_train_split_slider",
             help="Select percentage of dataset used to calibrate baseline model. Set to 100% to use full baseline dataset.",
         )
-
         percentile_thresh = st.slider(
             "Baseline Scale Boundary Percentile:",
             min_value=95.0,
@@ -282,7 +262,6 @@ with tab1:
             step=0.1,
             key="tab1_percentile_slider",
         )
-
     with st.expander("📐 Calculation Method Details & Formulations", expanded=False):
         st.markdown(
             """
@@ -302,7 +281,6 @@ with tab1:
            * **Mahalanobis Residual:** $d_{\\text{Residual}} = \\sqrt{\\mathbf{r}^T \\mathbf{\\Sigma}^{-1} \\mathbf{r}}$
         """
         )
-
     # Ingest Data Source based on Selection
     raw_train_df, feature_cols = None, []
     if selected_train_key == CUSTOM_BASELINE_KEY:
@@ -323,7 +301,6 @@ with tab1:
         except Exception as e:
             st.error(f"Failed to load dataset: {e}")
             st.stop()
-
     if train_split_pct == 100:
         train_split_df = raw_train_df.copy().reset_index(drop=True)
         test_split_df = pd.DataFrame(columns=raw_train_df.columns)
@@ -337,27 +314,22 @@ with tab1:
         )
         train_split_df = train_split_df.reset_index(drop=True)
         test_split_df = test_split_df.reset_index(drop=True)
-
     c_c1, c_c2, c_c3 = st.columns(3)
     with c_c1:
         st.info(f"**Selected Baseline:** {selected_train_key}")
         st.write(f"- Total Raw Samples: **{raw_train_df.shape[0]}**")
         st.write(f"- {train_split_pct}% Training Baseline: **{train_split_df.shape[0]}**")
         st.write(f"- {100 - train_split_pct}% Evaluation Test Set: **{test_split_df.shape[0]}**")
-
     with c_c2:
         st.write(f"- **Total Operational Tags:** {len(feature_cols)}")
         st.write(f"- **Percentile Scale Boundary:** {percentile_thresh}%")
-
     with c_c3:
         st.write(f"- **Residual Metric:** {selected_metric}")
         st.write("- **Match Strategy:** Unwarped Euclidean Search")
-
     st.markdown("---")
     if st.button("Calibrate Baseline Model", type="primary", use_container_width=True):
         status_text = st.empty()
         progress_bar = st.progress(0)
-
         engine = KNNNearestNeighborEngine()
         engine.fit_baseline_with_progress(
             X_raw=train_split_df,
@@ -367,7 +339,6 @@ with tab1:
             progress_bar=progress_bar,
             status_text=status_text,
         )
-
         st.session_state["p2p_engine"] = engine
         st.session_state["active_train_key"] = selected_train_key
         st.session_state["active_feature_cols"] = feature_cols
@@ -377,13 +348,11 @@ with tab1:
         st.session_state["active_metric"] = selected_metric
         st.session_state["active_train_pct"] = train_split_pct
         st.success("Model Residual Engine Calibrated Successfully!")
-
     if "p2p_engine" in st.session_state:
         active_key = st.session_state.get("active_train_key")
         active_pct = st.session_state.get("active_percentile")
         active_met = st.session_state.get("active_metric")
         active_split = st.session_state.get("active_train_pct")
-
         if (
             active_key == selected_train_key
             and active_pct == percentile_thresh
@@ -403,7 +372,6 @@ with tab1:
 # ---------------------------------------------------------
 with tab2:
     st.subheader("Model Residual Trend (%) & Parameter Diagnostics")
-
     if "p2p_engine" not in st.session_state:
         st.warning("Please calibrate the baseline model in **Tab 1** first.")
     else:
@@ -413,27 +381,22 @@ with tab2:
         feature_cols = st.session_state["active_feature_cols"]
         raw_train_df = st.session_state["active_raw_train_df"]
         raw_split_test_df = st.session_state["active_raw_test_df"]
-
         eval_options_map = {}
         raw_test_df = None
-
         # Check if active baseline is custom uploaded
         if active_train_key == CUSTOM_BASELINE_KEY:
             st.markdown("### 📤 Upload Custom Evaluation Dataset")
             st.info(
                 "You calibrated a custom baseline model. Please upload your custom evaluation CSV dataset matching the same feature tags to perform diagnostic comparisons."
             )
-
             if active_train_pct < 100 and not raw_split_test_df.empty:
                 EVAL_HOLDOUT_LABEL = f"Custom Baseline (Holdout {100 - active_train_pct}% Evaluation Set)"
                 eval_options_map[EVAL_HOLDOUT_LABEL] = raw_split_test_df
-
             uploaded_test_file = st.file_uploader(
                 "Upload Custom Evaluation CSV:",
                 type=["csv"],
                 key="tab2_custom_test_uploader",
             )
-
             if uploaded_test_file is not None:
                 try:
                     custom_test_df, test_features = get_clean_dataset(uploaded_test_file)
@@ -448,18 +411,15 @@ with tab2:
                 except Exception as e:
                     st.error(f"Failed to read evaluation CSV: {e}")
                     st.stop()
-
             if not eval_options_map:
                 st.warning("Please upload a custom evaluation CSV above to begin diagnostic evaluation.")
                 st.stop()
-
             selected_eval_label = st.selectbox(
                 "Select Evaluation Dataset to Compare Against Calibrated Custom Baseline:",
                 options=list(eval_options_map.keys()),
                 index=0,
             )
             raw_test_df = eval_options_map[selected_eval_label]
-
         else:
             # Preset datasets map
             if active_train_pct < 100 and not raw_split_test_df.empty:
@@ -468,14 +428,16 @@ with tab2:
             else:
                 EVAL_SELF_LABEL = f"{active_train_key} (Self-Evaluation Full Baseline)"
                 eval_options_map[EVAL_SELF_LABEL] = raw_train_df
-
             if active_train_key == "NOC6_1":
                 eval_options_map["Case_0"] = TEST_DATASETS["Case_0"]
             elif active_train_key == "NOC_Chiller":
                 for k, v in TEST_DATASETS.items():
                     if "chiller" in k.lower():
                         eval_options_map[k] = v
-
+            elif active_train_key == "NOC_HX":
+                for k, v in TEST_DATASETS.items():
+                    if "hx" in k.lower():
+                        eval_options_map[k] = v
             selected_eval_label = st.selectbox(
                 "Select Evaluation / Test Dataset to Compare Against Calibrated Baseline:",
                 options=list(eval_options_map.keys()),
@@ -484,9 +446,7 @@ with tab2:
                 if key in CASE_DESCRIPTIONS
                 else key,
             )
-
             selected_eval_val = eval_options_map[selected_eval_label]
-
             if isinstance(selected_eval_val, pd.DataFrame):
                 raw_test_df = selected_eval_val
             else:
@@ -495,17 +455,14 @@ with tab2:
                 except Exception as e:
                     st.error(f"Failed to load evaluation dataset: {e}")
                     st.stop()
-
         progress_eval = st.progress(0)
         eval_results = []
         predicted_matrix = []
         all_diag_list = []
         n_samples = len(raw_test_df)
-
         for i in range(n_samples):
             sample = raw_test_df[feature_cols].iloc[i].values
             res = engine.score_live_sample(sample)
-
             mr_val = res["Model_Residual_pct"]
             if mr_val > 10.0:
                 status_str = "ALERT BREACH (>10%)"
@@ -513,7 +470,6 @@ with tab2:
                 status_str = "ALARM BREACH (5%–10%)"
             else:
                 status_str = "Normal (≤5%)"
-
             eval_results.append(
                 {
                     "Sample": i,
@@ -523,7 +479,6 @@ with tab2:
                 }
             )
             predicted_matrix.append(res["raw_predicted"])
-
             all_diag_list.append(
                 {
                     "Actual Value (y)": sample,
@@ -533,14 +488,11 @@ with tab2:
                     "Normalized Deviation (σ)": res["std_residuals"],
                 }
             )
-
             if i % max(1, n_samples // 10) == 0:
                 progress_eval.progress(int((i + 1) / n_samples * 100))
         progress_eval.progress(100)
-
         results_df = pd.DataFrame(eval_results)
         pred_df = pd.DataFrame(predicted_matrix, columns=feature_cols)
-
         total_samples = len(results_df)
         total_alarms = (
             (results_df["Model Residual (%)"] > 5.0)
@@ -548,7 +500,6 @@ with tab2:
         ).sum()
         total_alerts = (results_df["Model Residual (%)"] > 10.0).sum()
         total_normal = (results_df["Model Residual (%)"] <= 5.0).sum()
-
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Evaluated Timestamps", total_samples)
         m2.metric("Normal Operating Range (≤5%)", total_normal)
@@ -564,21 +515,16 @@ with tab2:
             delta=f"{round((total_alerts / total_samples) * 100, 1)}%",
             delta_color="inverse",
         )
-
         st.markdown("---")
-
         col_sidebar, col_main = st.columns([1, 3])
-
         avg_std_res_all = np.mean(
             [np.abs(d["Normalized Deviation (σ)"]) for d in all_diag_list], axis=0
         )
         top_deviated_idx = np.argsort(avg_std_res_all)[::-1][:5]
         top_deviated_tags = [feature_cols[idx] for idx in top_deviated_idx]
-
         with col_sidebar:
             st.markdown("### 🎛️ Sensor Selection")
             st.caption("Tick sensors to overlay on the trend plot.")
-
             c_btn1, c_btn2 = st.columns(2)
             if c_btn1.button("Select All", use_container_width=True):
                 for f in feature_cols:
@@ -586,23 +532,19 @@ with tab2:
             if c_btn2.button("Clear All", use_container_width=True):
                 for f in feature_cols:
                     st.session_state[f"chk_{f}"] = False
-
             if st.button(
                 "Top 5 Deviations (σ)", use_container_width=True, type="secondary"
             ):
                 for f in feature_cols:
                     st.session_state[f"chk_{f}"] = f in top_deviated_tags
-
             st.markdown("---")
             selected_tags = []
             for idx, feature in enumerate(feature_cols):
                 default_state = True if idx == 0 else False
                 if f"chk_{feature}" not in st.session_state:
                     st.session_state[f"chk_{feature}"] = default_state
-
                 if st.checkbox(feature, key=f"chk_{feature}"):
                     selected_tags.append(feature)
-
         with col_main:
             st.markdown("### 📈 Model Residual (%) Trend")
             fig_mr = go.Figure()
@@ -633,7 +575,6 @@ with tab2:
                     line=dict(color="red", dash="dash", width=1.5),
                 )
             )
-
             fig_mr.update_layout(
                 xaxis_title="Sample Index",
                 yaxis_title="Model Residual (%)",
@@ -642,7 +583,6 @@ with tab2:
                 margin=dict(l=20, r=20, t=30, b=20),
             )
             st.plotly_chart(fig_mr, use_container_width=True)
-
             st.markdown("### 📊 Actual vs. Predicted Parameter Trends")
             if not selected_tags:
                 st.info(
@@ -651,10 +591,8 @@ with tab2:
             else:
                 fig_trends = go.Figure()
                 colors = px.colors.qualitative.Plotly
-
                 for i, tag in enumerate(selected_tags):
                     color = colors[i % len(colors)]
-
                     fig_trends.add_trace(
                         go.Scatter(
                             x=results_df["Sample"],
@@ -664,7 +602,6 @@ with tab2:
                             line=dict(color=color, width=2),
                         )
                     )
-
                     fig_trends.add_trace(
                         go.Scatter(
                             x=results_df["Sample"],
@@ -674,7 +611,6 @@ with tab2:
                             line=dict(color=color, width=1.5, dash="dash"),
                         )
                     )
-
                 fig_trends.update_layout(
                     xaxis_title="Sample Index",
                     yaxis_title="Parameter Value",
@@ -690,13 +626,10 @@ with tab2:
                     ),
                 )
                 st.plotly_chart(fig_trends, use_container_width=True)
-
         st.markdown("---")
         st.subheader("Sensor Diagnostics for Selected Timestamp")
-
         AVG_LABEL = "Average Sensor Residual"
         sample_options = [AVG_LABEL] + results_df["Sample"].tolist()
-
         sample_to_inspect = st.selectbox(
             "Select Timestamp to Inspect Sensor Breakdown:",
             options=sample_options,
@@ -705,7 +638,6 @@ with tab2:
             if x == AVG_LABEL
             else f"Sample #{x} (Matched Baseline Row #{results_df.loc[x, 'Matched Baseline Row']})",
         )
-
         if sample_to_inspect == AVG_LABEL:
             avg_actual = np.mean(
                 [d["Actual Value (y)"] for d in all_diag_list], axis=0
@@ -723,7 +655,6 @@ with tab2:
                 [d["Normalized Deviation (σ)"] for d in all_diag_list], axis=0
             )
             avg_mr_pct = results_df["Model Residual (%)"].mean()
-
             diag_df = pd.DataFrame(
                 {
                     "Sensor Tag": feature_cols,
@@ -735,14 +666,12 @@ with tab2:
                     "Abs Deviation (|σ|)": np.abs(avg_std_res),
                 }
             ).sort_values(by="Abs Deviation (|σ|)", ascending=False)
-
             st.info(
                 f"Displaying **{AVG_LABEL}** calculated across **{n_samples}** evaluated timestamps | Mean Model Residual: **{avg_mr_pct:.4f}%**"
             )
         else:
             raw_sample = raw_test_df[feature_cols].iloc[sample_to_inspect].values
             diag_res = engine.score_live_sample(raw_sample)
-
             diag_df = pd.DataFrame(
                 {
                     "Sensor Tag": feature_cols,
@@ -754,11 +683,9 @@ with tab2:
                     "Abs Deviation (|σ|)": np.abs(diag_res["std_residuals"]),
                 }
             ).sort_values(by="Abs Deviation (|σ|)", ascending=False)
-
             st.info(
                 f"Sample **#{sample_to_inspect}** matched to Baseline Timestamp **#{diag_res['nearest_baseline_idx']}** | Calculated Model Residual: **{diag_res['Model_Residual_pct']:.4f}%**"
             )
-
         c_chart1, c_chart2 = st.columns(2)
         with c_chart1:
             fig_pct = px.bar(
@@ -772,7 +699,6 @@ with tab2:
             )
             fig_pct.update_layout(yaxis={"categoryorder": "total ascending"})
             st.plotly_chart(fig_pct, use_container_width=True)
-
         with c_chart2:
             fig_sigma = px.bar(
                 diag_df.head(10),
@@ -785,7 +711,6 @@ with tab2:
             )
             fig_sigma.update_layout(yaxis={"categoryorder": "total ascending"})
             st.plotly_chart(fig_sigma, use_container_width=True)
-
         st.dataframe(
             diag_df.drop(columns=["Abs Deviation (|σ|)"]).style.format(
                 {
@@ -799,7 +724,6 @@ with tab2:
             use_container_width=True,
             height=300,
         )
-
         st.session_state["current_eval_df"] = raw_test_df
 
 # ---------------------------------------------------------
@@ -807,7 +731,6 @@ with tab2:
 # ---------------------------------------------------------
 with tab3:
     st.subheader("3D Space: Live Sample vs. Nearest Baseline Point")
-
     if "p2p_engine" not in st.session_state:
         st.warning("Please calibrate the baseline model in **Tab 1** first.")
     else:
@@ -815,7 +738,6 @@ with tab3:
         feature_cols = st.session_state["active_feature_cols"]
         raw_train_df = st.session_state["active_raw_train_df"]
         raw_eval_df = st.session_state.get("current_eval_df", raw_train_df)
-
         col_p1, col_p2, col_p3 = st.columns(3)
         with col_p1:
             x_tag = st.selectbox("X-Axis Sensor Tag:", options=feature_cols, index=0)
@@ -831,13 +753,11 @@ with tab3:
                 options=feature_cols,
                 index=min(2, len(feature_cols) - 1),
             )
-
         live_sample_idx = st.selectbox(
             "Select Live Timestamp to Overlay in 3D Space:",
             options=list(range(len(raw_eval_df))),
             format_func=lambda i: f"Sample #{i}",
         )
-
         fig_3d = px.scatter_3d(
             engine.X_train_raw,
             x=x_tag,
@@ -847,25 +767,20 @@ with tab3:
             title="Baseline Space with Live Point Match Vector",
         )
         fig_3d.update_traces(marker=dict(size=2, color="blue"))
-
         raw_live_sample = raw_eval_df[feature_cols].iloc[live_sample_idx].values
         live_res = engine.score_live_sample(raw_live_sample)
-
         live_x = raw_eval_df[x_tag].iloc[live_sample_idx]
         live_y = raw_eval_df[y_tag].iloc[live_sample_idx]
         live_z = raw_eval_df[z_tag].iloc[live_sample_idx]
-
         target_row_raw = live_res["raw_predicted"]
         target_x = target_row_raw[feature_cols.index(x_tag)]
         target_y = target_row_raw[feature_cols.index(y_tag)]
         target_z = target_row_raw[feature_cols.index(z_tag)]
-
         point_color = "green"
         if live_res["Is_Alert"]:
             point_color = "red"
         elif live_res["Is_Alarm"]:
             point_color = "orange"
-
         fig_3d.add_trace(
             go.Scatter3d(
                 x=[live_x],
@@ -880,7 +795,6 @@ with tab3:
                 ),
             )
         )
-
         fig_3d.add_trace(
             go.Scatter3d(
                 x=[live_x, target_x],
@@ -892,7 +806,6 @@ with tab3:
                 marker=dict(size=4, color="orange"),
             )
         )
-
         fig_3d.update_layout(
             height=700,
             scene=dict(
@@ -903,5 +816,4 @@ with tab3:
             ),
             margin=dict(l=0, r=0, b=0, t=40),
         )
-
         st.plotly_chart(fig_3d, use_container_width=True)
