@@ -234,10 +234,17 @@ with tab1:
     CUSTOM_BASELINE_KEY = "Upload Custom Baseline CSV..."
     with col_cfg1:
         baseline_options = list(BASELINE_DATASETS.keys()) + [CUSTOM_BASELINE_KEY]
+        # Default the Tab 1 baseline selection to the Heat Exchanger (NOC_HX) dataset.
+        default_baseline_key = "NOC_HX"
+        default_baseline_index = (
+            baseline_options.index(default_baseline_key)
+            if default_baseline_key in baseline_options
+            else 0
+        )
         selected_train_key = st.selectbox(
             "Select Baseline / Training Dataset:",
             options=baseline_options,
-            index=0,  # Default to NOC_Chiller
+            index=default_baseline_index,  # Default to NOC_HX (Heat Exchanger)
             key="tab1_train_dataset_select",
         )
         uploaded_baseline_file = None
