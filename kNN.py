@@ -16,9 +16,8 @@ st.set_page_config(
 )
 
 st.title("k-NN Normalized Residual & Diagnostic System")
-st.caption(
-    "Empirical Pattern Matching via k-Nearest Neighbor Point-to-Point Baseline Alignment."
-)
+st.caption("Empirical Pattern Matching via k-Nearest Neighbor Point-to-Point Baseline Alignment.")
+st.caption("Developed by Iqbal SHERPA 20260901. Contact me for further information @iqbalshafiq96@gmail.com")
 
 
 # ---------------------------------------------------------
