@@ -1,17 +1,16 @@
 """
 app.py
 
-Two-page LP optimizer Streamlit app — single file.
+Two-page LP optimizer Streamlit app - single file.
 Page 1: worked refinery crude-oil purchasing example (readable variable names).
 Page 2: user builds their own LP using plain-word variable names (e.g. Utility,
-RawMaterial) — declared variables update live as the user types.
+RawMaterial) - declared variables update live as the user types.
 
 Both pages share the exact same solving pipeline (solve_lp) and the exact
 same result-display logic, so behavior is consistent between them.
 """
 
 import re
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -23,422 +22,330 @@ st.set_page_config(page_title="LP Optimizer", page_icon="📈", layout="centered
 
 IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
+# Reserved words/functions that SymPy or Python use that shouldn't be treated as user variables
+RESERVED_WORDS = {
+    "Min", "Max", "min", "max", "Abs", "abs", "sin", "cos", "tan",
+    "exp", "log", "sqrt", "True", "False", "None", "and", "or", "not"
+}
 
 # ========================================================================
-# LP ENGINE — parsing, linearity check, solving
+# LP ENGINE - parsing, linearity check, solving
 # ========================================================================
-def extract_identifiers(text):
+def extract_identifiers(text: str) -> set:
     """Find every word-like token in a string (candidate variable names)."""
-    return set(IDENTIFIER_RE.findall(text))
+    tokens = set(IDENTIFIER_RE.findall(text))
+    return tokens - RESERVED_WORDS
 
 
-def build_symbol_locals(*texts):
+def build_symbol_locals(*texts) -> dict:
+    """Build a dict of plain sympy Symbols for every word found across texts."""
+    all_tokens = set()
+    for text in texts:
+        all_tokens.update(extract_identifiers(text))
+    return {token: sp.Symbol(token) for token in all_tokens}
+
+
+def parse_equation_or_inequality(expr_str: str, local_dict: dict):
     """
-    Build a dict of plain sympy Symbols for every word found across the given
-    strings. Passing this as `locals=` to sympify forces words like 'Utility'
-    or 'beta' to always be treated as ordinary variables, never as a sympy
-    built-in function or constant (e.g. E, I, S, O, pi, beta, gamma).
+    Parses string equations/inequalities into a standard SymPy expression
+    normalized to: Expression <= 0, Expression >= 0, or Expression == 0.
     """
-    names = set()
-    for t in texts:
-        names |= extract_identifiers(t)
-    return {name: sp.Symbol(name) for name in names}
-
-
-def parse_expression(expr_str, local_dict=None):
-    """Parse a string like '4*Utility + 7*RawMaterial' into a sympy expression."""
-    expr_str = expr_str.strip().replace("^", "**")
+    expr_str = expr_str.strip()
     if not expr_str:
-        raise ValueError("Empty expression.")
-    return sp.sympify(expr_str, locals=local_dict or {})
+        return None, None
+
+    if "<=" in expr_str:
+        lhs, rhs = expr_str.split("<=", 1)
+        rel = "<="
+    elif ">=" in expr_str:
+        lhs, rhs = expr_str.split(">=", 1)
+        rel = ">="
+    elif "=" in expr_str:
+        lhs, rhs = expr_str.split("=", 1)
+        rel = "=="
+    else:
+        raise ValueError(f"Constraint standard sign missing ('<=', '>=', '='): {expr_str}")
+
+    sym_lhs = sp.sympify(lhs, locals=local_dict)
+    sym_rhs = sp.sympify(rhs, locals=local_dict)
+    diff = sym_lhs - sym_rhs
+    return diff, rel
 
 
-def parse_constraint(constraint_str, local_dict=None):
+def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: list, bounds_dict: dict):
     """
-    Parse a constraint string like 'Utility + RawMaterial <= 50' into
-    (lhs_minus_rhs_expr, relation_string). Everything is moved to one side
-    so it can be compared to zero.
+    Universal LP solver using SymPy for algebraic parsing and SciPy linprog for numerical optimization.
     """
-    constraint_str = constraint_str.strip().replace("^", "**")
-    for rel in ["<=", ">=", "=="]:
-        if rel in constraint_str:
-            lhs_str, rhs_str = constraint_str.split(rel)
-            lhs = sp.sympify(lhs_str.strip(), locals=local_dict or {})
-            rhs = sp.sympify(rhs_str.strip(), locals=local_dict or {})
-            return lhs - rhs, rel
-    raise ValueError(f"Constraint '{constraint_str}' must contain <=, >=, or ==")
+    if not var_names:
+        return {"success": False, "message": "No variables defined."}
 
+    # Order variables deterministically
+    var_names = sorted(list(var_names))
+    sym_vars = [sp.Symbol(v) for v in var_names]
+    local_dict = {v: sym_vars[i] for i, v in enumerate(var_names)}
 
-def extract_variables(expressions):
-    """Union of all symbols found across a list of sympy expressions, sorted by name."""
-    variables = set()
-    for e in expressions:
-        variables |= e.free_symbols
-    return sorted(variables, key=lambda v: v.name)
-
-
-def check_linearity(expr, variables):
-    """
-    Deterministic linearity check: an expression is usable in an LP only if
-    every variable appears with total degree <= 1, with no products between
-    variables (e.g. Utility*RawMaterial or Utility**2 are rejected).
-    """
-    poly = sp.Poly(sp.expand(expr), *variables)
-    if poly.total_degree() > 1:
-        return False, f"'{sp.expand(expr)}' contains a non-linear term (degree > 1)."
-    return True, ""
-
-
-def build_lp_matrices(objective_expr, constraint_tuples, variables, sense="max"):
-    """Convert sympy objective + constraints into matrices scipy.linprog needs."""
-    objective_expr = sp.expand(objective_expr)
-    c = np.array([float(objective_expr.coeff(v)) for v in variables], dtype=float)
-    if sense == "max":
-        c = -c  # linprog always minimizes
-
-    A_ub, b_ub, A_eq, b_eq = [], [], [], []
-
-    for lhs, rel in constraint_tuples:
-        lhs = sp.expand(lhs)
-        row = [float(lhs.coeff(v)) for v in variables]
-        const_term = float(lhs.subs({v: 0 for v in variables}))
-
-        if rel == "<=":
-            A_ub.append(row)
-            b_ub.append(-const_term)
-        elif rel == ">=":
-            A_ub.append([-x for x in row])
-            b_ub.append(const_term)
-        elif rel == "==":
-            A_eq.append(row)
-            b_eq.append(-const_term)
-
-    bounds = [(0, None) for _ in variables]  # default non-negativity, x_i >= 0
-
-    return (
-        c,
-        np.array(A_ub) if A_ub else None,
-        np.array(b_ub) if b_ub else None,
-        np.array(A_eq) if A_eq else None,
-        np.array(b_eq) if b_eq else None,
-        bounds,
-    )
-
-
-def solve_lp(objective_str, constraint_strs, sense="max"):
-    """
-    End-to-end pipeline: parse -> check linearity -> build matrices -> solve.
-
-    Returns a dict:
-        linear (bool)            - False if objective/constraints aren't linear
-        feasible (bool)          - False if no solution exists (or unbounded)
-        message (str)            - human-readable status
-        variables (list[str])
-        values (dict[str, float])
-        objective_value (float)
-    """
-    result = {
-        "linear": True,
-        "feasible": False,
-        "message": "",
-        "variables": [],
-        "values": {},
-        "objective_value": None,
-    }
-
-    # Build one shared symbol table so word-like names (Utility, FuelGas, ...)
-    # are always treated as plain variables, in both objective and constraints.
-    local_dict = build_symbol_locals(objective_str, *constraint_strs)
-
-    # --- Step 1: parse objective ---
+    # Parse Objective
     try:
-        objective_expr = parse_expression(objective_str, local_dict)
+        obj_expr = sp.sympify(objective_str, locals=local_dict)
     except Exception as e:
-        result["linear"] = False
-        result["message"] = f"Could not parse objective function: {e}"
-        return result
+        return {"success": False, "message": f"Error parsing objective function: {e}"}
 
-    # --- Step 2: parse constraints ---
-    constraint_tuples = []
-    for c_str in constraint_strs:
-        if not c_str.strip():
+    # Extract objective coefficients (c vector)
+    c = []
+    for var in sym_vars:
+        coeff = obj_expr.coeff(var)
+        # Verify linearity (no variable left in the coefficient)
+        if any(v in coeff.free_symbols for v in sym_vars):
+            return {"success": False, "message": f"Non-linear term detected in objective for variable {var}."}
+        c.append(float(coeff))
+
+    if sense.lower() == "maximize":
+        c = [-val for val in c]  # linprog minimizes by default
+
+    # Parse Constraints
+    A_ub, b_ub = [], []
+    A_eq, b_eq = [], []
+
+    for constr in constraints_list:
+        if not constr.strip():
             continue
         try:
-            constraint_tuples.append(parse_constraint(c_str, local_dict))
+            diff, rel = parse_equation_or_inequality(constr, local_dict)
         except Exception as e:
-            result["linear"] = False
-            result["message"] = f"Could not parse constraint '{c_str}': {e}"
-            return result
+            return {"success": False, "message": f"Error parsing constraint '{constr}': {e}"}
 
-    variables = extract_variables([objective_expr] + [lhs for lhs, _ in constraint_tuples])
-    if not variables:
-        result["linear"] = False
-        result["message"] = "No variables found in the objective or constraints."
-        return result
+        # Extract constant term and linear coefficients
+        const_term = float(diff.as_coefficients_dict().get(1, 0))
+        coeffs = []
+        for var in sym_vars:
+            coeff = diff.coeff(var)
+            if any(v in coeff.free_symbols for v in sym_vars):
+                return {"success": False, "message": f"Non-linear term detected in constraint '{constr}'."}
+            coeffs.append(float(coeff))
 
-    # --- Step 3: deterministic linearity check ---
-    is_linear, reason = check_linearity(objective_expr, variables)
-    if not is_linear:
-        result["linear"] = False
-        result["message"] = f"Objective function is not linear: {reason}"
-        return result
-
-    for lhs, _ in constraint_tuples:
-        is_linear, reason = check_linearity(lhs, variables)
-        if not is_linear:
-            result["linear"] = False
-            result["message"] = f"A constraint is not linear: {reason}"
-            return result
-
-    # --- Step 4: solve ---
-    c, A_ub, b_ub, A_eq, b_eq, bounds = build_lp_matrices(
-        objective_expr, constraint_tuples, variables, sense
-    )
-    lp_result = linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq, bounds=bounds, method="highs")
-
-    result["variables"] = [str(v) for v in variables]
-
-    if lp_result.status == 0:
-        result["feasible"] = True
-        result["values"] = {str(v): round(float(val), 4) for v, val in zip(variables, lp_result.x)}
-        obj_val = lp_result.fun if sense == "min" else -lp_result.fun
-        result["objective_value"] = round(float(obj_val), 4)
-        result["message"] = "Optimal solution found."
-    elif lp_result.status == 2:
-        result["message"] = "Infeasible: no combination of variables satisfies every constraint at once."
-    elif lp_result.status == 3:
-        result["message"] = "Unbounded: the objective can improve forever — a constraint is likely missing."
-    else:
-        result["message"] = f"Solver status {lp_result.status}: {lp_result.message}"
-
-    return result
-
-
-# ========================================================================
-# SHARED UI HELPERS — used by both pages
-# ========================================================================
-def display_results(objective_str, constraint_strs, sense, result):
-    st.subheader("Linearity & feasibility check")
-
-    if not result["linear"]:
-        st.error(f"❌ Not solvable as an LP — {result['message']}")
-        st.caption("Every term must be degree ≤ 1 in each variable (no A·B, no A², no 1/A).")
-        return
-    st.success("✅ Objective and constraints are linear — valid LP formulation.")
-
-    if not result["feasible"]:
-        st.error(f"❌ {result['message']}")
-        return
-    st.success(f"✅ {result['message']}")
-
-    st.subheader("Optimal solution")
-    st.metric("Objective value (Z)", f"{result['objective_value']:,}")
-
-    df = pd.DataFrame(
-        {"Variable": list(result["values"].keys()), "Optimal value": list(result["values"].values())}
-    )
-    st.dataframe(df, use_container_width=True, hide_index=True)
-
-    fig, ax = plt.subplots(figsize=(5, 3))
-    ax.bar(df["Variable"], df["Optimal value"], color="#2a78d6")
-    ax.set_ylabel("Value")
-    ax.set_title("Optimal variable values")
-    plt.xticks(rotation=20, ha="right")
-    st.pyplot(fig)
-
-    # Bonus: for exactly 2 variables, draw the classic feasible-region plot
-    if len(result["variables"]) == 2:
-        st.subheader("Graphical view (2-variable reduction)")
-        plot_feasible_region(objective_str, constraint_strs, result)
-
-
-def plot_feasible_region(objective_str, constraint_strs, result):
-    """Draws the feasible region, constraint lines, and optimal point for a 2-variable LP."""
-    var_names = result["variables"]
-    local_dict = build_symbol_locals(objective_str, *constraint_strs)
-    vx, vy = local_dict[var_names[0]], local_dict[var_names[1]]
-
-    constraints = []
-    for c_str in constraint_strs:
-        if c_str.strip():
-            lhs, rel = parse_constraint(c_str, local_dict)
-            constraints.append((sp.expand(lhs), rel))
-
-    opt_x = result["values"][var_names[0]]
-    opt_y = result["values"][var_names[1]]
-    bound = max(opt_x, opt_y, 10) * 1.6
-
-    xs = np.linspace(0, bound, 250)
-    ys = np.linspace(0, bound, 250)
-    X, Y = np.meshgrid(xs, ys)
-    feasible = np.ones_like(X, dtype=bool)
-
-    fig, ax = plt.subplots(figsize=(5, 5))
-    for lhs, rel in constraints:
-        f = sp.lambdify((vx, vy), lhs, "numpy")
-        Z = f(X, Y)
+        # Re-arrange: coeff*vars + const (rel) 0  =>  coeff*vars (rel) -const
         if rel == "<=":
-            feasible &= Z <= 0
+            A_ub.append(coeffs)
+            b_ub.append(-const_term)
         elif rel == ">=":
-            feasible &= Z >= 0
+            A_ub.append([-val for val in coeffs])
+            b_ub.append(const_term)
         elif rel == "==":
-            feasible &= np.abs(Z) < 1e-6
-        ax.contour(X, Y, Z, levels=[0], colors="#D85A30", linewidths=1.2)
+            A_eq.append(coeffs)
+            b_eq.append(-const_term)
 
-    feasible &= (X >= 0) & (Y >= 0)
-    ax.contourf(X, Y, feasible.astype(int), levels=[0.5, 1], colors=["#9FE1CB"], alpha=0.5)
-    ax.scatter([opt_x], [opt_y], color="#0C447C", s=70, zorder=5, label="Optimal point")
-    ax.set_xlabel(var_names[0])
-    ax.set_ylabel(var_names[1])
-    ax.set_title("Feasible region & optimal vertex")
-    ax.legend()
-    st.pyplot(fig)
+    # Format bounds for linprog
+    bounds = [bounds_dict.get(v, (0, None)) for v in var_names]
+
+    # Run SciPy linprog
+    res = linprog(
+        c=c,
+        A_ub=A_ub if A_ub else None,
+        b_ub=b_ub if b_ub else None,
+        A_eq=A_eq if A_eq else None,
+        b_eq=b_eq if b_eq else None,
+        bounds=bounds,
+        method="highs"
+    )
+
+    if res.success:
+        opt_val = -res.fun if sense.lower() == "maximize" else res.fun
+        solution = dict(zip(var_names, res.x))
+        return {
+            "success": True,
+            "fun": opt_val,
+            "x": solution,
+            "message": res.message,
+            "status": res.status
+        }
+    else:
+        return {"success": False, "message": f"Solver failed: {res.message}"}
+
+
+def display_results(result: dict, sense: str):
+    """Shared UI rendering logic for LP execution results."""
+    if result["success"]:
+        st.success("Optimization Completed Successfully!")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric(label=f"Optimal Objective Value ({sense})", value=f"{result['fun']:,.4f}")
+
+        st.subheader("Optimal Decision Variable Values")
+        df_res = pd.DataFrame(
+            list(result["x"].items()),
+            columns=["Variable", "Optimal Value"]
+        )
+        st.dataframe(df_res.style.format({"Optimal Value": "{:,.4f}"}), use_container_width=True)
+
+        # Plot variable allocations bar chart
+        fig, ax = plt.subplots(figsize=(6, 3))
+        ax.bar(df_res["Variable"], df_res["Optimal Value"], color="#4C72B0")
+        ax.set_ylabel("Value")
+        ax.set_title("Decision Variable Allocations")
+        plt.xticks(rotation=45, ha="right")
+        st.pyplot(fig)
+    else:
+        st.error(f"Solver Error: {result['message']}")
 
 
 # ========================================================================
-# PAGE 1 — worked example (readable variable names: Oman, Tapis, Labuan, Murban)
+# STREAMLIT UI - Navigation and Page Routing
 # ========================================================================
-def page_example():
-    st.header("Refinery crude oil purchasing")
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Select Page:", ["Page 1: Worked Refinery Example", "Page 2: Custom LP Builder"])
 
+
+# ------------------------------------------------------------------------
+# PAGE 1: Worked Refinery Example
+# ------------------------------------------------------------------------
+if page == "Page 1: Worked Refinery Example":
+    st.title("🛢️ Refinery Crude Oil Purchasing LP")
     st.markdown(
         """
-**Problem statement**
+A refinery buys crude oil from several suppliers and refines it into gasoline, diesel,
+and fuel oil. Each crude costs a different amount per m³ and yields a different mix of
+finished products - some crudes are richer in gasoline, others in diesel or fuel oil.
 
-A refinery buys crude oil from several suppliers and refines it into
-gasoline, diesel, and fuel oil. Each crude type costs a different amount
-per m³ and yields a different mix of finished products — some crudes are
-richer in gasoline, others in diesel or fuel oil.
-
-The refinery wants to decide **how much of each crude to buy and process
-per day** in order to **maximize its Gross Refinery Margin (GRM)** —
-total product revenue minus crude purchase cost — while staying within:
-- how much of each crude its suppliers can actually deliver,
-- the refinery's total daily processing capacity, and
-- how much gasoline, diesel, and fuel oil the market will buy (demand bounds).
+The refinery wants to decide **how much of each crude to buy and process per day** in
+order to **maximize Gross Refinery Margin (GRM)** - total product revenue minus crude
+purchase cost - while staying within crude supply limits, total daily processing
+(throughput) capacity, and how much of each product the market will absorb.
 
 Four crude types are available: **Oman, Tapis, Labuan,** and **Murban.**
 """
     )
 
-    sense = "max"
+    st.subheader("Objective function")
+    st.latex(
+        r"""
+        \text{Maximize GRM} =\ 650(0.35\,Oman + 0.45\,Tapis + 0.30\,Labuan + 0.40\,Murban)
+        """
+    )
+    st.caption("# Revenue from gasoline — price $650/m³ × each crude's gasoline yield")
+    st.latex(
+        r"""
+        {}+\ 580(0.40\,Oman + 0.30\,Tapis + 0.25\,Labuan + 0.35\,Murban)
+        """
+    )
+    st.caption("# Revenue from diesel — price $580/m³ × each crude's diesel yield")
+    st.latex(
+        r"""
+        {}+\ 350(0.15\,Oman + 0.10\,Tapis + 0.30\,Labuan + 0.15\,Murban)
+        """
+    )
+    st.caption("# Revenue from fuel oil — price $350/m³ × each crude's fuel oil yield")
+    st.latex(
+        r"""
+        {}-\ 420\,Oman - 460\,Tapis - 440\,Labuan - 450\,Murban
+        """
+    )
+    st.caption("# Crude purchase cost — price per m³ × volume bought, for each crude")
+
+    st.subheader("Constraints")
+
+    st.latex(r"Oman \le 260{,}000 \qquad Tapis \le 45{,}000 \qquad Labuan \le 40{,}000 \qquad Murban \le 95{,}000")
+    st.caption("# Crude supply limits — the most each supplier can deliver per day (m³/day)")
+
+    st.latex(r"Oman + Tapis + Labuan + Murban \le 300{,}000")
+    st.caption("# Throughput capacity — total crude the refinery can physically process, 300,000 m³/day")
+
+    st.latex(
+        r"90{,}000 \le 0.35\,Oman + 0.45\,Tapis + 0.30\,Labuan + 0.40\,Murban \le 130{,}000"
+    )
+    st.caption("# Gasoline demand band — the market absorbs between 90,000 and 130,000 m³/day")
+
+    st.latex(
+        r"60{,}000 \le 0.40\,Oman + 0.30\,Tapis + 0.25\,Labuan + 0.35\,Murban \le 90{,}000"
+    )
+    st.caption("# Diesel demand band")
+
+    st.latex(r"0.15\,Oman + 0.10\,Tapis + 0.30\,Labuan + 0.15\,Murban \ge 20{,}000")
+    st.caption("# Fuel oil minimum — the refinery must produce at least this much fuel oil per day")
+
+    # ---- solver inputs, matching the formulas & comments shown above ----
     objective_str = (
-        "650*(0.35*Oman+0.45*Tapis+0.30*Labuan+0.40*Murban) + "
-        "580*(0.40*Oman+0.30*Tapis+0.25*Labuan+0.35*Murban) + "
-        "350*(0.15*Oman+0.10*Tapis+0.30*Labuan+0.15*Murban) - "
-        "420*Oman - 460*Tapis - 440*Labuan - 450*Murban"
+        "650*(0.35*Oman+0.45*Tapis+0.30*Labuan+0.40*Murban) + "   # revenue: gasoline
+        "580*(0.40*Oman+0.30*Tapis+0.25*Labuan+0.35*Murban) + "   # revenue: diesel
+        "350*(0.15*Oman+0.10*Tapis+0.30*Labuan+0.15*Murban) - "   # revenue: fuel oil
+        "420*Oman - 460*Tapis - 440*Labuan - 450*Murban"          # cost: crude purchase
     )
-    constraint_strs = [
-        "Oman <= 260000",
-        "Tapis <= 45000",
-        "Labuan <= 40000",
-        "Murban <= 95000",
-        "Oman + Tapis + Labuan + Murban <= 300000",
-        "0.35*Oman + 0.45*Tapis + 0.30*Labuan + 0.40*Murban >= 90000",
-        "0.35*Oman + 0.45*Tapis + 0.30*Labuan + 0.40*Murban <= 130000",
-        "0.40*Oman + 0.30*Tapis + 0.25*Labuan + 0.35*Murban >= 60000",
-        "0.40*Oman + 0.30*Tapis + 0.25*Labuan + 0.35*Murban <= 90000",
-        "0.15*Oman + 0.10*Tapis + 0.30*Labuan + 0.15*Murban >= 20000",
+    constraints_list = [
+        "Oman <= 260000",                                              # Oman supply limit
+        "Tapis <= 45000",                                              # Tapis supply limit
+        "Labuan <= 40000",                                             # Labuan supply limit
+        "Murban <= 95000",                                             # Murban supply limit
+        "Oman + Tapis + Labuan + Murban <= 300000",                    # throughput capacity: 300,000 m3/d
+        "0.35*Oman + 0.45*Tapis + 0.30*Labuan + 0.40*Murban >= 90000", # gasoline demand floor
+        "0.35*Oman + 0.45*Tapis + 0.30*Labuan + 0.40*Murban <= 130000",# gasoline demand ceiling
+        "0.40*Oman + 0.30*Tapis + 0.25*Labuan + 0.35*Murban >= 60000", # diesel demand floor
+        "0.40*Oman + 0.30*Tapis + 0.25*Labuan + 0.35*Murban <= 90000", # diesel demand ceiling
+        "0.15*Oman + 0.10*Tapis + 0.30*Labuan + 0.15*Murban >= 20000", # fuel oil minimum
     ]
+    var_names = ["Oman", "Tapis", "Labuan", "Murban"]
+    bounds_dict = {v: (0, None) for v in var_names}
 
-    with st.expander("Show objective function & constraints"):
-        st.markdown("**Decision variables:** daily m³ of each crude processed — "
-                     "`Oman`, `Tapis`, `Labuan`, `Murban`")
-        st.markdown("**Objective (maximize GRM):**")
-        st.code(objective_str, language="text")
-        st.markdown("**Constraints:**")
-        for c in constraint_strs:
-            st.code(c, language="text")
-
-    if st.button("Solve example", type="primary"):
-        result = solve_lp(objective_str, constraint_strs, sense)
-        display_results(objective_str, constraint_strs, sense, result)
-
-
-# ========================================================================
-# PAGE 2 — custom user-built LP (word-based variable names)
-# ========================================================================
-def page_custom():
-    st.header("Build your own LP problem")
-    st.caption(
-        "Use plain, meaningful variable names instead of x, y — e.g. `Utility`, "
-        "`RawMaterial`, `FuelGas`. Any word works as a variable."
-    )
-
-    st.subheader("1. Objective function")
-    sense_label = st.radio("Direction:", ["Maximize", "Minimize"], horizontal=True)
-    objective_str = st.text_area(
-        "Enter your objective function:",
-        placeholder="e.g. 4*Utility + 7*RawMaterial",
-        key="objective_input",
-    )
-
-    obj_vars = []
-    if objective_str.strip():
-        try:
-            local_dict = build_symbol_locals(objective_str)
-            expr = parse_expression(objective_str, local_dict)
-            obj_vars = sorted(str(v) for v in expr.free_symbols)
-        except Exception as e:
-            st.warning(f"Can't parse this yet: {e}")
-
-    if obj_vars:
-        st.markdown("**Declared variables so far:** " + ", ".join(f"`{v}`" for v in obj_vars))
-    else:
-        st.caption("Declared variables so far: none yet — start typing a variable name above.")
-
-    st.subheader("2. Constraints")
-    st.caption("One constraint per line, using <=, >=, or ==. Example: Utility + RawMaterial >= 50")
-    constraints_text = st.text_area(
-        "Enter constraints:",
-        placeholder="Utility + RawMaterial >= 50\nUtility <= 30\nRawMaterial <= 40",
-        height=140,
-        key="constraints_input",
-    )
-    constraint_strs = [c for c in constraints_text.split("\n") if c.strip()]
-
-    all_vars = set(obj_vars)
-    for c_str in constraint_strs:
-        all_vars |= extract_identifiers(c_str)
-    # drop bare numbers accidentally matched (identifiers regex won't match pure numbers, so this is just variables)
-    all_vars = sorted(all_vars)
-
-    if all_vars:
-        st.markdown("**All declared variables (objective + constraints):** "
-                     + ", ".join(f"`{v}`" for v in all_vars))
-
-    st.caption("Note: all variables are assumed non-negative (≥ 0) by default, as is standard for LPs.")
-
-    if st.button("Check & solve", type="primary"):
-        if not objective_str.strip():
-            st.error("Please enter an objective function first.")
-            return
-        sense = "max" if sense_label == "Maximize" else "min"
-        result = solve_lp(objective_str, constraint_strs, sense)
-        display_results(objective_str, constraint_strs, sense, result)
+    if st.button("Solve Refinery Optimization", type="primary"):
+        res = solve_lp(
+            objective_str=objective_str,
+            constraints_list=constraints_list,
+            sense="Maximize",
+            var_names=var_names,
+            bounds_dict=bounds_dict
+        )
+        display_results(res, "Maximize")
 
 
-# ========================================================================
-# NAVIGATION + ROUTER
-# ========================================================================
-if "page" not in st.session_state:
-    st.session_state.page = "example"
-
-st.title("📈 Linear Programming Optimizer")
-
-col1, col2 = st.columns(2)
-with col1:
-    if st.button("📘 Example: Refinery Crude LP", use_container_width=True,
-                 type="primary" if st.session_state.page == "example" else "secondary"):
-        st.session_state.page = "example"
-with col2:
-    if st.button("✍️ Build Your Own LP", use_container_width=True,
-                 type="primary" if st.session_state.page == "custom" else "secondary"):
-        st.session_state.page = "custom"
-
-st.divider()
-
-if st.session_state.page == "example":
-    page_example()
+# ------------------------------------------------------------------------
+# PAGE 2: User Custom LP Builder
+# ------------------------------------------------------------------------
 else:
-    page_custom()
+    st.title("🛠️ Custom Linear Program Builder")
+    st.markdown("Build your own linear program dynamically. Variable names are automatically extracted as you type.")
+
+    col_opt, col_sense = st.columns([3, 1])
+    with col_sense:
+        sense = st.selectbox("Optimization Sense", ["Maximize", "Minimize"])
+    with col_opt:
+        obj_input = st.text_input("Objective Function", "40 * Utility + 30 * RawMaterial")
+
+    st.subheader("Constraints")
+    st.caption("Enter one constraint per line using `<=`, `>=`, or `=`.")
+    constraints_input = st.text_area(
+        "Constraints List",
+        value="2 * Utility + 1 * RawMaterial <= 100\n1 * Utility + 2 * RawMaterial <= 80",
+        height=120
+    )
+
+    # Dynamic Live Variable Parsing
+    all_text = obj_input + "\n" + constraints_input
+    detected_vars = sorted(list(extract_identifiers(all_text)))
+
+    st.subheader("Variable Bounds")
+    if detected_vars:
+        st.info(f"Detected Variables ({len(detected_vars)}): " + ", ".join(detected_vars))
+        bounds_dict = {}
+        cols = st.columns(min(len(detected_vars), 4))
+        for i, var in enumerate(detected_vars):
+            with cols[i % 4]:
+                st.write(f"**{var}**")
+                min_val = st.number_input(f"Min ({var})", value=0.0, key=f"min_{var}")
+                has_max = st.checkbox(f"Set Max ({var})", key=f"has_max_{var}")
+                max_val = st.number_input(f"Max ({var})", value=100.0, key=f"max_{var}") if has_max else None
+                bounds_dict[var] = (min_val, max_val)
+    else:
+        st.warning("No variables detected yet. Type an objective function or constraint above.")
+        bounds_dict = {}
+
+    st.divider()
+
+    if st.button("Solve Custom LP", type="primary"):
+        constraints_list = [c.strip() for c in constraints_input.split("\n") if c.strip()]
+        res = solve_lp(
+            objective_str=obj_input,
+            constraints_list=constraints_list,
+            sense=sense,
+            var_names=detected_vars,
+            bounds_dict=bounds_dict
+        )
+        display_results(res, sense)
