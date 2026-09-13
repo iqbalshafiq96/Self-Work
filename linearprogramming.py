@@ -190,17 +190,31 @@ def display_results(result: dict, sense: str):
 
 
 # ========================================================================
-# STREAMLIT UI - Navigation and Page Routing
+# NAVIGATION - two pages toggled by buttons
 # ========================================================================
-st.sidebar.title("Navigation")
-page = st.sidebar.radio("Select Page:", ["Page 1: Worked Refinery Example", "Page 2: Custom LP Builder"])
+if "page" not in st.session_state:
+    st.session_state.page = "example"
+
+st.title("📈 Linear Programming Optimizer")
+
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("📘 Example: Refinery Crude LP", use_container_width=True,
+                 type="primary" if st.session_state.page == "example" else "secondary"):
+        st.session_state.page = "example"
+with col2:
+    if st.button("✍️ Build Your Own LP", use_container_width=True,
+                 type="primary" if st.session_state.page == "custom" else "secondary"):
+        st.session_state.page = "custom"
+
+st.divider()
 
 
 # ------------------------------------------------------------------------
 # PAGE 1: Worked Refinery Example
 # ------------------------------------------------------------------------
-if page == "Page 1: Worked Refinery Example":
-    st.title("🛢️ Refinery Crude Oil Purchasing LP")
+def page_example():
+    st.header("Refinery crude oil purchasing")
     st.markdown(
         """
 A refinery buys crude oil from several suppliers and refines it into gasoline, diesel,
@@ -216,79 +230,47 @@ Four crude types are available: **Oman, Tapis, Labuan,** and **Murban.**
 """
     )
 
-    st.subheader("Objective function")
-    st.latex(
-        r"""
-        \text{Maximize GRM} =\ 650(0.35\,Oman + 0.45\,Tapis + 0.30\,Labuan + 0.40\,Murban)
-        """
-    )
-    st.caption("# Revenue from gasoline — price $650/m³ × each crude's gasoline yield")
-    st.latex(
-        r"""
-        {}+\ 580(0.40\,Oman + 0.30\,Tapis + 0.25\,Labuan + 0.35\,Murban)
-        """
-    )
-    st.caption("# Revenue from diesel — price $580/m³ × each crude's diesel yield")
-    st.latex(
-        r"""
-        {}+\ 350(0.15\,Oman + 0.10\,Tapis + 0.30\,Labuan + 0.15\,Murban)
-        """
-    )
-    st.caption("# Revenue from fuel oil — price $350/m³ × each crude's fuel oil yield")
-    st.latex(
-        r"""
-        {}-\ 420\,Oman - 460\,Tapis - 440\,Labuan - 450\,Murban
-        """
-    )
-    st.caption("# Crude purchase cost — price per m³ × volume bought, for each crude")
-
-    st.subheader("Constraints")
-
-    st.latex(r"Oman \le 260{,}000 \qquad Tapis \le 45{,}000 \qquad Labuan \le 40{,}000 \qquad Murban \le 95{,}000")
-    st.caption("# Crude supply limits — the most each supplier can deliver per day (m³/day)")
-
-    st.latex(r"Oman + Tapis + Labuan + Murban \le 300{,}000")
-    st.caption("# Throughput capacity — total crude the refinery can physically process, 300,000 m³/day")
-
-    st.latex(
-        r"90{,}000 \le 0.35\,Oman + 0.45\,Tapis + 0.30\,Labuan + 0.40\,Murban \le 130{,}000"
-    )
-    st.caption("# Gasoline demand band — the market absorbs between 90,000 and 130,000 m³/day")
-
-    st.latex(
-        r"60{,}000 \le 0.40\,Oman + 0.30\,Tapis + 0.25\,Labuan + 0.35\,Murban \le 90{,}000"
-    )
-    st.caption("# Diesel demand band")
-
-    st.latex(r"0.15\,Oman + 0.10\,Tapis + 0.30\,Labuan + 0.15\,Murban \ge 20{,}000")
-    st.caption("# Fuel oil minimum — the refinery must produce at least this much fuel oil per day")
-
-    # ---- solver inputs, matching the formulas & comments shown above ----
     objective_str = (
-        "650*(0.35*Oman+0.45*Tapis+0.30*Labuan+0.40*Murban) + "   # revenue: gasoline
-        "580*(0.40*Oman+0.30*Tapis+0.25*Labuan+0.35*Murban) + "   # revenue: diesel
-        "350*(0.15*Oman+0.10*Tapis+0.30*Labuan+0.15*Murban) - "   # revenue: fuel oil
-        "420*Oman - 460*Tapis - 440*Labuan - 450*Murban"          # cost: crude purchase
+        "650*(0.35*Oman+0.45*Tapis+0.30*Labuan+0.40*Murban) + "
+        "580*(0.40*Oman+0.30*Tapis+0.25*Labuan+0.35*Murban) + "
+        "350*(0.15*Oman+0.10*Tapis+0.30*Labuan+0.15*Murban) - "
+        "420*Oman - 460*Tapis - 440*Labuan - 450*Murban"
     )
-    constraints_list = [
-        "Oman <= 260000",                                              # Oman supply limit
-        "Tapis <= 45000",                                              # Tapis supply limit
-        "Labuan <= 40000",                                             # Labuan supply limit
-        "Murban <= 95000",                                             # Murban supply limit
-        "Oman + Tapis + Labuan + Murban <= 300000",                    # throughput capacity: 300,000 m3/d
-        "0.35*Oman + 0.45*Tapis + 0.30*Labuan + 0.40*Murban >= 90000", # gasoline demand floor
-        "0.35*Oman + 0.45*Tapis + 0.30*Labuan + 0.40*Murban <= 130000",# gasoline demand ceiling
-        "0.40*Oman + 0.30*Tapis + 0.25*Labuan + 0.35*Murban >= 60000", # diesel demand floor
-        "0.40*Oman + 0.30*Tapis + 0.25*Labuan + 0.35*Murban <= 90000", # diesel demand ceiling
-        "0.15*Oman + 0.10*Tapis + 0.30*Labuan + 0.15*Murban >= 20000", # fuel oil minimum
+    constraint_items = [
+        ("Oman <= 260000", "Oman supply limit — max Oman available per day (m³/day)"),
+        ("Tapis <= 45000", "Tapis supply limit"),
+        ("Labuan <= 40000", "Labuan supply limit"),
+        ("Murban <= 95000", "Murban supply limit"),
+        ("Oman + Tapis + Labuan + Murban <= 300000",
+         "Throughput capacity — total crude the refinery can process, 300,000 m³/day"),
+        ("0.35*Oman + 0.45*Tapis + 0.30*Labuan + 0.40*Murban >= 90000", "Gasoline demand floor"),
+        ("0.35*Oman + 0.45*Tapis + 0.30*Labuan + 0.40*Murban <= 130000", "Gasoline demand ceiling"),
+        ("0.40*Oman + 0.30*Tapis + 0.25*Labuan + 0.35*Murban >= 60000", "Diesel demand floor"),
+        ("0.40*Oman + 0.30*Tapis + 0.25*Labuan + 0.35*Murban <= 90000", "Diesel demand ceiling"),
+        ("0.15*Oman + 0.10*Tapis + 0.30*Labuan + 0.15*Murban >= 20000", "Fuel oil minimum"),
     ]
+    constraint_strs = [expr for expr, _ in constraint_items]
+
+    with st.expander("Show objective function & constraints", expanded=True):
+        st.markdown("**Decision variables:** daily m³ of each crude processed — "
+                     "`Oman`, `Tapis`, `Labuan`, `Murban`")
+
+        st.markdown("**Objective (maximize GRM):**")
+        st.code(objective_str, language="text")
+        st.caption("Revenue from gasoline + diesel + fuel oil, minus crude purchase cost.")
+
+        st.markdown("**Constraints:**")
+        for expr, note in constraint_items:
+            st.code(expr, language="text")
+            st.caption(note)
+
     var_names = ["Oman", "Tapis", "Labuan", "Murban"]
     bounds_dict = {v: (0, None) for v in var_names}
 
-    if st.button("Solve Refinery Optimization", type="primary"):
+    if st.button("Solve example", type="primary"):
         res = solve_lp(
             objective_str=objective_str,
-            constraints_list=constraints_list,
+            constraints_list=constraint_strs,
             sense="Maximize",
             var_names=var_names,
             bounds_dict=bounds_dict
@@ -299,9 +281,13 @@ Four crude types are available: **Oman, Tapis, Labuan,** and **Murban.**
 # ------------------------------------------------------------------------
 # PAGE 2: User Custom LP Builder
 # ------------------------------------------------------------------------
-else:
-    st.title("🛠️ Custom Linear Program Builder")
-    st.markdown("Build your own linear program dynamically. Variable names are automatically extracted as you type.")
+def page_custom():
+    st.header("Build your own LP problem")
+    st.caption(
+        "Use plain, meaningful variable names instead of x, y — e.g. `Utility`, "
+        "`RawMaterial`. Any word works as a variable, and the detected list "
+        "below updates as you type."
+    )
 
     col_opt, col_sense = st.columns([3, 1])
     with col_sense:
@@ -349,3 +335,12 @@ else:
             bounds_dict=bounds_dict
         )
         display_results(res, sense)
+
+
+# ========================================================================
+# ROUTER
+# ========================================================================
+if st.session_state.page == "example":
+    page_example()
+else:
+    page_custom()
