@@ -549,7 +549,7 @@ def page_custom():
         # -----------------------------------------------------------------
         # Dynamic Colored Preview Box for Objective and Constraints
         # -----------------------------------------------------------------
-        with st.expander("👁️ Live Highlighting Preview", expanded=True):
+        with st.expander("Optimization Problem Statement Preview", expanded=True):
             highlighted_obj = highlight_variables_in_text(obj_input, detected_vars)
             st.markdown(
                 f"**Parsed Objective:** {sense} &nbsp; <code>{highlighted_obj}</code>",
