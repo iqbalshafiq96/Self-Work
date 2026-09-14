@@ -367,7 +367,7 @@ def display_results(result: dict, sense: str, default_x: str = None, default_y: 
 if "page" not in st.session_state:
     st.session_state.page = "example"
 
-st.title("📈 Linear Programming Optimizer")
+st.title("Linear Programming Optimizer")
 
 col1, col2 = st.columns(2)
 with col1:
