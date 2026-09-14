@@ -16,6 +16,12 @@ RESERVED_WORDS = {
     "exp", "log", "sqrt", "True", "False", "None", "and", "or", "not"
 }
 
+# Distinct color palette for constraints in the Plotly figure
+CONSTRAINT_COLORS = [
+    "#FF4B4B", "#0083B8", "#00A86B", "#FF9F1C", "#9B51E0", 
+    "#E83E8C", "#17A2B8", "#FD7E14", "#20C997", "#6610F2"
+]
+
 # Initialize session state for solver results
 if "result_example" not in st.session_state:
     st.session_state.result_example = None
@@ -151,6 +157,7 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
             "b_eq": b_eq,
             "bounds": bounds,
             "var_names": var_names,
+            "raw_constraints": constraints_list
         }
     else:
         return {"success": False, "message": f"Solver failed: {res.message}"}
@@ -226,9 +233,10 @@ def plot_interactive_contour_lines(result: dict):
         )
     )
 
-    # 2. Linear Constraint Lines
+    # 2. Linear Constraint Lines with Unique Colors
     A_ub = result.get("A_ub", [])
     b_ub = result.get("b_ub", [])
+    raw_constraints = result.get("raw_constraints", [])
 
     if A_ub and b_ub:
         for idx, (a, b) in enumerate(zip(A_ub, b_ub)):
@@ -238,6 +246,10 @@ def plot_interactive_contour_lines(result: dict):
                     eff_b -= a[v_i] * result["x"][var_names[v_i]]
 
             a_x, a_y = a[x_idx], a[y_idx]
+            
+            # Select color dynamically cycling through palette
+            line_color = CONSTRAINT_COLORS[idx % len(CONSTRAINT_COLORS)]
+            constr_label = raw_constraints[idx] if idx < len(raw_constraints) else f"Constraint {idx+1}"
 
             if abs(a_y) > 1e-6:
                 y_line = (eff_b - a_x * x_vals) / a_y
@@ -246,8 +258,8 @@ def plot_interactive_contour_lines(result: dict):
                         x=x_vals,
                         y=y_line,
                         mode='lines',
-                        line=dict(color='#333333', width=2),
-                        name=f"Constraint {idx+1}",
+                        line=dict(color=line_color, width=2.5),
+                        name=f"C{idx+1}: {constr_label}",
                         hoverinfo="x+y"
                     )
                 )
@@ -258,8 +270,8 @@ def plot_interactive_contour_lines(result: dict):
                         x=[x_val, x_val],
                         y=[0, y_max],
                         mode='lines',
-                        line=dict(color='#333333', width=2),
-                        name=f"Constraint {idx+1}",
+                        line=dict(color=line_color, width=2.5),
+                        name=f"C{idx+1}: {constr_label}",
                         hoverinfo="x+y"
                     )
                 )
@@ -270,7 +282,7 @@ def plot_interactive_contour_lines(result: dict):
             x=[opt_x],
             y=[opt_y],
             mode='markers+text',
-            marker=dict(color='#d62728', size=12, symbol='circle'),
+            marker=dict(color='#D62728', size=12, symbol='circle', line=dict(color='black', width=1)),
             text=[f" Optimal ({opt_x:.2f}, {opt_y:.2f})"],
             textposition="top right",
             name="Optimal Solution",
@@ -283,9 +295,15 @@ def plot_interactive_contour_lines(result: dict):
         xaxis=dict(title=x_name, range=[0, x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         yaxis=dict(title=y_name, range=[0, y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         template="plotly_white",
-        height=500,
+        height=550,
         margin=dict(l=40, r=40, t=50, b=40),
-        legend=dict(x=0.01, y=0.99, bgcolor="rgba(255,255,255,0.8)"),
+        legend=dict(
+            x=1.02, 
+            y=1, 
+            bgcolor="rgba(255,255,255,0.9)", 
+            bordercolor="rgba(200,200,200,0.6)",
+            borderwidth=1
+        ),
     )
 
     st.plotly_chart(fig, use_container_width=True)
