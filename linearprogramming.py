@@ -20,6 +20,7 @@ CONSTRAINT_COLORS = [
     "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
 ]
 
+# Color palette for unique variable badges
 VAR_BADGE_COLORS = [
     {"bg": "#e1f5fe", "text": "#0288d1", "border": "#81d4fa"},
     {"bg": "#f3e5f5", "text": "#7b1fa2", "border": "#ce93d8"},
@@ -46,9 +47,11 @@ def extract_identifiers(text: str) -> set:
 
 
 def highlight_variables_in_text(text: str, detected_vars: list) -> str:
+    """Replaces variable occurrences in text with HTML styled badges."""
     if not text or not detected_vars:
         return text
 
+    # Sort identifiers by length descending to avoid partial string replacements
     sorted_vars = sorted(detected_vars, key=len, reverse=True)
     pattern = re.compile(r"\b(" + "|".join(re.escape(v) for v in sorted_vars) + r")\b")
 
@@ -184,7 +187,7 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
 
 
 def plot_interactive_contour_lines(result: dict, default_x: str = None, default_y: str = None):
-    """Generate an interactive 2D objective contour plot with accurate shaded feasible region."""
+    """Generate an interactive 2D objective contour plot with shaded feasible region."""
     var_names = result["var_names"]
 
     if len(var_names) < 2:
@@ -214,10 +217,8 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     x_max = max(opt_x * 1.5, 10.0)
     y_max = max(opt_y * 1.5, 10.0)
 
-    # Increased resolution grid for precision boundaries
-    grid_res = 400
-    x_vals = np.linspace(0, x_max, grid_res)
-    y_vals = np.linspace(0, y_max, grid_res)
+    x_vals = np.linspace(0, x_max, 250)
+    y_vals = np.linspace(0, y_max, 250)
     X, Y = np.meshgrid(x_vals, y_vals)
 
     fixed_objective_contrib = result.get("obj_const", 0.0)
@@ -239,34 +240,20 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
 
     fig = go.Figure()
 
-    # 1. EVALUATE PRECISE FEASIBLE REGION MASK
+    # 1. SHADE FEASIBLE REGION
     feasible_mask = np.ones_like(X, dtype=bool)
 
-    # Evaluate linear inequality constraints (A_ub * x <= b_ub)
     A_ub = result.get("A_ub", [])
     b_ub = result.get("b_ub", [])
     if A_ub and b_ub:
         for a, b in zip(A_ub, b_ub):
-            eff_b = float(b)
+            eff_b = b
             for v_i in range(len(var_names)):
                 if v_i not in (x_idx, y_idx):
-                    eff_b -= float(a[v_i]) * result["x"][var_names[v_i]]
-            lhs_val = float(a[x_idx]) * X + float(a[y_idx]) * Y
+                    eff_b -= a[v_i] * result["x"][var_names[v_i]]
+            lhs_val = a[x_idx] * X + a[y_idx] * Y
             feasible_mask = feasible_mask & (lhs_val <= eff_b + 1e-5)
 
-    # Evaluate linear equality constraints (A_eq * x == b_eq)
-    A_eq = result.get("A_eq", [])
-    b_eq = result.get("b_eq", [])
-    if A_eq and b_eq:
-        for a, b in zip(A_eq, b_eq):
-            eff_b = float(b)
-            for v_i in range(len(var_names)):
-                if v_i not in (x_idx, y_idx):
-                    eff_b -= float(a[v_i]) * result["x"][var_names[v_i]]
-            lhs_val = float(a[x_idx]) * X + float(a[y_idx]) * Y
-            feasible_mask = feasible_mask & (np.abs(lhs_val - eff_b) <= 1e-3)
-
-    # Evaluate bounds
     bounds = result.get("bounds", [])
     x_min_b, x_max_b = bounds[x_idx] if x_idx < len(bounds) else (0, None)
     y_min_b, y_max_b = bounds[y_idx] if y_idx < len(bounds) else (0, None)
@@ -280,26 +267,19 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     if y_max_b is not None:
         feasible_mask &= (Y <= y_max_b + 1e-5)
 
-    feasible_z = np.where(feasible_mask, 1.0, 0.0)
+    feasible_z = feasible_mask.astype(float)
+    feasible_z[~feasible_mask] = np.nan
 
-    # Render smooth shaded polygon contour for the feasible area
     fig.add_trace(
-        go.Contour(
+        go.Heatmap(
             x=x_vals,
             y=y_vals,
             z=feasible_z,
             showscale=False,
-            contours=dict(
-                type="constraint",
-                operation=">",
-                value=0.5,
-                coloring="fill"
-            ),
-            fillcolor="rgba(46, 204, 113, 0.25)",
-            line=dict(width=0),
+            colorscale=[[0, "rgba(46, 204, 113, 0.25)"], [1, "rgba(46, 204, 113, 0.25)"]],
+            hoverinfo="skip",
             name="Feasible Region",
-            showlegend=True,
-            hoverinfo="skip"
+            showlegend=True
         )
     )
 
@@ -335,12 +315,12 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     raw_constraints = result.get("raw_constraints", [])
     if A_ub and b_ub:
         for idx, (a, b) in enumerate(zip(A_ub, b_ub)):
-            eff_b = float(b)
+            eff_b = b
             for v_i in range(len(var_names)):
                 if v_i not in (x_idx, y_idx):
-                    eff_b -= float(a[v_i]) * result["x"][var_names[v_i]]
+                    eff_b -= a[v_i] * result["x"][var_names[v_i]]
 
-            a_x, a_y = float(a[x_idx]), float(a[y_idx])
+            a_x, a_y = a[x_idx], a[y_idx]
             line_color = CONSTRAINT_COLORS[idx % len(CONSTRAINT_COLORS)]
             constr_label = raw_constraints[idx] if idx < len(raw_constraints) else f"Constraint {idx+1}"
 
@@ -541,9 +521,11 @@ def page_custom():
         height=120
     )
 
+    # Parse all variables present across objective function and constraint text boxes
     all_text = obj_input + "\n" + constraints_input
     detected_vars = sorted(list(extract_identifiers(all_text)))
 
+    # Variable Bounds Section - Positioned right under constraints
     enable_bounds = st.checkbox("Enable Custom Variable Bounds", value=False)
     bounds_dict = {}
 
@@ -561,10 +543,12 @@ def page_custom():
         else:
             st.warning("No variables detected yet to configure bounds.")
     else:
+        # Default non-negativity bounds (0, ∞) when disabled
         bounds_dict = {var: (0.0, None) for var in detected_vars}
 
     st.divider()
 
+    # Render uniquely colored badges directly under input boxes
     if detected_vars:
         badge_spans = []
         for i, var in enumerate(detected_vars):
@@ -585,6 +569,9 @@ def page_custom():
         badges_html = " ".join(badge_spans)
         st.markdown(f"**Recognized Variables:** {badges_html}", unsafe_allow_html=True)
 
+        # -----------------------------------------------------------------
+        # Dynamic Colored Preview Box for Objective and Constraints
+        # -----------------------------------------------------------------
         with st.expander("Optimization Problem Statement Preview", expanded=True):
             highlighted_obj = highlight_variables_in_text(obj_input, detected_vars)
             st.markdown(
