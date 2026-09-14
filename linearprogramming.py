@@ -525,6 +525,29 @@ def page_custom():
     all_text = obj_input + "\n" + constraints_input
     detected_vars = sorted(list(extract_identifiers(all_text)))
 
+    # Variable Bounds Section - Positioned right under constraints
+    enable_bounds = st.checkbox("Enable Custom Variable Bounds", value=False)
+    bounds_dict = {}
+
+    if enable_bounds:
+        st.markdown("**Configure Bounds**")
+        if detected_vars:
+            cols = st.columns(min(len(detected_vars), 4))
+            for i, var in enumerate(detected_vars):
+                with cols[i % 4]:
+                    st.write(f"**{var}**")
+                    min_val = st.number_input(f"Min ({var})", value=0.0, key=f"min_{var}")
+                    has_max = st.checkbox(f"Set Max ({var})", key=f"has_max_{var}")
+                    max_val = st.number_input(f"Max ({var})", value=100.0, key=f"max_{var}") if has_max else None
+                    bounds_dict[var] = (min_val, max_val)
+        else:
+            st.warning("No variables detected yet to configure bounds.")
+    else:
+        # Default non-negativity bounds (0, ∞) when disabled
+        bounds_dict = {var: (0.0, None) for var in detected_vars}
+
+    st.divider()
+
     # Render uniquely colored badges directly under input boxes
     if detected_vars:
         badge_spans = []
@@ -567,21 +590,6 @@ def page_custom():
                     )
     else:
         st.markdown("*No variables detected yet.*")
-
-    st.subheader("Variable Bounds")
-    if detected_vars:
-        bounds_dict = {}
-        cols = st.columns(min(len(detected_vars), 4))
-        for i, var in enumerate(detected_vars):
-            with cols[i % 4]:
-                st.write(f"**{var}**")
-                min_val = st.number_input(f"Min ({var})", value=0.0, key=f"min_{var}")
-                has_max = st.checkbox(f"Set Max ({var})", key=f"has_max_{var}")
-                max_val = st.number_input(f"Max ({var})", value=100.0, key=f"max_{var}") if has_max else None
-                bounds_dict[var] = (min_val, max_val)
-    else:
-        st.warning("No variables detected yet. Type an objective function or constraint above.")
-        bounds_dict = {}
 
     st.divider()
 
