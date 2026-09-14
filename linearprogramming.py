@@ -46,6 +46,33 @@ def extract_identifiers(text: str) -> set:
     return tokens - RESERVED_WORDS
 
 
+def highlight_variables_in_text(text: str, detected_vars: list) -> str:
+    """Replaces variable occurrences in text with HTML styled badges."""
+    if not text or not detected_vars:
+        return text
+
+    # Sort identifiers by length descending to avoid partial string replacements
+    sorted_vars = sorted(detected_vars, key=len, reverse=True)
+    pattern = re.compile(r"\b(" + "|".join(re.escape(v) for v in sorted_vars) + r")\b")
+
+    def replacer(match):
+        var = match.group(0)
+        idx = detected_vars.index(var)
+        color = VAR_BADGE_COLORS[idx % len(VAR_BADGE_COLORS)]
+        style = (
+            f"background-color: {color['bg']}; "
+            f"color: {color['text']}; "
+            f"border: 1px solid {color['border']}; "
+            "padding: 1px 6px; "
+            "border-radius: 4px; "
+            "font-weight: 600; "
+            "font-family: monospace;"
+        )
+        return f'<span style="{style}">{var}</span>'
+
+    return pattern.sub(replacer, text)
+
+
 def parse_equation_or_inequality(expr_str: str, local_dict: dict):
     expr_str = expr_str.strip()
     if not expr_str:
@@ -213,9 +240,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
 
     fig = go.Figure()
 
-    # -------------------------------------------------------------------------
     # 1. SHADE FEASIBLE REGION
-    # -------------------------------------------------------------------------
     feasible_mask = np.ones_like(X, dtype=bool)
 
     A_ub = result.get("A_ub", [])
@@ -245,7 +270,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     feasible_z = feasible_mask.astype(float)
     feasible_z[~feasible_mask] = np.nan
 
-    # Solid green overlay for feasible area
     fig.add_trace(
         go.Heatmap(
             x=x_vals,
@@ -259,9 +283,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         )
     )
 
-    # -------------------------------------------------------------------------
     # 2. CONTOUR LINES & CONSTRAINTS
-    # -------------------------------------------------------------------------
     fig.add_trace(
         go.Contour(
             x=x_vals,
@@ -279,7 +301,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         )
     )
 
-    # Explicit legend item for Objective Contour Line to match dashed line style
     fig.add_trace(
         go.Scatter(
             x=[None],
@@ -328,9 +349,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                     )
                 )
 
-    # -------------------------------------------------------------------------
     # 3. OPTIMAL POINT MARKER
-    # -------------------------------------------------------------------------
     fig.add_trace(
         go.Scatter(
             x=[opt_x],
@@ -506,7 +525,7 @@ def page_custom():
     all_text = obj_input + "\n" + constraints_input
     detected_vars = sorted(list(extract_identifiers(all_text)))
 
-    # Render uniquely colored badges directly under both dialog boxes
+    # Render uniquely colored badges directly under input boxes
     if detected_vars:
         badge_spans = []
         for i, var in enumerate(detected_vars):
@@ -526,6 +545,26 @@ def page_custom():
 
         badges_html = " ".join(badge_spans)
         st.markdown(f"**Recognized Variables:** {badges_html}", unsafe_allow_html=True)
+
+        # -----------------------------------------------------------------
+        # Dynamic Colored Preview Box for Objective and Constraints
+        # -----------------------------------------------------------------
+        with st.expander("👁️ Live Highlighting Preview", expanded=True):
+            highlighted_obj = highlight_variables_in_text(obj_input, detected_vars)
+            st.markdown(
+                f"**Parsed Objective:** {sense} &nbsp; <code>{highlighted_obj}</code>",
+                unsafe_allow_html=True,
+            )
+
+            lines = [c.strip() for c in constraints_input.split("\n") if c.strip()]
+            if lines:
+                st.markdown("**Parsed Constraints:**")
+                for idx, line in enumerate(lines, 1):
+                    h_line = highlight_variables_in_text(line, detected_vars)
+                    st.markdown(
+                        f"&nbsp;&nbsp;**C{idx}:** <code>{h_line}</code>",
+                        unsafe_allow_html=True,
+                    )
     else:
         st.markdown("*No variables detected yet.*")
 
