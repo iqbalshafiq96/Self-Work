@@ -372,11 +372,11 @@ st.title("Linear Programming Optimizer")
 col1, col2 = st.columns(2)
 with col1:
     if st.button("📘 Example: Refinery Crude LP", use_container_width=True,
-                  type="primary" if st.session_state.page == "example" else "secondary"):
+                 type="primary" if st.session_state.page == "example" else "secondary"):
         st.session_state.page = "example"
 with col2:
     if st.button("✍️ Build Your Own LP", use_container_width=True,
-                  type="primary" if st.session_state.page == "custom" else "secondary"):
+                 type="primary" if st.session_state.page == "custom" else "secondary"):
         st.session_state.page = "custom"
 
 st.divider()
@@ -478,6 +478,16 @@ def page_custom():
 
     all_text = obj_input + "\n" + constraints_input
     detected_vars = sorted(list(extract_identifiers(all_text)))
+
+    # Render detected variables directly beneath the Objective Function dialog box area
+    if detected_vars:
+        badges_html = " ".join([
+            f'<code style="background-color: rgba(135, 206, 250, 0.2); color: #0f52ba; padding: 3px 8px; border-radius: 4px; font-weight: 600;">{var}</code>'
+            for var in detected_vars
+        ])
+        st.markdown(f"**Recognized Variables:** {badges_html}", unsafe_allow_html=True)
+    else:
+        st.markdown("*No variables detected yet.*")
 
     st.subheader("Variable Bounds")
     if detected_vars:
