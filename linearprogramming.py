@@ -16,10 +16,10 @@ RESERVED_WORDS = {
     "exp", "log", "sqrt", "True", "False", "None", "and", "or", "not"
 }
 
-# Distinct color palette for constraints in the Plotly figure
+# Color palette for clear, professional constraint lines
 CONSTRAINT_COLORS = [
-    "#FF4B4B", "#0083B8", "#00A86B", "#FF9F1C", "#9B51E0", 
-    "#E83E8C", "#17A2B8", "#FD7E14", "#20C997", "#6610F2"
+    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+    "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
 ]
 
 # Initialize session state for solver results
@@ -157,13 +157,13 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
             "b_eq": b_eq,
             "bounds": bounds,
             "var_names": var_names,
-            "raw_constraints": constraints_list
+            "raw_constraints": constraints_list,
         }
     else:
         return {"success": False, "message": f"Solver failed: {res.message}"}
 
 
-def plot_interactive_contour_lines(result: dict):
+def plot_interactive_contour_lines(result: dict, default_x: str = None, default_y: str = None):
     """Generate an interactive 2D objective contour plot with selectable 2D variable projection."""
     var_names = result["var_names"]
     
@@ -171,15 +171,21 @@ def plot_interactive_contour_lines(result: dict):
         st.info("Interactive contour line plots require at least 2 decision variables.")
         return
 
+    # Set smart defaults if provided
+    default_x_idx = var_names.index(default_x) if default_x in var_names else 0
+    
     # Dynamic Variable Selection UI
     st.markdown("**2D Projection Settings**")
     col_x, col_y = st.columns(2)
     
     with col_x:
-        x_name = st.selectbox("X-Axis Variable", var_names, index=0, key="contour_x_var")
+        x_name = st.selectbox("X-Axis Variable", var_names, index=default_x_idx, key="contour_x_var")
+    
+    y_options = [v for v in var_names if v != x_name]
+    default_y_idx = y_options.index(default_y) if default_y in y_options else 0
+    
     with col_y:
-        y_options = [v for v in var_names if v != x_name]
-        y_name = st.selectbox("Y-Axis Variable", y_options, index=0, key="contour_y_var")
+        y_name = st.selectbox("Y-Axis Variable", y_options, index=default_y_idx, key="contour_y_var")
 
     x_idx = var_names.index(x_name)
     y_idx = var_names.index(y_name)
@@ -233,7 +239,7 @@ def plot_interactive_contour_lines(result: dict):
         )
     )
 
-    # 2. Linear Constraint Lines with Unique Colors
+    # 2. Linear Constraint Lines with Colors
     A_ub = result.get("A_ub", [])
     b_ub = result.get("b_ub", [])
     raw_constraints = result.get("raw_constraints", [])
@@ -246,8 +252,6 @@ def plot_interactive_contour_lines(result: dict):
                     eff_b -= a[v_i] * result["x"][var_names[v_i]]
 
             a_x, a_y = a[x_idx], a[y_idx]
-            
-            # Select color dynamically cycling through palette
             line_color = CONSTRAINT_COLORS[idx % len(CONSTRAINT_COLORS)]
             constr_label = raw_constraints[idx] if idx < len(raw_constraints) else f"Constraint {idx+1}"
 
@@ -258,7 +262,7 @@ def plot_interactive_contour_lines(result: dict):
                         x=x_vals,
                         y=y_line,
                         mode='lines',
-                        line=dict(color=line_color, width=2.5),
+                        line=dict(color=line_color, width=2),
                         name=f"C{idx+1}: {constr_label}",
                         hoverinfo="x+y"
                     )
@@ -270,7 +274,7 @@ def plot_interactive_contour_lines(result: dict):
                         x=[x_val, x_val],
                         y=[0, y_max],
                         mode='lines',
-                        line=dict(color=line_color, width=2.5),
+                        line=dict(color=line_color, width=2),
                         name=f"C{idx+1}: {constr_label}",
                         hoverinfo="x+y"
                     )
@@ -282,7 +286,7 @@ def plot_interactive_contour_lines(result: dict):
             x=[opt_x],
             y=[opt_y],
             mode='markers+text',
-            marker=dict(color='#D62728', size=12, symbol='circle', line=dict(color='black', width=1)),
+            marker=dict(color='#d62728', size=12, symbol='circle', line=dict(color='black', width=1)),
             text=[f" Optimal ({opt_x:.2f}, {opt_y:.2f})"],
             textposition="top right",
             name="Optimal Solution",
@@ -295,12 +299,15 @@ def plot_interactive_contour_lines(result: dict):
         xaxis=dict(title=x_name, range=[0, x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         yaxis=dict(title=y_name, range=[0, y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         template="plotly_white",
-        height=550,
-        margin=dict(l=40, r=40, t=50, b=40),
+        height=650,
+        margin=dict(l=40, r=40, t=50, b=120),  # Room for the legend below the x-axis label
         legend=dict(
-            x=1.02, 
-            y=1, 
-            bgcolor="rgba(255,255,255,0.9)", 
+            orientation="h",
+            yanchor="top",
+            y=-0.22,
+            xanchor="center",
+            x=0.5,
+            bgcolor="rgba(255,255,255,0.9)",
             bordercolor="rgba(200,200,200,0.6)",
             borderwidth=1
         ),
@@ -309,7 +316,7 @@ def plot_interactive_contour_lines(result: dict):
     st.plotly_chart(fig, use_container_width=True)
 
 
-def display_results(result: dict, sense: str):
+def display_results(result: dict, sense: str, default_x: str = None, default_y: str = None):
     """Shared UI rendering logic for LP execution results."""
     if result["success"]:
         st.success("Optimization Completed Successfully!")
@@ -326,7 +333,7 @@ def display_results(result: dict, sense: str):
         st.dataframe(df_res.style.format({"Optimal Value": "{:,.4f}"}), use_container_width=True)
 
         st.subheader("Interactive Objective Contour Map")
-        plot_interactive_contour_lines(result)
+        plot_interactive_contour_lines(result, default_x=default_x, default_y=default_y)
     else:
         st.error(f"Solver Error: {result['message']}")
 
@@ -418,9 +425,14 @@ Four crude types are available: **Oman, Tapis, Labuan,** and **Murban.**
             bounds_dict=bounds_dict
         )
 
-    # Render results if present in session state
+    # Render results if present in session state with Oman and Murban as defaults
     if st.session_state.result_example is not None:
-        display_results(st.session_state.result_example, "Maximize")
+        display_results(
+            st.session_state.result_example, 
+            sense="Maximize", 
+            default_x="Oman", 
+            default_y="Murban"
+        )
 
 
 # ------------------------------------------------------------------------
