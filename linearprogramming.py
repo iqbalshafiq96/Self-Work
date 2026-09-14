@@ -8,10 +8,17 @@ RawMaterial) - declared variables update live as the user types.
 
 Both pages share the exact same solving pipeline (solve_lp) and the exact
 same result-display logic, so behavior is consistent between them.
+
+Visualization: for 2-variable problems, results are shown as an elegant
+contour plot (feasible region + objective contour lines + optimal point),
+matching a clean, modern chart aesthetic. For problems with more than two
+variables, a restyled horizontal bar chart is used instead, since a contour
+plot only has a geometric meaning in two dimensions.
 """
 
 import re
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -27,6 +34,55 @@ RESERVED_WORDS = {
     "Min", "Max", "min", "max", "Abs", "abs", "sin", "cos", "tan",
     "exp", "log", "sqrt", "True", "False", "None", "and", "or", "not"
 }
+
+# ========================================================================
+# VISUAL STYLE - shared palette + rcParams for a clean, professional look
+# ========================================================================
+PALETTE = {
+    "blue": "#2a78d6",
+    "blue_light": "#B5D4F4",
+    "blue_dark": "#0C447C",
+    "teal": "#1D9E75",
+    "teal_dark": "#0F6E56",
+    "coral": "#D85A30",
+    "coral_dark": "#993C1D",
+    "gray": "#888780",
+    "gray_light": "#e1e0d9",
+    "text": "#3d3d3a",
+    "text_secondary": "#73726c",
+}
+
+plt.rcParams.update({
+    "font.family": "sans-serif",
+    "font.sans-serif": ["Helvetica Neue", "Arial", "DejaVu Sans"],
+    "font.size": 11,
+    "text.color": PALETTE["text"],
+    "axes.edgecolor": "#c3c2b7",
+    "axes.linewidth": 0.8,
+    "axes.labelcolor": PALETTE["text"],
+    "axes.titlesize": 13,
+    "axes.titleweight": "medium",
+    "axes.grid": True,
+    "grid.color": PALETTE["gray_light"],
+    "grid.linewidth": 0.6,
+    "grid.linestyle": "-",
+    "xtick.color": PALETTE["text_secondary"],
+    "ytick.color": PALETTE["text_secondary"],
+    "figure.facecolor": "white",
+    "axes.facecolor": "white",
+    "legend.frameon": False,
+    "legend.fontsize": 9.5,
+})
+
+
+def _clean_axes(ax):
+    """Strip chart-junk: no top/right spines, light thin remaining spines."""
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#c3c2b7")
+    ax.spines["bottom"].set_color("#c3c2b7")
+    ax.tick_params(length=3, width=0.6)
+
 
 # ========================================================================
 # LP ENGINE - parsing, linearity check, solving
@@ -75,6 +131,11 @@ def parse_equation_or_inequality(expr_str: str, local_dict: dict):
 def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: list, bounds_dict: dict):
     """
     Universal LP solver using SymPy for algebraic parsing and SciPy linprog for numerical optimization.
+
+    In addition to the solution, the returned dict carries everything needed
+    to redraw the problem geometrically (A_ub/b_ub, A_eq/b_eq, bounds, the
+    *original* (non sign-flipped) objective coefficients, and the ordered
+    variable names) so the plotting layer never has to re-derive them.
     """
     if not var_names:
         return {"success": False, "message": "No variables defined."}
@@ -90,15 +151,15 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
     except Exception as e:
         return {"success": False, "message": f"Error parsing objective function: {e}"}
 
-    # Extract objective coefficients (c vector)
-    c = []
+    # Extract objective coefficients (c vector) - kept in "natural" sense (not sign-flipped)
+    c_natural = []
     for var in sym_vars:
         coeff = obj_expr.coeff(var)
-        # Verify linearity (no variable left in the coefficient)
         if any(v in coeff.free_symbols for v in sym_vars):
             return {"success": False, "message": f"Non-linear term detected in objective for variable {var}."}
-        c.append(float(coeff))
+        c_natural.append(float(coeff))
 
+    c = list(c_natural)
     if sense.lower() == "maximize":
         c = [-val for val in c]  # linprog minimizes by default
 
@@ -114,7 +175,6 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
         except Exception as e:
             return {"success": False, "message": f"Error parsing constraint '{constr}': {e}"}
 
-        # Extract constant term and linear coefficients
         const_term = float(diff.as_coefficients_dict().get(1, 0))
         coeffs = []
         for var in sym_vars:
@@ -123,7 +183,6 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
                 return {"success": False, "message": f"Non-linear term detected in constraint '{constr}'."}
             coeffs.append(float(coeff))
 
-        # Re-arrange: coeff*vars + const (rel) 0  =>  coeff*vars (rel) -const
         if rel == "<=":
             A_ub.append(coeffs)
             b_ub.append(-const_term)
@@ -134,10 +193,8 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
             A_eq.append(coeffs)
             b_eq.append(-const_term)
 
-    # Format bounds for linprog
     bounds = [bounds_dict.get(v, (0, None)) for v in var_names]
 
-    # Run SciPy linprog
     res = linprog(
         c=c,
         A_ub=A_ub if A_ub else None,
@@ -156,35 +213,189 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
             "fun": opt_val,
             "x": solution,
             "message": res.message,
-            "status": res.status
+            "status": res.status,
+            "var_names": var_names,
+            "A_ub": A_ub,
+            "b_ub": b_ub,
+            "A_eq": A_eq,
+            "b_eq": b_eq,
+            "bounds": bounds,
+            "obj_coeffs": c_natural,
+            "sense": sense,
         }
     else:
         return {"success": False, "message": f"Solver failed: {res.message}"}
 
 
+# ========================================================================
+# VISUALIZATION - contour plot (2 vars) / restyled bar chart (3+ vars)
+# ========================================================================
+def _feasible_mask(X, Y, A_ub, b_ub, A_eq, b_eq, bounds, tol=1e-6):
+    mask = np.ones_like(X, dtype=bool)
+    for coeffs, b in zip(A_ub, b_ub):
+        mask &= (coeffs[0] * X + coeffs[1] * Y) <= b + tol
+    for coeffs, b in zip(A_eq, b_eq):
+        mask &= np.abs(coeffs[0] * X + coeffs[1] * Y - b) <= 1e-4 * max(1.0, abs(b))
+    lo0, hi0 = bounds[0]
+    lo1, hi1 = bounds[1]
+    mask &= X >= (lo0 if lo0 is not None else -np.inf) - tol
+    mask &= Y >= (lo1 if lo1 is not None else -np.inf) - tol
+    if hi0 is not None:
+        mask &= X <= hi0 + tol
+    if hi1 is not None:
+        mask &= Y <= hi1 + tol
+    return mask
+
+
+def _plot_window(A_ub, b_ub, A_eq, b_eq, bounds, opt_x, opt_y, pad=1.35):
+    candidates = [max(opt_x, opt_y, 1.0) * 1.5]
+    rows = list(zip(A_ub, b_ub)) + list(zip(A_eq, b_eq))
+    for coeffs, b in rows:
+        a0, a1 = coeffs
+        if a0 not in (0, 0.0) and b / a0 > 0:
+            candidates.append(b / a0)
+        if a1 not in (0, 0.0) and b / a1 > 0:
+            candidates.append(b / a1)
+    for lo, hi in bounds:
+        if hi is not None:
+            candidates.append(hi)
+    upper = max(candidates) * pad
+    return max(upper, 1.0)
+
+
+def plot_contour(result: dict):
+    """Elegant contour plot for a 2-variable LP: shaded feasible region,
+    objective contour lines, and the optimal point highlighted."""
+    var_names = result["var_names"]
+    xn, yn = var_names[0], var_names[1]
+    opt_x, opt_y = result["x"][xn], result["x"][yn]
+    A_ub, b_ub = result["A_ub"], result["b_ub"]
+    A_eq, b_eq = result["A_eq"], result["b_eq"]
+    bounds = result["bounds"]
+    c0, c1 = result["obj_coeffs"]
+    sense = result["sense"]
+    opt_val = result["fun"]
+
+    upper = _plot_window(A_ub, b_ub, A_eq, b_eq, bounds, opt_x, opt_y)
+    grid = np.linspace(0, upper, 400)
+    X, Y = np.meshgrid(grid, grid)
+    mask = _feasible_mask(X, Y, A_ub, b_ub, A_eq, b_eq, bounds)
+    Z = c0 * X + c1 * Y
+
+    fig, ax = plt.subplots(figsize=(7, 5.8), dpi=150)
+
+    # Feasible region (shaded only where mask is True)
+    ax.contourf(X, Y, mask.astype(float), levels=[0.5, 1.5],
+                colors=[PALETTE["blue_light"]], alpha=0.45)
+
+    # Constraint boundary lines (only true inequality rows, skip trivial bound rows)
+    for coeffs, b in zip(A_ub, b_ub):
+        a0, a1 = coeffs
+        if a0 == 0 and a1 == 0:
+            continue
+        xs = np.array([0, upper])
+        if a1 != 0:
+            ys = (b - a0 * xs) / a1
+        else:
+            xs = np.array([b / a0, b / a0])
+            ys = np.array([0, upper])
+        ax.plot(xs, ys, color=PALETTE["coral_dark"], linestyle=(0, (5, 4)),
+                 linewidth=1.3, alpha=0.85)
+
+    # Objective contour lines - a few reference levels plus the optimal, bold
+    feasible_vals = Z[mask]
+    if feasible_vals.size > 0:
+        lo = np.percentile(feasible_vals, 15)
+        levels = np.linspace(lo, opt_val, 4)
+        for lvl in levels[:-1]:
+            ax.contour(X, Y, Z, levels=[lvl], colors=[PALETTE["teal"]],
+                        linewidths=1.1, linestyles=(0, (4, 4)), alpha=0.6)
+        ax.contour(X, Y, Z, levels=[opt_val], colors=[PALETTE["teal_dark"]], linewidths=2.2)
+
+    # Optimal point
+    ax.scatter([opt_x], [opt_y], s=70, color=PALETTE["teal_dark"],
+               edgecolor="white", linewidth=1.6, zorder=5)
+    ax.annotate(
+        f"Optimum\n({opt_x:,.2f}, {opt_y:,.2f})\nZ = {opt_val:,.2f}",
+        xy=(opt_x, opt_y), xytext=(12, 12), textcoords="offset points",
+        fontsize=9.5, color=PALETTE["text"],
+        bbox=dict(boxstyle="round,pad=0.35", fc="white", ec="#c3c2b7", lw=0.7),
+    )
+
+    ax.set_xlim(0, upper)
+    ax.set_ylim(0, upper)
+    ax.set_xlabel(xn)
+    ax.set_ylabel(yn)
+    ax.set_title(f"Feasible region & objective contours ({sense.lower()} Z)", pad=12)
+    ax.xaxis.set_major_locator(mticker.MaxNLocator(6))
+    ax.yaxis.set_major_locator(mticker.MaxNLocator(6))
+    _clean_axes(ax)
+
+    # Compact custom legend
+    from matplotlib.lines import Line2D
+    handles = [
+        Line2D([0], [0], marker="s", color="none", markerfacecolor=PALETTE["blue_light"],
+               markeredgecolor="none", markersize=12, label="Feasible region"),
+        Line2D([0], [0], color=PALETTE["coral_dark"], linestyle=(0, (5, 4)), lw=1.3,
+               label="Constraint boundary"),
+        Line2D([0], [0], color=PALETTE["teal"], linestyle=(0, (4, 4)), lw=1.1,
+               label="Objective contour"),
+        Line2D([0], [0], color=PALETTE["teal_dark"], lw=2.2, label="Optimal contour"),
+        Line2D([0], [0], marker="o", color="none", markerfacecolor=PALETTE["teal_dark"],
+               markeredgecolor="white", markersize=8, label="Optimal point"),
+    ]
+    ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(1.02, 1.0),
+              borderaxespad=0, handlelength=2.2)
+
+    fig.tight_layout()
+    st.pyplot(fig)
+
+
+def plot_bar(result: dict):
+    """Restyled horizontal bar chart, used when there are more than two
+    decision variables and a contour plot has no direct geometric meaning."""
+    df_res = pd.DataFrame(list(result["x"].items()), columns=["Variable", "Value"])
+    df_res = df_res.sort_values("Value")
+
+    fig, ax = plt.subplots(figsize=(7, 0.55 * len(df_res) + 1.5), dpi=150)
+    bars = ax.barh(df_res["Variable"], df_res["Value"], color=PALETTE["blue"],
+                    height=0.55, zorder=3)
+    for bar, val in zip(bars, df_res["Value"]):
+        ax.text(bar.get_width() + max(df_res["Value"]) * 0.015, bar.get_y() + bar.get_height() / 2,
+                f"{val:,.2f}", va="center", ha="left", fontsize=9.5, color=PALETTE["text"])
+
+    ax.set_xlabel("Optimal value")
+    ax.set_title("Optimal decision variable allocations", pad=12)
+    ax.grid(axis="x", zorder=0)
+    ax.grid(axis="y", visible=False)
+    _clean_axes(ax)
+    fig.tight_layout()
+    st.pyplot(fig)
+
+
 def display_results(result: dict, sense: str):
     """Shared UI rendering logic for LP execution results."""
     if result["success"]:
-        st.success("Optimization Completed Successfully!")
+        st.success("Optimization completed successfully")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric(label=f"Optimal Objective Value ({sense})", value=f"{result['fun']:,.4f}")
+        st.metric(label=f"Optimal objective value ({sense})", value=f"{result['fun']:,.4f}")
 
-        st.subheader("Optimal Decision Variable Values")
+        st.subheader("Optimal decision variable values")
         df_res = pd.DataFrame(
             list(result["x"].items()),
             columns=["Variable", "Optimal Value"]
         )
         st.dataframe(df_res.style.format({"Optimal Value": "{:,.4f}"}), use_container_width=True)
 
-        # Plot variable allocations bar chart
-        fig, ax = plt.subplots(figsize=(6, 3))
-        ax.bar(df_res["Variable"], df_res["Optimal Value"], color="#4C72B0")
-        ax.set_ylabel("Value")
-        ax.set_title("Decision Variable Allocations")
-        plt.xticks(rotation=45, ha="right")
-        st.pyplot(fig)
+        st.subheader("Visualization")
+        if len(result["var_names"]) == 2:
+            plot_contour(result)
+        else:
+            st.caption(
+                "A contour plot only has a direct geometric meaning for two decision "
+                "variables. Showing decision variable allocations instead."
+            )
+            plot_bar(result)
     else:
         st.error(f"Solver Error: {result['message']}")
 
@@ -286,7 +497,8 @@ def page_custom():
     st.caption(
         "Use plain, meaningful variable names instead of x, y — e.g. `Utility`, "
         "`RawMaterial`. Any word works as a variable, and the detected list "
-        "below updates as you type."
+        "below updates as you type. Problems with exactly two variables get an "
+        "interactive contour plot of the feasible region."
     )
 
     col_opt, col_sense = st.columns([3, 1])
@@ -303,7 +515,6 @@ def page_custom():
         height=120
     )
 
-    # Dynamic Live Variable Parsing
     all_text = obj_input + "\n" + constraints_input
     detected_vars = sorted(list(extract_identifiers(all_text)))
 
