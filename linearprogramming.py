@@ -6,7 +6,7 @@ import sympy as sp
 import plotly.graph_objects as go
 from scipy.optimize import linprog
 
-st.set_page_config(page_title="LP Optimizer", page_icon="📈", layout="centered")
+st.set_page_config(page_title="LP Optimizer", layout="centered")
 
 IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
