@@ -164,7 +164,7 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
 
 
 def plot_interactive_contour_lines(result: dict, default_x: str = None, default_y: str = None):
-    """Generate an interactive 2D objective contour plot with selectable 2D variable projection."""
+    """Generate an interactive 2D objective contour plot with shaded feasible region."""
     var_names = result["var_names"]
     
     if len(var_names) < 2:
@@ -197,8 +197,9 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     x_max = max(opt_x * 1.5, 10.0)
     y_max = max(opt_y * 1.5, 10.0)
 
-    x_vals = np.linspace(0, x_max, 200)
-    y_vals = np.linspace(0, y_max, 200)
+    x_vals = np.linspace(0, x_max, 250)
+    y_vals = np.linspace(0, y_max, 250)
+    X, Y = np.meshgrid(x_vals, y_vals)
 
     # Base contour contribution from constant and non-selected fixed variables
     fixed_objective_contrib = result.get("obj_const", 0.0)
@@ -218,11 +219,59 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     # Construct 2D Objective Meshgrid
     c_x = c[x_idx]
     c_y = c[y_idx]
-    Z = c_x * np.outer(np.ones(len(y_vals)), x_vals) + c_y * np.outer(y_vals, np.ones(len(x_vals))) + fixed_objective_contrib
+    Z = c_x * X + c_y * Y + fixed_objective_contrib
 
     fig = go.Figure()
 
-    # 1. Contour Lines
+    # -------------------------------------------------------------------------
+    # 1. SHADE FEASIBLE REGION
+    # -------------------------------------------------------------------------
+    feasible_mask = np.ones_like(X, dtype=bool)
+
+    # Apply Inequality Constraints (A_ub * x <= b_ub)
+    A_ub = result.get("A_ub", [])
+    b_ub = result.get("b_ub", [])
+    if A_ub and b_ub:
+        for a, b in zip(A_ub, b_ub):
+            eff_b = b
+            for v_i in range(len(var_names)):
+                if v_i not in (x_idx, y_idx):
+                    eff_b -= a[v_i] * result["x"][var_names[v_i]]
+            lhs_val = a[x_idx] * X + a[y_idx] * Y
+            feasible_mask = feasible_mask & (lhs_val <= eff_b + 1e-5)
+
+    # Apply Variable Bounds Constraints
+    bounds = result.get("bounds", [])
+    x_min_b, x_max_b = bounds[x_idx] if x_idx < len(bounds) else (0, None)
+    y_min_b, y_max_b = bounds[y_idx] if y_idx < len(bounds) else (0, None)
+
+    if x_min_b is not None:
+        feasible_mask &= (X >= x_min_b - 1e-5)
+    if x_max_b is not None:
+        feasible_mask &= (X <= x_max_b + 1e-5)
+    if y_min_b is not None:
+        feasible_mask &= (Y >= y_min_b - 1e-5)
+    if y_max_b is not None:
+        feasible_mask &= (Y <= y_max_b + 1e-5)
+
+    # Overlay shaded region for feasible area
+    fig.add_trace(
+        go.Contour(
+            x=x_vals,
+            y=y_vals,
+            z=feasible_mask.astype(int),
+            showscale=False,
+            colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(46, 204, 113, 0.25)"]],
+            contours_coloring="lines+fill" if np.any(feasible_mask) else "none",
+            line=dict(width=0),
+            hoverinfo="skip",
+            name="Feasible Region"
+        )
+    )
+
+    # -------------------------------------------------------------------------
+    # 2. CONTOUR LINES & CONSTRAINTS
+    # -------------------------------------------------------------------------
     fig.add_trace(
         go.Contour(
             x=x_vals,
@@ -239,11 +288,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         )
     )
 
-    # 2. Linear Constraint Lines with Colors
-    A_ub = result.get("A_ub", [])
-    b_ub = result.get("b_ub", [])
     raw_constraints = result.get("raw_constraints", [])
-
     if A_ub and b_ub:
         for idx, (a, b) in enumerate(zip(A_ub, b_ub)):
             eff_b = b
@@ -280,7 +325,9 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                     )
                 )
 
-    # 3. Optimal Point Marker
+    # -------------------------------------------------------------------------
+    # 3. OPTIMAL POINT MARKER
+    # -------------------------------------------------------------------------
     fig.add_trace(
         go.Scatter(
             x=[opt_x],
@@ -295,12 +342,12 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     )
 
     fig.update_layout(
-        title=dict(text=f"Interactive Contour Map: {x_name} vs {y_name}", x=0.5),
+        title=dict(text=f"Interactive Contour Map & Feasible Region: {x_name} vs {y_name}", x=0.5),
         xaxis=dict(title=x_name, range=[0, x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         yaxis=dict(title=y_name, range=[0, y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         template="plotly_white",
         height=650,
-        margin=dict(l=40, r=40, t=50, b=120),  # Room for the legend below the x-axis label
+        margin=dict(l=40, r=40, t=50, b=120),
         legend=dict(
             orientation="h",
             yanchor="top",
@@ -332,7 +379,7 @@ def display_results(result: dict, sense: str, default_x: str = None, default_y: 
         )
         st.dataframe(df_res.style.format({"Optimal Value": "{:,.4f}"}), use_container_width=True)
 
-        st.subheader("Interactive Objective Contour Map")
+        st.subheader("Interactive Objective Contour Map & Feasible Area")
         plot_interactive_contour_lines(result, default_x=default_x, default_y=default_y)
     else:
         st.error(f"Solver Error: {result['message']}")
