@@ -70,14 +70,16 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
     except Exception as e:
         return {"success": False, "message": f"Error parsing objective function: {e}"}
 
-    # Extract objective coefficients (c vector)
+    # Extract objective coefficients (c vector) & constant offset
     c = []
     for var in sym_vars:
         coeff = obj_expr.coeff(var)
-        # Verify linearity (no variable left in the coefficient)
         if any(v in coeff.free_symbols for v in sym_vars):
             return {"success": False, "message": f"Non-linear term detected in objective for variable {var}."}
         c.append(float(coeff))
+
+    # Constant term in objective
+    obj_const = float(obj_expr.as_coefficients_dict().get(1, 0))
 
     c_raw = list(c)
     if sense.lower() == "maximize":
@@ -95,7 +97,6 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
         except Exception as e:
             return {"success": False, "message": f"Error parsing constraint '{constr}': {e}"}
 
-        # Extract constant term and linear coefficients
         const_term = float(diff.as_coefficients_dict().get(1, 0))
         coeffs = []
         for var in sym_vars:
@@ -104,7 +105,6 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
                 return {"success": False, "message": f"Non-linear term detected in constraint '{constr}'."}
             coeffs.append(float(coeff))
 
-        # Re-arrange: coeff*vars + const (rel) 0  =>  coeff*vars (rel) -const
         if rel == "<=":
             A_ub.append(coeffs)
             b_ub.append(-const_term)
@@ -115,10 +115,8 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
             A_eq.append(coeffs)
             b_eq.append(-const_term)
 
-    # Format bounds for linprog
     bounds = [bounds_dict.get(v, (0, None)) for v in var_names]
 
-    # Run SciPy linprog
     res = linprog(
         c=c,
         A_ub=A_ub if A_ub else None,
@@ -130,7 +128,7 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
     )
 
     if res.success:
-        opt_val = -res.fun if sense.lower() == "maximize" else res.fun
+        opt_val = (-res.fun if sense.lower() == "maximize" else res.fun) + obj_const
         solution = dict(zip(var_names, res.x))
         return {
             "success": True,
@@ -139,6 +137,7 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
             "message": res.message,
             "status": res.status,
             "c": c_raw,
+            "obj_const": obj_const,
             "A_ub": A_ub,
             "b_ub": b_ub,
             "A_eq": A_eq,
@@ -151,37 +150,68 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
 
 
 def plot_interactive_contour_lines(result: dict):
-    """Generate an interactive 2D objective contour plot using Plotly for 2-variable LP models."""
+    """Generate an interactive 2D objective contour plot with selectable 2D variable projection."""
     var_names = result["var_names"]
-    if len(var_names) != 2:
-        st.info("Interactive 2D contour line plots are available for problems with exactly 2 decision variables.")
+    
+    if len(var_names) < 2:
+        st.info("Interactive contour line plots require at least 2 decision variables.")
         return
 
-    x_name, y_name = var_names[0], var_names[1]
+    # Dynamic Variable Selection UI
+    st.markdown("**2D Projection Settings**")
+    col_x, col_y = st.columns(2)
+    
+    with col_x:
+        x_name = st.selectbox("X-Axis Variable", var_names, index=0, key="contour_x_var")
+    with col_y:
+        # Default Y to the second variable if available
+        y_default_idx = 1 if len(var_names) > 1 else 0
+        y_options = [v for v in var_names if v != x_name]
+        y_name = st.selectbox("Y-Axis Variable", y_options, index=0, key="contour_y_var")
+
+    x_idx = var_names.index(x_name)
+    y_idx = var_names.index(y_name)
+
     opt_x = result["x"][x_name]
     opt_y = result["x"][y_name]
 
-    # Plot domain bounds
+    # Domain bounds calculation
     x_max = max(opt_x * 1.5, 10.0)
     y_max = max(opt_y * 1.5, 10.0)
 
     x_vals = np.linspace(0, x_max, 200)
     y_vals = np.linspace(0, y_max, 200)
 
-    # Objective grid calculation
+    # Base contour contribution from constant and non-selected fixed variables
+    fixed_objective_contrib = result.get("obj_const", 0.0)
     c = result["c"]
-    Z = c[0] * np.outer(np.ones(len(y_vals)), x_vals) + c[1] * np.outer(y_vals, np.ones(len(x_vals)))
+
+    # Fixed values dictionary for other variables (defaulting to their optimal solutions)
+    fixed_vars_summary = []
+    for idx, v_name in enumerate(var_names):
+        if idx not in (x_idx, y_idx):
+            val = result["x"][v_name]
+            fixed_objective_contrib += c[idx] * val
+            fixed_vars_summary.append(f"{v_name} = {val:,.2f}")
+
+    if fixed_vars_summary:
+        st.caption(f"ℹ️ Other variables held constant at optimal values: **{', '.join(fixed_vars_summary)}**")
+
+    # Construct 2D Objective Meshgrid
+    c_x = c[x_idx]
+    c_y = c[y_idx]
+    Z = c_x * np.outer(np.ones(len(y_vals)), x_vals) + c_y * np.outer(y_vals, np.ones(len(x_vals))) + fixed_objective_contrib
 
     fig = go.Figure()
 
-    # 1. Interactive Objective Contour Lines
+    # 1. Contour Lines
     fig.add_trace(
         go.Contour(
             x=x_vals,
             y=y_vals,
             z=Z,
             contours=dict(
-                coloring='none',  # Line-only contours (no color fill)
+                coloring='none',
                 showlabels=True,
                 labelfont=dict(size=10, color='navy')
             ),
@@ -191,13 +221,23 @@ def plot_interactive_contour_lines(result: dict):
         )
     )
 
-    # 2. Linear Constraint Lines
+    # 2. Linear Constraint Lines (Projected to 2D)
     A_ub = result.get("A_ub", [])
     b_ub = result.get("b_ub", [])
+
     if A_ub and b_ub:
         for idx, (a, b) in enumerate(zip(A_ub, b_ub)):
-            if abs(a[1]) > 1e-6:
-                y_line = (b - a[0] * x_vals) / a[1]
+            # Adjust b-value for fixed non-selected variables
+            eff_b = b
+            for v_i in range(len(var_names)):
+                if v_i not in (x_idx, y_idx):
+                    eff_b -= a[v_i] * result["x"][var_names[v_i]]
+
+            a_x, a_y = a[x_idx], a[y_idx]
+
+            # Plot line if non-zero coefficients exist for selected variables
+            if abs(a_y) > 1e-6:
+                y_line = (eff_b - a_x * x_vals) / a_y
                 fig.add_trace(
                     go.Scatter(
                         x=x_vals,
@@ -208,8 +248,8 @@ def plot_interactive_contour_lines(result: dict):
                         hoverinfo="x+y"
                     )
                 )
-            else:
-                x_val = b / a[0]
+            elif abs(a_x) > 1e-6:
+                x_val = eff_b / a_x
                 fig.add_trace(
                     go.Scatter(
                         x=[x_val, x_val],
@@ -235,9 +275,8 @@ def plot_interactive_contour_lines(result: dict):
         )
     )
 
-    # Layout configuration
     fig.update_layout(
-        title=dict(text="Interactive Objective Contour Lines & Constraints", x=0.5),
+        title=dict(text=f"Interactive Contour Map: {x_name} vs {y_name}", x=0.5),
         xaxis=dict(title=x_name, range=[0, x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         yaxis=dict(title=y_name, range=[0, y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         template="plotly_white",
@@ -282,11 +321,11 @@ st.title("📈 Linear Programming Optimizer")
 col1, col2 = st.columns(2)
 with col1:
     if st.button("📘 Example: Refinery Crude LP", use_container_width=True,
-                 type="primary" if st.session_state.page == "example" else "secondary"):
+                  type="primary" if st.session_state.page == "example" else "secondary"):
         st.session_state.page = "example"
 with col2:
     if st.button("✍️ Build Your Own LP", use_container_width=True,
-                 type="primary" if st.session_state.page == "custom" else "secondary"):
+                  type="primary" if st.session_state.page == "custom" else "secondary"):
         st.session_state.page = "custom"
 
 st.divider()
