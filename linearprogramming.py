@@ -1,15 +1,3 @@
-"""
-app.py
-
-Two-page LP optimizer Streamlit app - single file.
-Page 1: worked refinery crude-oil purchasing example (readable variable names).
-Page 2: user builds their own LP using plain-word variable names (e.g. Utility,
-RawMaterial) - declared variables update live as the user types.
-
-Both pages share the exact same solving pipeline (solve_lp) and the exact
-same result-display logic, so behavior is consistent between them.
-"""
-
 import re
 import numpy as np
 import pandas as pd
