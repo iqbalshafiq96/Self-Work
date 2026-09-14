@@ -254,7 +254,8 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
             showscale=False,
             colorscale=[[0, "rgba(46, 204, 113, 0.25)"], [1, "rgba(46, 204, 113, 0.25)"]],
             hoverinfo="skip",
-            name="Feasible Region"
+            name="Feasible Region",
+            showlegend=True
         )
     )
 
@@ -269,12 +270,24 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
             contours_coloring="lines",
             contours=dict(
                 showlabels=True,
-                labelfont=dict(size=10, color="navy")
+                labelfont=dict(size=10, color='navy')
             ),
-            line=dict(color="#1f77b4", width=1.5, dash="dash"),
-            showlegend=True,
-            name="Objective Contour",
+            line=dict(color='#1f77b4', width=1.5, dash='dash'),
+            showscale=False,
+            showlegend=False,
             hoverinfo="x+y+z"
+        )
+    )
+
+    # Explicit legend item for Objective Contour Line to match dashed line style
+    fig.add_trace(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode='lines',
+            line=dict(color='#1f77b4', width=1.5, dash='dash'),
+            name="Objective Contour",
+            showlegend=True
         )
     )
 
@@ -296,7 +309,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                     go.Scatter(
                         x=x_vals,
                         y=y_line,
-                        mode="lines",
+                        mode='lines',
                         line=dict(color=line_color, width=2),
                         name=f"C{idx+1}: {constr_label}",
                         hoverinfo="x+y"
@@ -308,7 +321,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                     go.Scatter(
                         x=[x_val, x_val],
                         y=[0, y_max],
-                        mode="lines",
+                        mode='lines',
                         line=dict(color=line_color, width=2),
                         name=f"C{idx+1}: {constr_label}",
                         hoverinfo="x+y"
@@ -322,8 +335,8 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         go.Scatter(
             x=[opt_x],
             y=[opt_y],
-            mode="markers+text",
-            marker=dict(color="#d62728", size=12, symbol="circle", line=dict(color="black", width=1)),
+            mode='markers+text',
+            marker=dict(color='#d62728', size=12, symbol='circle', line=dict(color='black', width=1)),
             text=[f" Optimal ({opt_x:.2f}, {opt_y:.2f})"],
             textposition="top right",
             name="Optimal Solution",
@@ -333,8 +346,8 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
 
     fig.update_layout(
         title="",
-        xaxis=dict(title=x_name, range=[0, x_max], showgrid=True, gridcolor="rgba(200,200,200,0.4)"),
-        yaxis=dict(title=y_name, range=[0, y_max], showgrid=True, gridcolor="rgba(200,200,200,0.4)"),
+        xaxis=dict(title=x_name, range=[0, x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
+        yaxis=dict(title=y_name, range=[0, y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         template="plotly_white",
         height=600,
         margin=dict(l=40, r=40, t=20, b=120),
@@ -510,7 +523,7 @@ def page_custom():
                 "margin-right: 4px;"
             )
             badge_spans.append(f'<span style="{style}">{var}</span>')
-            
+
         badges_html = " ".join(badge_spans)
         st.markdown(f"**Recognized Variables:** {badges_html}", unsafe_allow_html=True)
     else:
