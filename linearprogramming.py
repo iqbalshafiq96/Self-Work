@@ -37,14 +37,6 @@ def extract_identifiers(text: str) -> set:
     return tokens - RESERVED_WORDS
 
 
-def build_symbol_locals(*texts) -> dict:
-    """Build a dict of plain sympy Symbols for every word found across texts."""
-    all_tokens = set()
-    for text in texts:
-        all_tokens.update(extract_identifiers(text))
-    return {token: sp.Symbol(token) for token in all_tokens}
-
-
 def parse_equation_or_inequality(expr_str: str, local_dict: dict):
     """
     Parses string equations/inequalities into a standard SymPy expression
@@ -99,6 +91,7 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
             return {"success": False, "message": f"Non-linear term detected in objective for variable {var}."}
         c.append(float(coeff))
 
+    c_raw = list(c)
     if sense.lower() == "maximize":
         c = [-val for val in c]  # linprog minimizes by default
 
@@ -156,10 +149,73 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
             "fun": opt_val,
             "x": solution,
             "message": res.message,
-            "status": res.status
+            "status": res.status,
+            "c": c_raw,
+            "A_ub": A_ub,
+            "b_ub": b_ub,
+            "A_eq": A_eq,
+            "b_eq": b_eq,
+            "bounds": bounds,
+            "var_names": var_names,
         }
     else:
         return {"success": False, "message": f"Solver failed: {res.message}"}
+
+
+def plot_contour_lines(result: dict):
+    """Generate a line-based 2D objective contour plot for 2-variable LP models."""
+    var_names = result["var_names"]
+    if len(var_names) != 2:
+        st.info("2D contour line plots are available for problems with exactly 2 variables.")
+        return
+
+    x_name, y_name = var_names[0], var_names[1]
+    opt_x = result["x"][x_name]
+    opt_y = result["x"][y_name]
+
+    # Plot domain bounds
+    x_max = max(opt_x * 1.5, 10.0)
+    y_max = max(opt_y * 1.5, 10.0)
+
+    x_vals = np.linspace(0, x_max, 200)
+    y_vals = np.linspace(0, y_max, 200)
+    X, Y = np.meshgrid(x_vals, y_vals)
+
+    # Objective matrix calculation
+    c = result["c"]
+    Z = c[0] * X + c[1] * Y
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+
+    # Line-only Contour Plot (no color fill)
+    CS = ax.contour(X, Y, Z, levels=15, colors="tab:blue", linestyles="dashed", linewidths=1.2)
+    ax.clabel(CS, inline=True, fontsize=8, fmt="%.1f")
+
+    # Constraint Lines
+    A_ub = result.get("A_ub", [])
+    b_ub = result.get("b_ub", [])
+    if A_ub and b_ub:
+        for idx, (a, b) in enumerate(zip(A_ub, b_ub)):
+            # Line equation: a0*x + a1*y = b
+            if abs(a[1]) > 1e-6:
+                y_line = (b - a[0] * x_vals) / a[1]
+                ax.plot(x_vals, y_line, color="black", linestyle="-", alpha=0.6, label=f"Constraint {idx+1}" if idx == 0 else "")
+            else:
+                x_val = b / a[0]
+                ax.axvline(x=x_val, color="black", linestyle="-", alpha=0.6, label=f"Constraint {idx+1}" if idx == 0 else "")
+
+    # Optimal Point Highlight
+    ax.plot(opt_x, opt_y, "ro", markersize=8, label=f"Optimal ({opt_x:.2f}, {opt_y:.2f})")
+
+    ax.set_xlim(0, x_max)
+    ax.set_ylim(0, y_max)
+    ax.set_xlabel(x_name)
+    ax.set_ylabel(y_name)
+    ax.set_title("Objective Contour Lines & Constraints")
+    ax.grid(True, linestyle=":", alpha=0.5)
+    ax.legend(loc="upper right")
+
+    st.pyplot(fig)
 
 
 def display_results(result: dict, sense: str):
@@ -167,7 +223,7 @@ def display_results(result: dict, sense: str):
     if result["success"]:
         st.success("Optimization Completed Successfully!")
 
-        col1, col2 = st.columns(2)
+        col1, _ = st.columns(2)
         with col1:
             st.metric(label=f"Optimal Objective Value ({sense})", value=f"{result['fun']:,.4f}")
 
@@ -178,13 +234,8 @@ def display_results(result: dict, sense: str):
         )
         st.dataframe(df_res.style.format({"Optimal Value": "{:,.4f}"}), use_container_width=True)
 
-        # Plot variable allocations bar chart
-        fig, ax = plt.subplots(figsize=(6, 3))
-        ax.bar(df_res["Variable"], df_res["Optimal Value"], color="#4C72B0")
-        ax.set_ylabel("Value")
-        ax.set_title("Decision Variable Allocations")
-        plt.xticks(rotation=45, ha="right")
-        st.pyplot(fig)
+        st.subheader("Objective Contour Map")
+        plot_contour_lines(result)
     else:
         st.error(f"Solver Error: {result['message']}")
 
@@ -253,7 +304,7 @@ Four crude types are available: **Oman, Tapis, Labuan,** and **Murban.**
 
     with st.expander("Show objective function & constraints", expanded=True):
         st.markdown("**Decision variables:** daily m³ of each crude processed — "
-                     "`Oman`, `Tapis`, `Labuan`, `Murban`")
+                    "`Oman`, `Tapis`, `Labuan`, `Murban`")
 
         st.markdown("**Objective (maximize GRM):**")
         st.code(objective_str, language="text")
