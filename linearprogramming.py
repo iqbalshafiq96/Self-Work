@@ -9,16 +9,18 @@ RawMaterial) - declared variables update live as the user types.
 Both pages share the exact same solving pipeline (solve_lp) and the exact
 same result-display logic, so behavior is consistent between them.
 
-Visualization: for 2-variable problems, results are shown as an elegant
-contour plot (feasible region + objective contour lines + optimal point),
-matching a clean, modern chart aesthetic. For problems with more than two
-variables, a restyled horizontal bar chart is used instead, since a contour
-plot only has a geometric meaning in two dimensions.
+Visualization: results are always shown as an elegant contour plot (feasible
+region + objective contour lines + optimal point). A contour plot is only
+meaningful in two dimensions, so when a problem has more than two decision
+variables, the user picks which two variables to put on the axes; every
+other variable is held fixed at its optimal (solved) value, and the plotted
+slice passes exactly through the true optimum.
 """
 
 import re
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -29,7 +31,6 @@ st.set_page_config(page_title="LP Optimizer", page_icon="📈", layout="centered
 
 IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
-# Reserved words/functions that SymPy or Python use that shouldn't be treated as user variables
 RESERVED_WORDS = {
     "Min", "Max", "min", "max", "Abs", "abs", "sin", "cos", "tan",
     "exp", "log", "sqrt", "True", "False", "None", "and", "or", "not"
@@ -39,14 +40,11 @@ RESERVED_WORDS = {
 # VISUAL STYLE - shared palette + rcParams for a clean, professional look
 # ========================================================================
 PALETTE = {
-    "blue": "#2a78d6",
     "blue_light": "#B5D4F4",
-    "blue_dark": "#0C447C",
     "teal": "#1D9E75",
     "teal_dark": "#0F6E56",
-    "coral": "#D85A30",
     "coral_dark": "#993C1D",
-    "gray": "#888780",
+    "blue": "#2a78d6",
     "gray_light": "#e1e0d9",
     "text": "#3d3d3a",
     "text_secondary": "#73726c",
@@ -65,7 +63,6 @@ plt.rcParams.update({
     "axes.grid": True,
     "grid.color": PALETTE["gray_light"],
     "grid.linewidth": 0.6,
-    "grid.linestyle": "-",
     "xtick.color": PALETTE["text_secondary"],
     "ytick.color": PALETTE["text_secondary"],
     "figure.facecolor": "white",
@@ -76,7 +73,6 @@ plt.rcParams.update({
 
 
 def _clean_axes(ax):
-    """Strip chart-junk: no top/right spines, light thin remaining spines."""
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_color("#c3c2b7")
@@ -88,13 +84,11 @@ def _clean_axes(ax):
 # LP ENGINE - parsing, linearity check, solving
 # ========================================================================
 def extract_identifiers(text: str) -> set:
-    """Find every word-like token in a string (candidate variable names)."""
     tokens = set(IDENTIFIER_RE.findall(text))
     return tokens - RESERVED_WORDS
 
 
 def build_symbol_locals(*texts) -> dict:
-    """Build a dict of plain sympy Symbols for every word found across texts."""
     all_tokens = set()
     for text in texts:
         all_tokens.update(extract_identifiers(text))
@@ -102,10 +96,6 @@ def build_symbol_locals(*texts) -> dict:
 
 
 def parse_equation_or_inequality(expr_str: str, local_dict: dict):
-    """
-    Parses string equations/inequalities into a standard SymPy expression
-    normalized to: Expression <= 0, Expression >= 0, or Expression == 0.
-    """
     expr_str = expr_str.strip()
     if not expr_str:
         return None, None
@@ -130,28 +120,23 @@ def parse_equation_or_inequality(expr_str: str, local_dict: dict):
 
 def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: list, bounds_dict: dict):
     """
-    Universal LP solver using SymPy for algebraic parsing and SciPy linprog for numerical optimization.
-
-    In addition to the solution, the returned dict carries everything needed
-    to redraw the problem geometrically (A_ub/b_ub, A_eq/b_eq, bounds, the
+    Universal LP solver. Alongside the solution, returns everything needed to
+    redraw the problem geometrically: A_ub/b_ub, A_eq/b_eq, bounds, the
     *original* (non sign-flipped) objective coefficients, and the ordered
-    variable names) so the plotting layer never has to re-derive them.
+    variable names.
     """
     if not var_names:
         return {"success": False, "message": "No variables defined."}
 
-    # Order variables deterministically
     var_names = sorted(list(var_names))
     sym_vars = [sp.Symbol(v) for v in var_names]
     local_dict = {v: sym_vars[i] for i, v in enumerate(var_names)}
 
-    # Parse Objective
     try:
         obj_expr = sp.sympify(objective_str, locals=local_dict)
     except Exception as e:
         return {"success": False, "message": f"Error parsing objective function: {e}"}
 
-    # Extract objective coefficients (c vector) - kept in "natural" sense (not sign-flipped)
     c_natural = []
     for var in sym_vars:
         coeff = obj_expr.coeff(var)
@@ -161,9 +146,8 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
 
     c = list(c_natural)
     if sense.lower() == "maximize":
-        c = [-val for val in c]  # linprog minimizes by default
+        c = [-val for val in c]
 
-    # Parse Constraints
     A_ub, b_ub = [], []
     A_eq, b_eq = [], []
 
@@ -228,8 +212,52 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
 
 
 # ========================================================================
-# VISUALIZATION - contour plot (2 vars) / restyled bar chart (3+ vars)
+# VISUALIZATION - contour plot, sliced to any chosen pair of variables
 # ========================================================================
+def slice_2d(result: dict, xn: str, yn: str) -> dict:
+    """
+    Reduce an N-variable LP result to a 2D slice through the true optimum:
+    the two chosen variables (xn, yn) vary, every other variable is fixed at
+    its optimal value. Constraint and objective coefficients are adjusted
+    accordingly, so the slice's optimal contour value still equals the
+    problem's real optimal objective value.
+    """
+    var_names = result["var_names"]
+    ix, iy = var_names.index(xn), var_names.index(yn)
+    other_idx = [i for i in range(len(var_names)) if i not in (ix, iy)]
+    fixed_vals = {i: result["x"][var_names[i]] for i in other_idx}
+
+    def reduce_row(coeffs, b):
+        offset = sum(coeffs[i] * fixed_vals[i] for i in other_idx)
+        return [coeffs[ix], coeffs[iy]], b - offset
+
+    A_ub2, b_ub2 = [], []
+    for coeffs, b in zip(result["A_ub"], result["b_ub"]):
+        c2, b2 = reduce_row(coeffs, b)
+        A_ub2.append(c2)
+        b_ub2.append(b2)
+
+    A_eq2, b_eq2 = [], []
+    for coeffs, b in zip(result["A_eq"], result["b_eq"]):
+        c2, b2 = reduce_row(coeffs, b)
+        A_eq2.append(c2)
+        b_eq2.append(b2)
+
+    bounds2 = [result["bounds"][ix], result["bounds"][iy]]
+    c_full = result["obj_coeffs"]
+    offset_obj = sum(c_full[i] * fixed_vals[i] for i in other_idx)
+
+    return {
+        "xn": xn, "yn": yn,
+        "opt_x": result["x"][xn], "opt_y": result["x"][yn],
+        "A_ub": A_ub2, "b_ub": b_ub2, "A_eq": A_eq2, "b_eq": b_eq2,
+        "bounds": bounds2,
+        "c0": c_full[ix], "c1": c_full[iy], "offset": offset_obj,
+        "sense": result["sense"], "opt_val": result["fun"],
+        "fixed_vals": {var_names[i]: fixed_vals[i] for i in other_idx},
+    }
+
+
 def _feasible_mask(X, Y, A_ub, b_ub, A_eq, b_eq, bounds, tol=1e-6):
     mask = np.ones_like(X, dtype=bool)
     for coeffs, b in zip(A_ub, b_ub):
@@ -263,32 +291,29 @@ def _plot_window(A_ub, b_ub, A_eq, b_eq, bounds, opt_x, opt_y, pad=1.35):
     return max(upper, 1.0)
 
 
-def plot_contour(result: dict):
-    """Elegant contour plot for a 2-variable LP: shaded feasible region,
-    objective contour lines, and the optimal point highlighted."""
-    var_names = result["var_names"]
-    xn, yn = var_names[0], var_names[1]
-    opt_x, opt_y = result["x"][xn], result["x"][yn]
-    A_ub, b_ub = result["A_ub"], result["b_ub"]
-    A_eq, b_eq = result["A_eq"], result["b_eq"]
-    bounds = result["bounds"]
-    c0, c1 = result["obj_coeffs"]
-    sense = result["sense"]
-    opt_val = result["fun"]
+def plot_contour(sl: dict):
+    """Elegant contour plot for a 2D slice: shaded feasible region, objective
+    contour lines, and the optimal point highlighted."""
+    xn, yn = sl["xn"], sl["yn"]
+    opt_x, opt_y = sl["opt_x"], sl["opt_y"]
+    A_ub, b_ub = sl["A_ub"], sl["b_ub"]
+    A_eq, b_eq = sl["A_eq"], sl["b_eq"]
+    bounds = sl["bounds"]
+    c0, c1, offset = sl["c0"], sl["c1"], sl["offset"]
+    sense = sl["sense"]
+    opt_val = sl["opt_val"]
 
     upper = _plot_window(A_ub, b_ub, A_eq, b_eq, bounds, opt_x, opt_y)
     grid = np.linspace(0, upper, 400)
     X, Y = np.meshgrid(grid, grid)
     mask = _feasible_mask(X, Y, A_ub, b_ub, A_eq, b_eq, bounds)
-    Z = c0 * X + c1 * Y
+    Z = c0 * X + c1 * Y + offset
 
     fig, ax = plt.subplots(figsize=(7, 5.8), dpi=150)
 
-    # Feasible region (shaded only where mask is True)
     ax.contourf(X, Y, mask.astype(float), levels=[0.5, 1.5],
                 colors=[PALETTE["blue_light"]], alpha=0.45)
 
-    # Constraint boundary lines (only true inequality rows, skip trivial bound rows)
     for coeffs, b in zip(A_ub, b_ub):
         a0, a1 = coeffs
         if a0 == 0 and a1 == 0:
@@ -302,7 +327,6 @@ def plot_contour(result: dict):
         ax.plot(xs, ys, color=PALETTE["coral_dark"], linestyle=(0, (5, 4)),
                  linewidth=1.3, alpha=0.85)
 
-    # Objective contour lines - a few reference levels plus the optimal, bold
     feasible_vals = Z[mask]
     if feasible_vals.size > 0:
         lo = np.percentile(feasible_vals, 15)
@@ -312,7 +336,6 @@ def plot_contour(result: dict):
                         linewidths=1.1, linestyles=(0, (4, 4)), alpha=0.6)
         ax.contour(X, Y, Z, levels=[opt_val], colors=[PALETTE["teal_dark"]], linewidths=2.2)
 
-    # Optimal point
     ax.scatter([opt_x], [opt_y], s=70, color=PALETTE["teal_dark"],
                edgecolor="white", linewidth=1.6, zorder=5)
     ax.annotate(
@@ -331,8 +354,6 @@ def plot_contour(result: dict):
     ax.yaxis.set_major_locator(mticker.MaxNLocator(6))
     _clean_axes(ax)
 
-    # Compact custom legend
-    from matplotlib.lines import Line2D
     handles = [
         Line2D([0], [0], marker="s", color="none", markerfacecolor=PALETTE["blue_light"],
                markeredgecolor="none", markersize=12, label="Feasible region"),
@@ -351,53 +372,46 @@ def plot_contour(result: dict):
     st.pyplot(fig)
 
 
-def plot_bar(result: dict):
-    """Restyled horizontal bar chart, used when there are more than two
-    decision variables and a contour plot has no direct geometric meaning."""
-    df_res = pd.DataFrame(list(result["x"].items()), columns=["Variable", "Value"])
-    df_res = df_res.sort_values("Value")
-
-    fig, ax = plt.subplots(figsize=(7, 0.55 * len(df_res) + 1.5), dpi=150)
-    bars = ax.barh(df_res["Variable"], df_res["Value"], color=PALETTE["blue"],
-                    height=0.55, zorder=3)
-    for bar, val in zip(bars, df_res["Value"]):
-        ax.text(bar.get_width() + max(df_res["Value"]) * 0.015, bar.get_y() + bar.get_height() / 2,
-                f"{val:,.2f}", va="center", ha="left", fontsize=9.5, color=PALETTE["text"])
-
-    ax.set_xlabel("Optimal value")
-    ax.set_title("Optimal decision variable allocations", pad=12)
-    ax.grid(axis="x", zorder=0)
-    ax.grid(axis="y", visible=False)
-    _clean_axes(ax)
-    fig.tight_layout()
-    st.pyplot(fig)
-
-
-def display_results(result: dict, sense: str):
+def display_results(result: dict, sense: str, key_prefix: str = ""):
     """Shared UI rendering logic for LP execution results."""
-    if result["success"]:
-        st.success("Optimization completed successfully")
-
-        st.metric(label=f"Optimal objective value ({sense})", value=f"{result['fun']:,.4f}")
-
-        st.subheader("Optimal decision variable values")
-        df_res = pd.DataFrame(
-            list(result["x"].items()),
-            columns=["Variable", "Optimal Value"]
-        )
-        st.dataframe(df_res.style.format({"Optimal Value": "{:,.4f}"}), use_container_width=True)
-
-        st.subheader("Visualization")
-        if len(result["var_names"]) == 2:
-            plot_contour(result)
-        else:
-            st.caption(
-                "A contour plot only has a direct geometric meaning for two decision "
-                "variables. Showing decision variable allocations instead."
-            )
-            plot_bar(result)
-    else:
+    if not result["success"]:
         st.error(f"Solver Error: {result['message']}")
+        return
+
+    st.success("Optimization completed successfully")
+    st.metric(label=f"Optimal objective value ({sense})", value=f"{result['fun']:,.4f}")
+
+    st.subheader("Optimal decision variable values")
+    df_res = pd.DataFrame(list(result["x"].items()), columns=["Variable", "Optimal Value"])
+    st.dataframe(df_res.style.format({"Optimal Value": "{:,.4f}"}), use_container_width=True)
+
+    st.subheader("Visualization")
+    var_names = result["var_names"]
+
+    if len(var_names) < 2:
+        st.info("Add at least one more decision variable to visualize a contour plot.")
+        return
+
+    if len(var_names) == 2:
+        xn, yn = var_names
+    else:
+        st.caption(
+            "This problem has more than two decision variables, so pick which two "
+            "to plot — every other variable is held fixed at its optimal value."
+        )
+        col1, col2 = st.columns(2)
+        with col1:
+            xn = st.selectbox("X-axis variable", var_names, index=0, key=f"{key_prefix}_xvar")
+        remaining = [v for v in var_names if v != xn]
+        with col2:
+            default_idx = min(1, len(remaining) - 1) if len(remaining) > 1 else 0
+            yn = st.selectbox("Y-axis variable", remaining, index=default_idx, key=f"{key_prefix}_yvar")
+
+    sl = slice_2d(result, xn, yn)
+    if sl["fixed_vals"]:
+        fixed_str = ", ".join(f"{k} = {v:,.2f}" for k, v in sl["fixed_vals"].items())
+        st.caption(f"Other variables held at their optimal values: {fixed_str}")
+    plot_contour(sl)
 
 
 # ========================================================================
@@ -479,14 +493,16 @@ Four crude types are available: **Oman, Tapis, Labuan,** and **Murban.**
     bounds_dict = {v: (0, None) for v in var_names}
 
     if st.button("Solve example", type="primary"):
-        res = solve_lp(
+        st.session_state["result_example"] = solve_lp(
             objective_str=objective_str,
             constraints_list=constraint_strs,
             sense="Maximize",
             var_names=var_names,
             bounds_dict=bounds_dict
         )
-        display_results(res, "Maximize")
+
+    if "result_example" in st.session_state:
+        display_results(st.session_state["result_example"], "Maximize", key_prefix="example")
 
 
 # ------------------------------------------------------------------------
@@ -497,8 +513,8 @@ def page_custom():
     st.caption(
         "Use plain, meaningful variable names instead of x, y — e.g. `Utility`, "
         "`RawMaterial`. Any word works as a variable, and the detected list "
-        "below updates as you type. Problems with exactly two variables get an "
-        "interactive contour plot of the feasible region."
+        "below updates as you type. With more than two variables, you'll be "
+        "able to pick which two to plot after solving."
     )
 
     col_opt, col_sense = st.columns([3, 1])
@@ -538,14 +554,16 @@ def page_custom():
 
     if st.button("Solve Custom LP", type="primary"):
         constraints_list = [c.strip() for c in constraints_input.split("\n") if c.strip()]
-        res = solve_lp(
+        st.session_state["result_custom"] = solve_lp(
             objective_str=obj_input,
             constraints_list=constraints_list,
             sense=sense,
             var_names=detected_vars,
             bounds_dict=bounds_dict
         )
-        display_results(res, sense)
+
+    if "result_custom" in st.session_state:
+        display_results(st.session_state["result_custom"], sense, key_prefix="custom")
 
 
 # ========================================================================
