@@ -202,7 +202,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     fig = go.Figure()
 
     # -------------------------------------------------------------------------
-    # 1. SHADE FEASIBLE REGION (Fixed invalid Plotly properties)
+    # 1. SHADE FEASIBLE REGION
     # -------------------------------------------------------------------------
     feasible_mask = np.ones_like(X, dtype=bool)
 
@@ -319,12 +319,12 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     )
 
     fig.update_layout(
-        title=dict(text=f"Interactive Contour Map & Feasible Region: {x_name} vs {y_name}", x=0.5),
+        title="",
         xaxis=dict(title=x_name, range=[0, x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         yaxis=dict(title=y_name, range=[0, y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         template="plotly_white",
-        height=650,
-        margin=dict(l=40, r=40, t=50, b=120),
+        height=600,
+        margin=dict(l=40, r=40, t=20, b=120),
         legend=dict(
             orientation="h",
             yanchor="top",
