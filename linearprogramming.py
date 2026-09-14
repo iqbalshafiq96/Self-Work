@@ -20,10 +20,17 @@ CONSTRAINT_COLORS = [
     "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
 ]
 
+# Initialize Session States
 if "result_example" not in st.session_state:
     st.session_state.result_example = None
 if "result_custom" not in st.session_state:
     st.session_state.result_custom = None
+if "obj_input" not in st.session_state:
+    st.session_state.obj_input = "40 * Utility + 30 * RawMaterial"
+if "constraints_input" not in st.session_state:
+    st.session_state.constraints_input = (
+        "2 * Utility + 1 * RawMaterial <= 100\n1 * Utility + 2 * RawMaterial <= 80"
+    )
 
 
 # ========================================================================
@@ -201,9 +208,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
 
     fig = go.Figure()
 
-    # -------------------------------------------------------------------------
     # 1. SHADE FEASIBLE REGION
-    # -------------------------------------------------------------------------
     feasible_mask = np.ones_like(X, dtype=bool)
 
     A_ub = result.get("A_ub", [])
@@ -233,7 +238,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     feasible_z = feasible_mask.astype(float)
     feasible_z[~feasible_mask] = np.nan
 
-    # Solid green overlay for feasible area
     fig.add_trace(
         go.Heatmap(
             x=x_vals,
@@ -246,9 +250,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         )
     )
 
-    # -------------------------------------------------------------------------
     # 2. CONTOUR LINES & CONSTRAINTS
-    # -------------------------------------------------------------------------
     fig.add_trace(
         go.Contour(
             x=x_vals,
@@ -302,9 +304,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                     )
                 )
 
-    # -------------------------------------------------------------------------
     # 3. OPTIMAL POINT MARKER
-    # -------------------------------------------------------------------------
     fig.add_trace(
         go.Scatter(
             x=[opt_x],
@@ -466,22 +466,36 @@ def page_custom():
     with col_sense:
         sense = st.selectbox("Optimization Sense", ["Maximize", "Minimize"])
     with col_opt:
-        obj_input = st.text_input("Objective Function", "40 * Utility + 30 * RawMaterial")
+        obj_input = st.text_input(
+            "Objective Function", 
+            key="obj_input"
+        )
+
+    # Extract dynamic variables from the objective input field
+    obj_vars = sorted(list(extract_identifiers(st.session_state.obj_input)))
+    
+    # Display variable badge labels directly underneath the objective text input box
+    if obj_vars:
+        formatted_obj_vars = ", ".join([f"`{var}`" for var in obj_vars])
+        st.markdown(f"**Detected Objective Variables:** {formatted_obj_vars}")
+    else:
+        st.caption("No variables detected in objective function yet.")
 
     st.subheader("Constraints")
     st.caption("Enter one constraint per line using `<=`, `>=`, or `=`.")
     constraints_input = st.text_area(
         "Constraints List",
-        value="2 * Utility + 1 * RawMaterial <= 100\n1 * Utility + 2 * RawMaterial <= 80",
+        key="constraints_input",
         height=120
     )
 
-    all_text = obj_input + "\n" + constraints_input
+    all_text = st.session_state.obj_input + "\n" + st.session_state.constraints_input
     detected_vars = sorted(list(extract_identifiers(all_text)))
 
     st.subheader("Variable Bounds")
     if detected_vars:
-        st.info(f"Detected Variables ({len(detected_vars)}): " + ", ".join(detected_vars))
+        formatted_all_vars = ", ".join([f"`{v}`" for v in detected_vars])
+        st.info(f"All Detected Problem Variables ({len(detected_vars)}): {formatted_all_vars}")
         bounds_dict = {}
         cols = st.columns(min(len(detected_vars), 4))
         for i, var in enumerate(detected_vars):
@@ -498,9 +512,9 @@ def page_custom():
     st.divider()
 
     if st.button("Solve Custom LP", type="primary"):
-        constraints_list = [c.strip() for c in constraints_input.split("\n") if c.strip()]
+        constraints_list = [c.strip() for c in st.session_state.constraints_input.split("\n") if c.strip()]
         st.session_state.result_custom = solve_lp(
-            objective_str=obj_input,
+            objective_str=st.session_state.obj_input,
             constraints_list=constraints_list,
             sense=sense,
             var_names=detected_vars,
