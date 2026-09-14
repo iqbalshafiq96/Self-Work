@@ -10,19 +10,16 @@ st.set_page_config(page_title="LP Optimizer", page_icon="📈", layout="centered
 
 IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
-# Reserved words/functions that SymPy or Python use that shouldn't be treated as user variables
 RESERVED_WORDS = {
     "Min", "Max", "min", "max", "Abs", "abs", "sin", "cos", "tan",
     "exp", "log", "sqrt", "True", "False", "None", "and", "or", "not"
 }
 
-# Color palette for clear, professional constraint lines
 CONSTRAINT_COLORS = [
     "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
     "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
 ]
 
-# Initialize session state for solver results
 if "result_example" not in st.session_state:
     st.session_state.result_example = None
 if "result_custom" not in st.session_state:
@@ -33,16 +30,11 @@ if "result_custom" not in st.session_state:
 # LP ENGINE - parsing, linearity check, solving
 # ========================================================================
 def extract_identifiers(text: str) -> set:
-    """Find every word-like token in a string (candidate variable names)."""
     tokens = set(IDENTIFIER_RE.findall(text))
     return tokens - RESERVED_WORDS
 
 
 def parse_equation_or_inequality(expr_str: str, local_dict: dict):
-    """
-    Parses string equations/inequalities into a standard SymPy expression
-    normalized to: Expression <= 0, Expression >= 0, or Expression == 0.
-    """
     expr_str = expr_str.strip()
     if not expr_str:
         return None, None
@@ -66,24 +58,18 @@ def parse_equation_or_inequality(expr_str: str, local_dict: dict):
 
 
 def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: list, bounds_dict: dict):
-    """
-    Universal LP solver using SymPy for algebraic parsing and SciPy linprog for numerical optimization.
-    """
     if not var_names:
         return {"success": False, "message": "No variables defined."}
 
-    # Order variables deterministically
     var_names = sorted(list(var_names))
     sym_vars = [sp.Symbol(v) for v in var_names]
     local_dict = {v: sym_vars[i] for i, v in enumerate(var_names)}
 
-    # Parse Objective
     try:
         obj_expr = sp.sympify(objective_str, locals=local_dict)
     except Exception as e:
         return {"success": False, "message": f"Error parsing objective function: {e}"}
 
-    # Extract objective coefficients (c vector) & constant offset
     c = []
     for var in sym_vars:
         coeff = obj_expr.coeff(var)
@@ -91,14 +77,12 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
             return {"success": False, "message": f"Non-linear term detected in objective for variable {var}."}
         c.append(float(coeff))
 
-    # Constant term in objective
     obj_const = float(obj_expr.as_coefficients_dict().get(1, 0))
-
     c_raw = list(c)
-    if sense.lower() == "maximize":
-        c = [-val for val in c]  # linprog minimizes by default
 
-    # Parse Constraints
+    if sense.lower() == "maximize":
+        c = [-val for val in c]
+
     A_ub, b_ub = [], []
     A_eq, b_eq = [], []
 
@@ -171,10 +155,8 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         st.info("Interactive contour line plots require at least 2 decision variables.")
         return
 
-    # Set smart defaults if provided
     default_x_idx = var_names.index(default_x) if default_x in var_names else 0
     
-    # Dynamic Variable Selection UI
     st.markdown("**2D Projection Settings**")
     col_x, col_y = st.columns(2)
     
@@ -193,7 +175,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     opt_x = result["x"][x_name]
     opt_y = result["x"][y_name]
 
-    # Domain bounds calculation
     x_max = max(opt_x * 1.5, 10.0)
     y_max = max(opt_y * 1.5, 10.0)
 
@@ -201,11 +182,9 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     y_vals = np.linspace(0, y_max, 250)
     X, Y = np.meshgrid(x_vals, y_vals)
 
-    # Base contour contribution from constant and non-selected fixed variables
     fixed_objective_contrib = result.get("obj_const", 0.0)
     c = result["c"]
 
-    # Fixed values dictionary for other variables
     fixed_vars_summary = []
     for idx, v_name in enumerate(var_names):
         if idx not in (x_idx, y_idx):
@@ -216,7 +195,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     if fixed_vars_summary:
         st.caption(f"ℹ️ Other variables held constant at optimal values: **{', '.join(fixed_vars_summary)}**")
 
-    # Construct 2D Objective Meshgrid
     c_x = c[x_idx]
     c_y = c[y_idx]
     Z = c_x * X + c_y * Y + fixed_objective_contrib
@@ -224,11 +202,10 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     fig = go.Figure()
 
     # -------------------------------------------------------------------------
-    # 1. SHADE FEASIBLE REGION
+    # 1. SHADE FEASIBLE REGION (Fixed invalid Plotly properties)
     # -------------------------------------------------------------------------
     feasible_mask = np.ones_like(X, dtype=bool)
 
-    # Apply Inequality Constraints (A_ub * x <= b_ub)
     A_ub = result.get("A_ub", [])
     b_ub = result.get("b_ub", [])
     if A_ub and b_ub:
@@ -240,7 +217,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
             lhs_val = a[x_idx] * X + a[y_idx] * Y
             feasible_mask = feasible_mask & (lhs_val <= eff_b + 1e-5)
 
-    # Apply Variable Bounds Constraints
     bounds = result.get("bounds", [])
     x_min_b, x_max_b = bounds[x_idx] if x_idx < len(bounds) else (0, None)
     y_min_b, y_max_b = bounds[y_idx] if y_idx < len(bounds) else (0, None)
@@ -254,16 +230,17 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     if y_max_b is not None:
         feasible_mask &= (Y <= y_max_b + 1e-5)
 
-    # Overlay shaded region for feasible area
+    feasible_z = feasible_mask.astype(float)
+    feasible_z[~feasible_mask] = np.nan
+
+    # Solid green overlay for feasible area
     fig.add_trace(
-        go.Contour(
+        go.Heatmap(
             x=x_vals,
             y=y_vals,
-            z=feasible_mask.astype(int),
+            z=feasible_z,
             showscale=False,
-            colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(46, 204, 113, 0.25)"]],
-            contours_coloring="lines+fill" if np.any(feasible_mask) else "none",
-            line=dict(width=0),
+            colorscale=[[0, "rgba(46, 204, 113, 0.25)"], [1, "rgba(46, 204, 113, 0.25)"]],
             hoverinfo="skip",
             name="Feasible Region"
         )
@@ -277,8 +254,8 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
             x=x_vals,
             y=y_vals,
             z=Z,
+            contours_coloring="lines",
             contours=dict(
-                coloring='none',
                 showlabels=True,
                 labelfont=dict(size=10, color='navy')
             ),
@@ -364,7 +341,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
 
 
 def display_results(result: dict, sense: str, default_x: str = None, default_y: str = None):
-    """Shared UI rendering logic for LP execution results."""
     if result["success"]:
         st.success("Optimization Completed Successfully!")
 
@@ -386,7 +362,7 @@ def display_results(result: dict, sense: str, default_x: str = None, default_y: 
 
 
 # ========================================================================
-# NAVIGATION - two pages toggled by buttons
+# ROUTER
 # ========================================================================
 if "page" not in st.session_state:
     st.session_state.page = "example"
@@ -406,9 +382,6 @@ with col2:
 st.divider()
 
 
-# ------------------------------------------------------------------------
-# PAGE 1: Worked Refinery Example
-# ------------------------------------------------------------------------
 def page_example():
     st.header("Refinery crude oil purchasing")
     st.markdown(
@@ -472,7 +445,6 @@ Four crude types are available: **Oman, Tapis, Labuan,** and **Murban.**
             bounds_dict=bounds_dict
         )
 
-    # Render results if present in session state with Oman and Murban as defaults
     if st.session_state.result_example is not None:
         display_results(
             st.session_state.result_example, 
@@ -482,9 +454,6 @@ Four crude types are available: **Oman, Tapis, Labuan,** and **Murban.**
         )
 
 
-# ------------------------------------------------------------------------
-# PAGE 2: User Custom LP Builder
-# ------------------------------------------------------------------------
 def page_custom():
     st.header("Build your own LP problem")
     st.caption(
@@ -538,14 +507,10 @@ def page_custom():
             bounds_dict=bounds_dict
         )
 
-    # Render results if present in session state
     if st.session_state.result_custom is not None:
         display_results(st.session_state.result_custom, sense)
 
 
-# ========================================================================
-# ROUTER
-# ========================================================================
 if st.session_state.page == "example":
     page_example()
 else:
