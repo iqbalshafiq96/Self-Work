@@ -156,10 +156,7 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
             "fun": opt_val,
             "x": solution,
             "message": res.message,
-            "status": res.status,
-            "objective_str": objective_str,
-            "var_names": var_names,
-            "local_dict": local_dict
+            "status": res.status
         }
     else:
         return {"success": False, "message": f"Solver failed: {res.message}"}
@@ -181,64 +178,12 @@ def display_results(result: dict, sense: str):
         )
         st.dataframe(df_res.style.format({"Optimal Value": "{:,.4f}"}), use_container_width=True)
 
-        # Plot objective function contours
-        st.subheader("Objective Function Contour Plot")
-        vars_list = result["var_names"]
-
-        if len(vars_list) < 2:
-            st.info("At least 2 decision variables are required to generate a contour plot.")
-            return
-
-        c1, c2 = st.columns(2)
-        with c1:
-            x_var = st.selectbox("Select X-axis variable", vars_list, index=0)
-        with c2:
-            default_y_idx = 1 if len(vars_list) > 1 else 0
-            y_var = st.selectbox("Select Y-axis variable", vars_list, index=default_y_idx)
-
-        if x_var == y_var:
-            st.warning("Please select two distinct variables for the X and Y axes.")
-            return
-
-        x_opt = result["x"][x_var]
-        y_opt = result["x"][y_var]
-
-        # Determine plotting range around optimal values
-        x_max = max(x_opt * 1.5, 10.0)
-        y_max = max(y_opt * 1.5, 10.0)
-
-        x_vals = np.linspace(0, x_max, 100)
-        y_vals = np.linspace(0, y_max, 100)
-        X, Y = np.meshgrid(x_vals, y_vals)
-
-        # Evaluate objective function across grid using SymPy lambdify
-        sym_obj = sp.sympify(result["objective_str"], locals=result["local_dict"])
-        
-        # Build evaluation arguments: fix non-selected variables to their optimal values
-        eval_args = []
-        for v in vars_list:
-            if v == x_var:
-                eval_args.append(X)
-            elif v == y_var:
-                eval_args.append(Y)
-            else:
-                eval_args.append(result["x"][v])
-
-        sym_vars = [sp.Symbol(v) for v in vars_list]
-        f_obj = sp.lambdify(sym_vars, sym_obj, "numpy")
-        Z = f_obj(*eval_args)
-
-        fig, ax = plt.subplots(figsize=(6, 4))
-        cs = ax.contourf(X, Y, Z, levels=20, cmap="viridis")
-        fig.colorbar(cs, ax=ax, label="Objective Value")
-        
-        # Mark optimal point
-        ax.plot(x_opt, y_opt, "r*", markersize=12, label="Optimal Point")
-        ax.set_xlabel(x_var)
-        ax.set_ylabel(y_var)
-        ax.set_title(f"Objective Contours ({x_var} vs {y_var})")
-        ax.legend(loc="upper right")
-        
+        # Plot variable allocations bar chart
+        fig, ax = plt.subplots(figsize=(6, 3))
+        ax.bar(df_res["Variable"], df_res["Optimal Value"], color="#4C72B0")
+        ax.set_ylabel("Value")
+        ax.set_title("Decision Variable Allocations")
+        plt.xticks(rotation=45, ha="right")
         st.pyplot(fig)
     else:
         st.error(f"Solver Error: {result['message']}")
@@ -308,7 +253,7 @@ Four crude types are available: **Oman, Tapis, Labuan,** and **Murban.**
 
     with st.expander("Show objective function & constraints", expanded=True):
         st.markdown("**Decision variables:** daily m³ of each crude processed — "
-                    "`Oman`, `Tapis`, `Labuan`, `Murban`")
+                     "`Oman`, `Tapis`, `Labuan`, `Murban`")
 
         st.markdown("**Objective (maximize GRM):**")
         st.code(objective_str, language="text")
