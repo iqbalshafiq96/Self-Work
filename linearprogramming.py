@@ -20,6 +20,18 @@ CONSTRAINT_COLORS = [
     "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
 ]
 
+# Color palette for unique variable badges
+VAR_BADGE_COLORS = [
+    {"bg": "#e1f5fe", "text": "#0288d1", "border": "#81d4fa"},
+    {"bg": "#f3e5f5", "text": "#7b1fa2", "border": "#ce93d8"},
+    {"bg": "#e8f5e9", "text": "#388e3c", "border": "#a5d6a7"},
+    {"bg": "#fff3e0", "text": "#f57c00", "border": "#ffcc80"},
+    {"bg": "#fce4ec", "text": "#c2185b", "border": "#f48fb1"},
+    {"bg": "#e0f2f1", "text": "#00796b", "border": "#80cbc4"},
+    {"bg": "#fffde7", "text": "#fbc02d", "border": "#fff59d"},
+    {"bg": "#efebe9", "text": "#5d4037", "border": "#bcaaa4"},
+]
+
 if "result_example" not in st.session_state:
     st.session_state.result_example = None
 if "result_custom" not in st.session_state:
@@ -476,22 +488,35 @@ def page_custom():
         height=120
     )
 
+    # Parse all variables present across objective function and constraint text boxes
     all_text = obj_input + "\n" + constraints_input
     detected_vars = sorted(list(extract_identifiers(all_text)))
 
-    # Render detected variables directly beneath the Objective Function dialog box area
+    # Render uniquely colored badges directly under both dialog boxes
     if detected_vars:
-        badges_html = " ".join([
-            f'<code style="background-color: rgba(135, 206, 250, 0.2); color: #0f52ba; padding: 3px 8px; border-radius: 4px; font-weight: 600;">{var}</code>'
-            for var in detected_vars
-        ])
+        badge_spans = []
+        for i, var in enumerate(detected_vars):
+            color = VAR_BADGE_COLORS[i % len(VAR_BADGE_COLORS)]
+            style = (
+                f"background-color: {color['bg']}; "
+                f"color: {color['text']}; "
+                f"border: 1px solid {color['border']}; "
+                "padding: 3px 9px; "
+                "border-radius: 6px; "
+                "font-weight: 600; "
+                "font-size: 0.9em; "
+                "display: inline-block; "
+                "margin-right: 4px;"
+            )
+            badge_spans.append(f'<span style="{style}">{var}</span>')
+            
+        badges_html = " ".join(badge_spans)
         st.markdown(f"**Recognized Variables:** {badges_html}", unsafe_allow_html=True)
     else:
         st.markdown("*No variables detected yet.*")
 
     st.subheader("Variable Bounds")
     if detected_vars:
-        st.info(f"Detected Variables ({len(detected_vars)}): " + ", ".join(detected_vars))
         bounds_dict = {}
         cols = st.columns(min(len(detected_vars), 4))
         for i, var in enumerate(detected_vars):
