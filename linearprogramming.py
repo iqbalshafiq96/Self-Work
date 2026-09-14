@@ -11,11 +11,11 @@ same result-display logic, so behavior is consistent between them.
 """
 
 import re
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
 import sympy as sp
+import plotly.graph_objects as go
 from scipy.optimize import linprog
 
 st.set_page_config(page_title="LP Optimizer", page_icon="📈", layout="centered")
@@ -162,11 +162,11 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
         return {"success": False, "message": f"Solver failed: {res.message}"}
 
 
-def plot_contour_lines(result: dict):
-    """Generate a line-based 2D objective contour plot for 2-variable LP models."""
+def plot_interactive_contour_lines(result: dict):
+    """Generate an interactive 2D objective contour plot using Plotly for 2-variable LP models."""
     var_names = result["var_names"]
     if len(var_names) != 2:
-        st.info("2D contour line plots are available for problems with exactly 2 variables.")
+        st.info("Interactive 2D contour line plots are available for problems with exactly 2 decision variables.")
         return
 
     x_name, y_name = var_names[0], var_names[1]
@@ -179,43 +179,86 @@ def plot_contour_lines(result: dict):
 
     x_vals = np.linspace(0, x_max, 200)
     y_vals = np.linspace(0, y_max, 200)
-    X, Y = np.meshgrid(x_vals, y_vals)
 
-    # Objective matrix calculation
+    # Objective grid calculation
     c = result["c"]
-    Z = c[0] * X + c[1] * Y
+    Z = c[0] * np.outer(np.ones(len(y_vals)), x_vals) + c[1] * np.outer(y_vals, np.ones(len(x_vals)))
 
-    fig, ax = plt.subplots(figsize=(6, 5))
+    fig = go.Figure()
 
-    # Line-only Contour Plot (no color fill)
-    CS = ax.contour(X, Y, Z, levels=15, colors="tab:blue", linestyles="dashed", linewidths=1.2)
-    ax.clabel(CS, inline=True, fontsize=8, fmt="%.1f")
+    # 1. Interactive Objective Contour Lines
+    fig.add_trace(
+        go.Contour(
+            x=x_vals,
+            y=y_vals,
+            z=Z,
+            contours=dict(
+                coloring='none',  # Line-only contours (no color fill)
+                showlabels=True,
+                labelfont=dict(size=10, color='navy')
+            ),
+            line=dict(color='#1f77b4', width=1.5, dash='dash'),
+            name="Objective Contour",
+            hoverinfo="x+y+z"
+        )
+    )
 
-    # Constraint Lines
+    # 2. Linear Constraint Lines
     A_ub = result.get("A_ub", [])
     b_ub = result.get("b_ub", [])
     if A_ub and b_ub:
         for idx, (a, b) in enumerate(zip(A_ub, b_ub)):
-            # Line equation: a0*x + a1*y = b
             if abs(a[1]) > 1e-6:
                 y_line = (b - a[0] * x_vals) / a[1]
-                ax.plot(x_vals, y_line, color="black", linestyle="-", alpha=0.6, label=f"Constraint {idx+1}" if idx == 0 else "")
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_vals,
+                        y=y_line,
+                        mode='lines',
+                        line=dict(color='#333333', width=2),
+                        name=f"Constraint {idx+1}",
+                        hoverinfo="x+y"
+                    )
+                )
             else:
                 x_val = b / a[0]
-                ax.axvline(x=x_val, color="black", linestyle="-", alpha=0.6, label=f"Constraint {idx+1}" if idx == 0 else "")
+                fig.add_trace(
+                    go.Scatter(
+                        x=[x_val, x_val],
+                        y=[0, y_max],
+                        mode='lines',
+                        line=dict(color='#333333', width=2),
+                        name=f"Constraint {idx+1}",
+                        hoverinfo="x+y"
+                    )
+                )
 
-    # Optimal Point Highlight
-    ax.plot(opt_x, opt_y, "ro", markersize=8, label=f"Optimal ({opt_x:.2f}, {opt_y:.2f})")
+    # 3. Optimal Point Marker
+    fig.add_trace(
+        go.Scatter(
+            x=[opt_x],
+            y=[opt_y],
+            mode='markers+text',
+            marker=dict(color='#d62728', size=12, symbol='circle'),
+            text=[f" Optimal ({opt_x:.2f}, {opt_y:.2f})"],
+            textposition="top right",
+            name="Optimal Solution",
+            hoverinfo="x+y"
+        )
+    )
 
-    ax.set_xlim(0, x_max)
-    ax.set_ylim(0, y_max)
-    ax.set_xlabel(x_name)
-    ax.set_ylabel(y_name)
-    ax.set_title("Objective Contour Lines & Constraints")
-    ax.grid(True, linestyle=":", alpha=0.5)
-    ax.legend(loc="upper right")
+    # Layout configuration
+    fig.update_layout(
+        title=dict(text="Interactive Objective Contour Lines & Constraints", x=0.5),
+        xaxis=dict(title=x_name, range=[0, x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
+        yaxis=dict(title=y_name, range=[0, y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
+        template="plotly_white",
+        height=500,
+        margin=dict(l=40, r=40, t=50, b=40),
+        legend=dict(x=0.01, y=0.99, bgcolor="rgba(255,255,255,0.8)"),
+    )
 
-    st.pyplot(fig)
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def display_results(result: dict, sense: str):
@@ -234,8 +277,8 @@ def display_results(result: dict, sense: str):
         )
         st.dataframe(df_res.style.format({"Optimal Value": "{:,.4f}"}), use_container_width=True)
 
-        st.subheader("Objective Contour Map")
-        plot_contour_lines(result)
+        st.subheader("Interactive Objective Contour Map")
+        plot_interactive_contour_lines(result)
     else:
         st.error(f"Solver Error: {result['message']}")
 
