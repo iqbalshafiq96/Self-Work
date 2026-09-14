@@ -16,6 +16,13 @@ RESERVED_WORDS = {
     "exp", "log", "sqrt", "True", "False", "None", "and", "or", "not"
 }
 
+# Initialize session state for solver results
+if "result_example" not in st.session_state:
+    st.session_state.result_example = None
+if "result_custom" not in st.session_state:
+    st.session_state.result_custom = None
+
+
 # ========================================================================
 # LP ENGINE - parsing, linearity check, solving
 # ========================================================================
@@ -164,8 +171,6 @@ def plot_interactive_contour_lines(result: dict):
     with col_x:
         x_name = st.selectbox("X-Axis Variable", var_names, index=0, key="contour_x_var")
     with col_y:
-        # Default Y to the second variable if available
-        y_default_idx = 1 if len(var_names) > 1 else 0
         y_options = [v for v in var_names if v != x_name]
         y_name = st.selectbox("Y-Axis Variable", y_options, index=0, key="contour_y_var")
 
@@ -186,7 +191,7 @@ def plot_interactive_contour_lines(result: dict):
     fixed_objective_contrib = result.get("obj_const", 0.0)
     c = result["c"]
 
-    # Fixed values dictionary for other variables (defaulting to their optimal solutions)
+    # Fixed values dictionary for other variables
     fixed_vars_summary = []
     for idx, v_name in enumerate(var_names):
         if idx not in (x_idx, y_idx):
@@ -221,13 +226,12 @@ def plot_interactive_contour_lines(result: dict):
         )
     )
 
-    # 2. Linear Constraint Lines (Projected to 2D)
+    # 2. Linear Constraint Lines
     A_ub = result.get("A_ub", [])
     b_ub = result.get("b_ub", [])
 
     if A_ub and b_ub:
         for idx, (a, b) in enumerate(zip(A_ub, b_ub)):
-            # Adjust b-value for fixed non-selected variables
             eff_b = b
             for v_i in range(len(var_names)):
                 if v_i not in (x_idx, y_idx):
@@ -235,7 +239,6 @@ def plot_interactive_contour_lines(result: dict):
 
             a_x, a_y = a[x_idx], a[y_idx]
 
-            # Plot line if non-zero coefficients exist for selected variables
             if abs(a_y) > 1e-6:
                 y_line = (eff_b - a_x * x_vals) / a_y
                 fig.add_trace(
@@ -389,14 +392,17 @@ Four crude types are available: **Oman, Tapis, Labuan,** and **Murban.**
     bounds_dict = {v: (0, None) for v in var_names}
 
     if st.button("Solve example", type="primary"):
-        res = solve_lp(
+        st.session_state.result_example = solve_lp(
             objective_str=objective_str,
             constraints_list=constraint_strs,
             sense="Maximize",
             var_names=var_names,
             bounds_dict=bounds_dict
         )
-        display_results(res, "Maximize")
+
+    # Render results if present in session state
+    if st.session_state.result_example is not None:
+        display_results(st.session_state.result_example, "Maximize")
 
 
 # ------------------------------------------------------------------------
@@ -424,7 +430,6 @@ def page_custom():
         height=120
     )
 
-    # Dynamic Live Variable Parsing
     all_text = obj_input + "\n" + constraints_input
     detected_vars = sorted(list(extract_identifiers(all_text)))
 
@@ -448,14 +453,17 @@ def page_custom():
 
     if st.button("Solve Custom LP", type="primary"):
         constraints_list = [c.strip() for c in constraints_input.split("\n") if c.strip()]
-        res = solve_lp(
+        st.session_state.result_custom = solve_lp(
             objective_str=obj_input,
             constraints_list=constraints_list,
             sense=sense,
             var_names=detected_vars,
             bounds_dict=bounds_dict
         )
-        display_results(res, sense)
+
+    # Render results if present in session state
+    if st.session_state.result_custom is not None:
+        display_results(st.session_state.result_custom, sense)
 
 
 # ========================================================================
