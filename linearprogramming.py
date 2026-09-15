@@ -514,7 +514,7 @@ with col1:
                  type="primary" if st.session_state.page == "example" else "secondary"):
         st.session_state.page = "example"
 with col2:
-    if st.button("✍️ Solve LP Problem", use_container_width=True,
+    if st.button("✍️ Build your own LP", use_container_width=True,
                  type="primary" if st.session_state.page == "custom" else "secondary"):
         st.session_state.page = "custom"
 
@@ -594,9 +594,9 @@ Four crude types are available: **Oman, Tapis, Labuan,** and **Murban.**
 
 
 def page_custom():
-    st.header("Build your own LP problem")
+    st.header("LP Problem Statement (Objective Function)")
     st.caption(
-        "Use plain, meaningful variable names instead of x, y — e.g. `Utility`, "
+        "Use plain, meaningful variable names — e.g. `x`,`y`,`Utility`, "
         "`RawMaterial`. Any word works as a variable, and the detected list "
         "below updates as you type."
     )
