@@ -5,7 +5,6 @@ import streamlit as st
 import sympy as sp
 import plotly.graph_objects as go
 from scipy.optimize import linprog
-from scipy.spatial import ConvexHull
 
 st.set_page_config(page_title="LP Optimizer", layout="centered")
 
@@ -52,6 +51,7 @@ def highlight_variables_in_text(text: str, detected_vars: list) -> str:
     if not text or not detected_vars:
         return text
 
+    # Sort identifiers by length descending to avoid partial string replacements
     sorted_vars = sorted(detected_vars, key=len, reverse=True)
     pattern = re.compile(r"\b(" + "|".join(re.escape(v) for v in sorted_vars) + r")\b")
 
@@ -186,58 +186,8 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
         return {"success": False, "message": f"Solver failed: {res.message}"}
 
 
-def compute_feasible_polygon_vertices(halfplanes, bounds_x, bounds_y):
-    """Calculates corner intersection vertices of half-planes to create a smooth polygon."""
-    # Add bounding box constraints to prevent infinite boundaries
-    all_planes = list(halfplanes)
-    all_planes.append((1.0, 0.0, bounds_x[1]))    # x <= x_max
-    all_planes.append((-1.0, 0.0, -bounds_x[0]))  # x >= x_min
-    all_planes.append((0.0, 1.0, bounds_y[1]))    # y <= y_max
-    all_planes.append((0.0, -1.0, -bounds_y[0]))  # y >= y_min
-
-    intersections = []
-    num_planes = len(all_planes)
-
-    for i in range(num_planes):
-        for j in range(i + 1, num_planes):
-            a1, b1, c1 = all_planes[i]
-            a2, b2, c2 = all_planes[j]
-
-            det = a1 * b2 - a2 * b1
-            if abs(det) < 1e-9:
-                continue
-
-            x = (c1 * b2 - c2 * b1) / det
-            y = (a1 * c2 - a2 * c1) / det
-
-            # Verify if point satisfies all linear half-plane inequalities
-            feasible = True
-            for a, b, c in all_planes:
-                if a * x + b * y > c + 1e-6:
-                    feasible = False
-                    break
-
-            if feasible:
-                intersections.append((x, y))
-
-    if not intersections:
-        return None, None
-
-    pts = np.unique(np.round(intersections, 6), axis=0)
-    if len(pts) < 3:
-        return None, None
-
-    # Order points clockwise around polygon perimeter via Convex Hull
-    try:
-        hull = ConvexHull(pts)
-        ordered_pts = pts[hull.vertices]
-        return ordered_pts[:, 0], ordered_pts[:, 1]
-    except Exception:
-        return None, None
-
-
 def plot_interactive_contour_lines(result: dict, default_x: str = None, default_y: str = None):
-    """Generate an interactive 2D objective contour plot with vector-shaded feasible region."""
+    """Generate an interactive 2D objective contour plot with shaded feasible region."""
     var_names = result["var_names"]
 
     if len(var_names) < 2:
@@ -264,13 +214,17 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     opt_x = result["x"][x_name]
     opt_y = result["x"][y_name]
 
-    # Initial view boundaries
+    # Initial viewport bounds
     view_x_max = max(opt_x * 1.5, 10.0)
     view_y_max = max(opt_y * 1.5, 10.0)
 
-    # Calculation range for lines & contour grid across zooming out
+    # Extended computational grid bounds to support seamless zooming out
     calc_x_max = view_x_max * 10.0
     calc_y_max = view_y_max * 10.0
+
+    x_vals = np.linspace(0, calc_x_max, 400)
+    y_vals = np.linspace(0, calc_y_max, 400)
+    X, Y = np.meshgrid(x_vals, y_vals)
 
     fixed_objective_contrib = result.get("obj_const", 0.0)
     c = result["c"]
@@ -285,58 +239,56 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     if fixed_vars_summary:
         st.caption(f"ℹ️ Other variables held constant at optimal values: **{', '.join(fixed_vars_summary)}**")
 
-    # Collect line half-planes for vector geometric shading
-    halfplanes = []
+    c_x = c[x_idx]
+    c_y = c[y_idx]
+    Z = c_x * X + c_y * Y + fixed_objective_contrib
+
+    fig = go.Figure()
+
+    # 1. SHADE FEASIBLE REGION
+    feasible_mask = np.ones_like(X, dtype=bool)
+
     A_ub = result.get("A_ub", [])
     b_ub = result.get("b_ub", [])
-
     if A_ub and b_ub:
         for a, b in zip(A_ub, b_ub):
             eff_b = b
             for v_i in range(len(var_names)):
                 if v_i not in (x_idx, y_idx):
                     eff_b -= a[v_i] * result["x"][var_names[v_i]]
-            halfplanes.append((a[x_idx], a[y_idx], eff_b))
+            lhs_val = a[x_idx] * X + a[y_idx] * Y
+            feasible_mask = feasible_mask & (lhs_val <= eff_b + 1e-5)
 
     bounds = result.get("bounds", [])
     x_min_b, x_max_b = bounds[x_idx] if x_idx < len(bounds) else (0, None)
     y_min_b, y_max_b = bounds[y_idx] if y_idx < len(bounds) else (0, None)
 
-    b_x_min = 0.0 if x_min_b is None else x_min_b
-    b_x_max = calc_x_max if x_max_b is None else min(x_max_b, calc_x_max)
-    b_y_min = 0.0 if y_min_b is None else y_min_b
-    b_y_max = calc_y_max if y_max_b is None else min(y_max_b, calc_y_max)
+    if x_min_b is not None:
+        feasible_mask &= (X >= x_min_b - 1e-5)
+    if x_max_b is not None:
+        feasible_mask &= (X <= x_max_b + 1e-5)
+    if y_min_b is not None:
+        feasible_mask &= (Y >= y_min_b - 1e-5)
+    if y_max_b is not None:
+        feasible_mask &= (Y <= y_max_b + 1e-5)
 
-    fig = go.Figure()
+    feasible_z = feasible_mask.astype(float)
+    feasible_z[~feasible_mask] = np.nan
 
-    # 1. SHADE FEASIBLE REGION AS A VECTOR POLYGON UNDER CONSTRAINTS
-    poly_x, poly_y = compute_feasible_polygon_vertices(
-        halfplanes, bounds_x=(b_x_min, b_x_max), bounds_y=(b_y_min, b_y_max)
+    fig.add_trace(
+        go.Heatmap(
+            x=x_vals,
+            y=y_vals,
+            z=feasible_z,
+            showscale=False,
+            colorscale=[[0, "rgba(46, 204, 113, 0.25)"], [1, "rgba(46, 204, 113, 0.25)"]],
+            hoverinfo="skip",
+            name="Feasible Region",
+            showlegend=True
+        )
     )
 
-    if poly_x is not None and len(poly_x) > 0:
-        # Close loop
-        px = np.append(poly_x, poly_x[0])
-        py = np.append(poly_y, poly_y[0])
-
-        fig.add_trace(
-            go.Scatter(
-                x=px,
-                y=py,
-                fill="toself",
-                fillcolor="rgba(46, 204, 113, 0.25)",
-                line=dict(color="rgba(46, 204, 113, 0.6)", width=1),
-                name="Feasible Region",
-                hoverinfo="skip"
-            )
-        )
-
-    # 2. CONTOUR LINES FOR OBJECTIVE FUNCTION
-    x_vals = np.linspace(0, calc_x_max, 250)
-    y_vals = np.linspace(0, calc_y_max, 250)
-    X, Y = np.meshgrid(x_vals, y_vals)
-    Z = c[x_idx] * X + c[y_idx] * Y + fixed_objective_contrib
-
+    # 2. CONTOUR LINES & CONSTRAINTS
     fig.add_trace(
         go.Contour(
             x=x_vals,
@@ -365,7 +317,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         )
     )
 
-    # 3. DRAW CONSTRAINT LINES
     raw_constraints = result.get("raw_constraints", [])
     if A_ub and b_ub:
         for idx, (a, b) in enumerate(zip(A_ub, b_ub)):
@@ -403,7 +354,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                     )
                 )
 
-    # 4. OPTIMAL POINT MARKER
+    # 3. OPTIMAL POINT MARKER
     fig.add_trace(
         go.Scatter(
             x=[opt_x],
@@ -575,9 +526,11 @@ def page_custom():
         height=120
     )
 
+    # Parse all variables present across objective function and constraint text boxes
     all_text = obj_input + "\n" + constraints_input
     detected_vars = sorted(list(extract_identifiers(all_text)))
 
+    # Variable Bounds Section - Positioned right under constraints
     enable_bounds = st.checkbox("Enable Custom Variable Bounds", value=False)
     bounds_dict = {}
 
@@ -595,10 +548,12 @@ def page_custom():
         else:
             st.warning("No variables detected yet to configure bounds.")
     else:
+        # Default non-negativity bounds (0, ∞) when disabled
         bounds_dict = {var: (0.0, None) for var in detected_vars}
 
     st.divider()
 
+    # Render uniquely colored badges directly under input boxes
     if detected_vars:
         badge_spans = []
         for i, var in enumerate(detected_vars):
@@ -619,6 +574,9 @@ def page_custom():
         badges_html = " ".join(badge_spans)
         st.markdown(f"**Recognized Variables:** {badges_html}", unsafe_allow_html=True)
 
+        # -----------------------------------------------------------------
+        # Dynamic Colored Preview Box for Objective and Constraints
+        # -----------------------------------------------------------------
         with st.expander("Optimization Problem Statement Preview", expanded=True):
             highlighted_obj = highlight_variables_in_text(obj_input, detected_vars)
             st.markdown(
