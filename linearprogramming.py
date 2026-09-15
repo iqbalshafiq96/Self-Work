@@ -5,6 +5,7 @@ import streamlit as st
 import sympy as sp
 import plotly.graph_objects as go
 from scipy.optimize import linprog
+from scipy.spatial import ConvexHull
 
 st.set_page_config(page_title="LP Optimizer", layout="centered")
 
@@ -20,7 +21,6 @@ CONSTRAINT_COLORS = [
     "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
 ]
 
-# Color palette for unique variable badges
 VAR_BADGE_COLORS = [
     {"bg": "#e1f5fe", "text": "#0288d1", "border": "#81d4fa"},
     {"bg": "#f3e5f5", "text": "#7b1fa2", "border": "#ce93d8"},
@@ -185,8 +185,57 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
         return {"success": False, "message": f"Solver failed: {res.message}"}
 
 
+def compute_feasible_polygon_vertices(A_lines, b_lines, x_range, y_range):
+    """Computes exact geometric vertices of the convex feasible region using half-plane intersection."""
+    # Define bounding box constraints
+    all_A = list(A_lines) + [
+        [-1.0, 0.0], [1.0, 0.0],
+        [0.0, -1.0], [0.0, 1.0]
+    ]
+    all_b = list(b_lines) + [
+        -x_range[0], x_range[1],
+        -y_range[0], y_range[1]
+    ]
+
+    intersections = []
+    num_constraints = len(all_A)
+
+    for i in range(num_constraints):
+        for j in range(i + 1, num_constraints):
+            A_mat = np.array([all_A[i], all_A[j]])
+            b_vec = np.array([all_b[i], all_b[j]])
+
+            det = np.linalg.det(A_mat)
+            if abs(det) < 1e-9:
+                continue
+
+            pt = np.linalg.solve(A_mat, b_vec)
+            
+            # Check feasibility against all linear inequalities
+            feasible = True
+            for k in range(num_constraints):
+                if np.dot(all_A[k], pt) > all_b[k] + 1e-6:
+                    feasible = False
+                    break
+
+            if feasible:
+                intersections.append(pt)
+
+    if not intersections:
+        return None, None
+
+    pts = np.unique(np.round(np.array(intersections), 6), axis=0)
+    if len(pts) < 3:
+        return None, None
+
+    # Sort vertices in counter-clockwise order via ConvexHull
+    hull = ConvexHull(pts)
+    hull_pts = pts[hull.vertices]
+    return hull_pts[:, 0], hull_pts[:, 1]
+
+
 def plot_interactive_contour_lines(result: dict, default_x: str = None, default_y: str = None):
-    """Generate an interactive 2D objective contour plot with smooth polygon feasible region."""
+    """Generate an interactive 2D objective contour plot with exact polygon-shaded feasible region."""
     var_names = result["var_names"]
 
     if len(var_names) < 2:
@@ -213,16 +262,16 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     opt_x = result["x"][x_name]
     opt_y = result["x"][y_name]
 
-    # Target camera view range
-    x_view_max = max(opt_x * 1.5, 10.0)
-    y_view_max = max(opt_y * 1.5, 10.0)
+    # Initial view ranges
+    view_x_max = max(opt_x * 1.5, 10.0)
+    view_y_max = max(opt_y * 1.5, 10.0)
 
-    # Extended calculation grid (20x) for panning/zooming without clipping
-    x_calc_max = x_view_max * 20.0
-    y_calc_max = y_view_max * 20.0
+    # Extended computational grid for 20x zooming without clipping artifacts
+    calc_x_max = view_x_max * 20.0
+    calc_y_max = view_y_max * 20.0
 
-    x_vals = np.linspace(0, x_calc_max, 500)
-    y_vals = np.linspace(0, y_calc_max, 500)
+    x_vals = np.linspace(0, calc_x_max, 400)
+    y_vals = np.linspace(0, calc_y_max, 400)
     X, Y = np.meshgrid(x_vals, y_vals)
 
     fixed_objective_contrib = result.get("obj_const", 0.0)
@@ -244,8 +293,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
 
     fig = go.Figure()
 
-    # 1. CONSTRUCT SMOOTH CONVEX POLYGON FOR FEASIBLE REGION
-    # Formulate 2D linear inequality systems: A_2d * [x, y]^T <= b_2d
+    # Collect 2D projection half-space constraints (A_2d * [x, y]^T <= b_2d)
     A_2d, b_2d = [], []
 
     A_ub = result.get("A_ub", [])
@@ -263,46 +311,34 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     x_min_b, x_max_b = bounds[x_idx] if x_idx < len(bounds) else (0, None)
     y_min_b, y_max_b = bounds[y_idx] if y_idx < len(bounds) else (0, None)
 
-    # Non-negativity and user-defined variable bounds
-    A_2d.append([-1.0, 0.0]); b_2d.append(- (x_min_b if x_min_b is not None else 0.0))
-    A_2d.append([0.0, -1.0]); b_2d.append(- (y_min_b if y_min_b is not None else 0.0))
+    if x_min_b is not None:
+        A_2d.append([-1.0, 0.0])
+        b_2d.append(-x_min_b)
     if x_max_b is not None:
-        A_2d.append([1.0, 0.0]); b_2d.append(x_max_b)
+        A_2d.append([1.0, 0.0])
+        b_2d.append(x_max_b)
+    if y_min_b is not None:
+        A_2d.append([0.0, -1.0])
+        b_2d.append(-y_min_b)
     if y_max_b is not None:
-        A_2d.append([0.0, 1.0]); b_2d.append(y_max_b)
+        A_2d.append([0.0, 1.0])
+        b_2d.append(y_max_b)
 
-    A_2d = np.array(A_2d)
-    b_2d = np.array(b_2d)
+    # 1. SHADE FEASIBLE REGION (EXACT CONVEX POLYGON)
+    poly_x, poly_y = compute_feasible_polygon_vertices(
+        A_2d, b_2d, 
+        x_range=(0, calc_x_max), 
+        y_range=(0, calc_y_max)
+    )
 
-    # Calculate intersection vertices of all bounding lines
-    vertices = []
-    n_lines = len(b_2d)
-    for i in range(n_lines):
-        for j in range(i + 1, n_lines):
-            M = np.vstack([A_2d[i], A_2d[j]])
-            if abs(np.linalg.det(M)) > 1e-9:
-                pt = np.linalg.solve(M, [b_2d[i], b_2d[j]])
-                if np.all(A_2d @ pt <= b_2d + 1e-6):
-                    vertices.append(pt)
-
-    if vertices:
-        vertices = np.unique(np.round(vertices, 6), axis=0)
-        # Sort vertices counter-clockwise around center mass to form a smooth polygon
-        center = vertices.mean(axis=0)
-        angles = np.arctan2(vertices[:, 1] - center[1], vertices[:, 0] - center[0])
-        sorted_vertices = vertices[np.argsort(angles)]
-
-        px = np.append(sorted_vertices[:, 0], sorted_vertices[0, 0])
-        py = np.append(sorted_vertices[:, 1], sorted_vertices[0, 1])
-
+    if poly_x is not None and len(poly_x) > 0:
         fig.add_trace(
             go.Scatter(
-                x=px,
-                y=py,
+                x=list(poly_x) + [poly_x[0]],
+                y=list(poly_y) + [poly_y[0]],
                 fill="toself",
                 fillcolor="rgba(46, 204, 113, 0.25)",
-                line=dict(color="rgba(46, 204, 113, 0.0)", width=0),
-                mode="lines",
+                line=dict(color="rgba(46, 204, 113, 0.5)", width=1),
                 name="Feasible Region",
                 hoverinfo="skip",
                 showlegend=True
@@ -367,7 +403,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                 fig.add_trace(
                     go.Scatter(
                         x=[x_val, x_val],
-                        y=[0, y_calc_max],
+                        y=[0, calc_y_max],
                         mode='lines',
                         line=dict(color=line_color, width=2),
                         name=f"C{idx+1}: {constr_label}",
@@ -391,8 +427,8 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
 
     fig.update_layout(
         title="",
-        xaxis=dict(title=x_name, range=[0, x_view_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
-        yaxis=dict(title=y_name, range=[0, y_view_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
+        xaxis=dict(title=x_name, range=[0, view_x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
+        yaxis=dict(title=y_name, range=[0, view_y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         template="plotly_white",
         height=600,
         margin=dict(l=40, r=40, t=20, b=120),
@@ -404,7 +440,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
             x=0.5,
             bgcolor="rgba(255,255,255,0.9)",
             bordercolor="rgba(200,200,200,0.6)",
-            borderwidth=1
+            border_width=1
         ),
     )
 
