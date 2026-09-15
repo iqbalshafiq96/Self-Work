@@ -6,6 +6,8 @@ import sympy as sp
 import plotly.graph_objects as go
 from scipy.optimize import linprog
 from scipy.spatial import ConvexHull
+from pydantic import BaseModel, Field
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 st.set_page_config(page_title="LP Optimizer", layout="centered")
 
@@ -21,7 +23,6 @@ CONSTRAINT_COLORS = [
     "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
 ]
 
-# Color palette for unique variable badges
 VAR_BADGE_COLORS = [
     {"bg": "#e1f5fe", "text": "#0288d1", "border": "#81d4fa"},
     {"bg": "#f3e5f5", "text": "#7b1fa2", "border": "#ce93d8"},
@@ -37,6 +38,37 @@ if "result_example" not in st.session_state:
     st.session_state.result_example = None
 if "result_custom" not in st.session_state:
     st.session_state.result_custom = None
+
+
+# ========================================================================
+# LLM SCHEMA & AI PARSER (GOOGLE GEMINI)
+# ========================================================================
+class LPProblemSchema(BaseModel):
+    sense: str = Field(description="Optimization sense: 'Maximize' or 'Minimize'")
+    objective_function: str = Field(description="Algebraic objective expression without 'Maximize' or 'Minimize' prefix, e.g., '40*Utility + 30*RawMaterial'")
+    constraints: list[str] = Field(description="List of constraint equations using <=, >=, or =, e.g., ['2*Utility + RawMaterial <= 100', 'Utility + 2*RawMaterial <= 80']")
+
+
+def parse_lp_with_gemini(user_prompt: str, api_key: str) -> LPProblemSchema:
+    """Extracts LP parameters from natural language using Google AI Studio Gemini API."""
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-1.5-flash",
+        temperature=0,
+        google_api_key=api_key
+    )
+    
+    structured_llm = llm.with_structured_output(LPProblemSchema)
+    
+    system_prompt = (
+        "You are an expert operations research assistant. Parse the user's natural language linear programming problem. "
+        "Extract decision variables, formulate the algebraic objective function, and construct clean constraint equations. "
+        "Do NOT include unit labels or currency signs in algebraic terms. Standardize variable names using standard Python identifier names (e.g., Oman, Tapis, x, y)."
+    )
+    
+    return structured_llm.invoke([
+        ("system", system_prompt),
+        ("user", user_prompt)
+    ])
 
 
 # ========================================================================
@@ -266,7 +298,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
             help="Higher values increase contour frequency and produce finer intervals."
         )
 
-    # Checkbox for restricting negative ranges
     allow_negative = st.checkbox(
         "Allow Negative Axes Ranges", 
         value=False, 
@@ -280,11 +311,9 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     opt_x = result["x"][x_name]
     opt_y = result["x"][y_name]
 
-    # Initial view boundaries
     view_x_max = max(opt_x * 1.5, 10.0)
     view_y_max = max(opt_y * 1.5, 10.0)
 
-    # Calculation range for lines & contour grid across zooming out
     calc_x_max = view_x_max * 10.0
     calc_y_max = view_y_max * 10.0
 
@@ -301,7 +330,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     if fixed_vars_summary:
         st.caption(f"ℹ️ Other variables held constant at optimal values: **{', '.join(fixed_vars_summary)}**")
 
-    # Collect line half-planes for vector geometric shading
     halfplanes = []
     A_ub = result.get("A_ub", [])
     b_ub = result.get("b_ub", [])
@@ -325,7 +353,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
 
     fig = go.Figure()
 
-    # 1. SHADE FEASIBLE REGION AS A VECTOR POLYGON UNDER CONSTRAINTS
     poly_x, poly_y = compute_feasible_polygon_vertices(
         halfplanes, bounds_x=(b_x_min, b_x_max), bounds_y=(b_y_min, b_y_max)
     )
@@ -346,7 +373,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
             )
         )
 
-    # 2. CONTOUR LINES FOR OBJECTIVE FUNCTION
     x_min_calc = -calc_x_max if allow_negative else 0
     y_min_calc = -calc_y_max if allow_negative else 0
 
@@ -384,7 +410,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         )
     )
 
-    # 3. DRAW CONSTRAINT LINES
     raw_constraints = result.get("raw_constraints", [])
     if A_ub and b_ub:
         for idx, (a, b) in enumerate(zip(A_ub, b_ub)):
@@ -422,7 +447,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                     )
                 )
 
-    # 4. OPTIMAL POINT MARKER
     fig.add_trace(
         go.Scatter(
             x=[opt_x],
@@ -436,7 +460,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         )
     )
 
-    # Layout axis configurations based on non-negativity settings
     x_min_view = None if allow_negative else 0
     y_min_view = None if allow_negative else 0
     
@@ -501,7 +524,7 @@ def display_results(result: dict, sense: str, default_x: str = None, default_y: 
 
 
 # ========================================================================
-# ROUTER
+# ROUTER & PAGES
 # ========================================================================
 if "page" not in st.session_state:
     st.session_state.page = "example"
@@ -595,6 +618,35 @@ Four crude types are available: **Oman, Tapis, Labuan,** and **Murban.**
 
 def page_custom():
     st.header("LP Problem Statement (Objective Function)")
+
+    # --- AI PARSER SECTION ---
+    with st.expander("✨ Auto-parse problem statement using Google AI Studio (Gemini)", expanded=True):
+        api_key_input = st.text_input("Google Gemini API Key", type="password", help="Get a free key from aistudio.google.com")
+        natural_prompt = st.text_area(
+            "Describe your Linear Programming problem in natural language:",
+            placeholder="Maximize profit where Utility brings 40 profit and RawMaterial brings 30 profit. Each Utility takes 2 units of labor and 1 unit of material. Each RawMaterial takes 1 unit of labor and 2 units of material. Total labor available is 100 and material is 80.",
+            height=100
+        )
+        if st.button("🤖 Parse with Gemini", type="secondary"):
+            if not api_key_input:
+                st.error("Please enter a valid Google AI Studio API Key.")
+            elif not natural_prompt.strip():
+                st.warning("Please enter a natural language problem statement.")
+            else:
+                with st.spinner("Parsing problem with Gemini 1.5 Flash..."):
+                    try:
+                        parsed = parse_lp_with_gemini(natural_prompt, api_key_input)
+                        st.session_state["parsed_sense"] = parsed.sense
+                        st.session_state["parsed_obj"] = parsed.objective_function
+                        st.session_state["parsed_constraints"] = "\n".join(parsed.constraints)
+                        st.success("Successfully parsed problem statement!")
+                    except Exception as e:
+                        st.error(f"Failed to parse via Gemini API: {e}")
+
+    default_sense = st.session_state.get("parsed_sense", "Maximize")
+    default_obj = st.session_state.get("parsed_obj", "40 * Utility + 30 * RawMaterial")
+    default_constraints = st.session_state.get("parsed_constraints", "2 * Utility + 1 * RawMaterial <= 100\n1 * Utility + 2 * RawMaterial <= 80")
+
     st.caption(
         "Use plain, meaningful variable names — e.g. `x`,`y`,`Utility`, "
         "`RawMaterial`. Any word works as a variable, and the detected list "
@@ -603,15 +655,16 @@ def page_custom():
 
     col_opt, col_sense = st.columns([3, 1])
     with col_sense:
-        sense = st.selectbox("Optimization Sense", ["Maximize", "Minimize"])
+        sense_index = 0 if default_sense.lower() == "maximize" else 1
+        sense = st.selectbox("Optimization Sense", ["Maximize", "Minimize"], index=sense_index)
     with col_opt:
-        obj_input = st.text_input("Objective Function", "40 * Utility + 30 * RawMaterial")
+        obj_input = st.text_input("Objective Function", value=default_obj)
 
     st.subheader("Constraints")
     st.caption("Enter one constraint per line using `<=`, `>=`, or `=`.")
     constraints_input = st.text_area(
         "Constraints List",
-        value="2 * Utility + 1 * RawMaterial <= 100\n1 * Utility + 2 * RawMaterial <= 80",
+        value=default_constraints,
         height=120
     )
 
