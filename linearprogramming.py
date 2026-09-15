@@ -5,7 +5,6 @@ import streamlit as st
 import sympy as sp
 import plotly.graph_objects as go
 from scipy.optimize import linprog
-from scipy.spatial import HalfspaceIntersection, ConvexHull
 
 st.set_page_config(page_title="LP Optimizer", layout="centered")
 
@@ -187,8 +186,69 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
         return {"success": False, "message": f"Solver failed: {res.message}"}
 
 
+def compute_feasible_polygon(halfplanes, tol=1e-7):
+    """
+    Computes the convex polygon that is the intersection of a set of 2D half-planes.
+
+    halfplanes: list of (a, b, c) each representing the constraint a*x + b*y <= c
+
+    Returns an ordered list of (x, y) vertices tracing the polygon boundary
+    (ready to be closed and filled), or None if the region is empty / degenerate.
+    """
+    n = len(halfplanes)
+    candidate_points = []
+
+    # Every vertex of the feasible polygon lies at the intersection of two
+    # of the bounding lines, so enumerate all pairwise intersections first.
+    for i in range(n):
+        a1, b1, c1 = halfplanes[i]
+        for j in range(i + 1, n):
+            a2, b2, c2 = halfplanes[j]
+            det = a1 * b2 - a2 * b1
+            if abs(det) < tol:
+                continue  # parallel lines -> no unique intersection
+            x = (c1 * b2 - c2 * b1) / det
+            y = (a1 * c2 - a2 * c1) / det
+            candidate_points.append((x, y))
+
+    if not candidate_points:
+        return None
+
+    # Keep only the intersection points that satisfy every half-plane
+    # (these, and only these, are true vertices of the feasible region).
+    feasible_points = []
+    for (x, y) in candidate_points:
+        ok = True
+        for (a, b, c) in halfplanes:
+            slack_tol = 1e-6 * max(1.0, abs(c))
+            if a * x + b * y > c + slack_tol:
+                ok = False
+                break
+        if ok:
+            feasible_points.append((x, y))
+
+    if not feasible_points:
+        return None
+
+    # Deduplicate near-identical vertices (degenerate/overlapping constraints)
+    unique_points = []
+    for p in feasible_points:
+        if not any(abs(p[0] - q[0]) < 1e-6 and abs(p[1] - q[1]) < 1e-6 for q in unique_points):
+            unique_points.append(p)
+
+    if len(unique_points) < 3:
+        return unique_points if unique_points else None
+
+    # Order vertices around the centroid so the polygon traces its boundary cleanly
+    cx = sum(p[0] for p in unique_points) / len(unique_points)
+    cy = sum(p[1] for p in unique_points) / len(unique_points)
+    unique_points.sort(key=lambda p: np.arctan2(p[1] - cy, p[0] - cx))
+
+    return unique_points
+
+
 def plot_interactive_contour_lines(result: dict, default_x: str = None, default_y: str = None):
-    """Generate an interactive 2D objective contour plot with smooth polygon feasible region."""
+    """Generate an interactive 2D objective contour plot with a crisp polygonal feasible region."""
     var_names = result["var_names"]
 
     if len(var_names) < 2:
@@ -215,16 +275,18 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     opt_x = result["x"][x_name]
     opt_y = result["x"][y_name]
 
-    # Initial viewport bounds
+    # Initial (visible-on-load) viewport around the optimum
     view_x_max = max(opt_x * 1.5, 10.0)
     view_y_max = max(opt_y * 1.5, 10.0)
 
-    # Extended bounds (10x) for panning/zooming without clipping elements
-    calc_x_max = view_x_max * 10.0
-    calc_y_max = view_y_max * 10.0
+    # Extended calculation grid so contour lines, constraint lines, and the
+    # shaded feasible region all stay populated when the user zooms/pans out
+    GRID_MULTIPLIER = 10
+    grid_x_max = view_x_max * GRID_MULTIPLIER
+    grid_y_max = view_y_max * GRID_MULTIPLIER
 
-    x_vals = np.linspace(0, calc_x_max, 400)
-    y_vals = np.linspace(0, calc_y_max, 400)
+    x_vals = np.linspace(0, grid_x_max, 250)
+    y_vals = np.linspace(0, grid_y_max, 250)
     X, Y = np.meshgrid(x_vals, y_vals)
 
     fixed_objective_contrib = result.get("obj_const", 0.0)
@@ -246,68 +308,60 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
 
     fig = go.Figure()
 
-    # 1. SHADE FEASIBLE REGION VIA CONVEX POLYGON (HalfspaceIntersection)
-    halfspaces = []
+    # ------------------------------------------------------------------
+    # 1. FEASIBLE REGION AS A CLEAN, MATHEMATICALLY EXACT CONVEX POLYGON
+    # ------------------------------------------------------------------
+    halfplanes = []  # each entry: (a, b, c) meaning a*x + b*y <= c
 
     A_ub = result.get("A_ub", [])
     b_ub = result.get("b_ub", [])
-
     if A_ub and b_ub:
         for a, b in zip(A_ub, b_ub):
             eff_b = b
             for v_i in range(len(var_names)):
                 if v_i not in (x_idx, y_idx):
                     eff_b -= a[v_i] * result["x"][var_names[v_i]]
-            halfspaces.append([a[x_idx], a[y_idx], -eff_b])
+            a_x, a_y = a[x_idx], a[y_idx]
+            if abs(a_x) > 1e-12 or abs(a_y) > 1e-12:
+                halfplanes.append((a_x, a_y, eff_b))
 
     bounds = result.get("bounds", [])
     x_min_b, x_max_b = bounds[x_idx] if x_idx < len(bounds) else (0, None)
     y_min_b, y_max_b = bounds[y_idx] if y_idx < len(bounds) else (0, None)
 
-    if x_min_b is not None:
-        halfspaces.append([-1, 0, x_min_b])
-    else:
-        halfspaces.append([-1, 0, 0])
+    # Lower bounds -> -x <= -x_min, -y <= -y_min
+    halfplanes.append((-1.0, 0.0, -(x_min_b if x_min_b is not None else 0.0)))
+    halfplanes.append((0.0, -1.0, -(y_min_b if y_min_b is not None else 0.0)))
 
-    if y_min_b is not None:
-        halfspaces.append([0, -1, y_min_b])
-    else:
-        halfspaces.append([0, -1, 0])
+    # Upper bounds -> use the real bound if set, otherwise cap at the extended grid edge
+    # (keeps the polygon closed/bounded even for unbounded decision variables)
+    halfplanes.append((1.0, 0.0, x_max_b if x_max_b is not None else grid_x_max))
+    halfplanes.append((0.0, 1.0, y_max_b if y_max_b is not None else grid_y_max))
 
-    if x_max_b is not None:
-        halfspaces.append([1, 0, -x_max_b])
-    if y_max_b is not None:
-        halfspaces.append([0, 1, -y_max_b])
+    polygon_pts = compute_feasible_polygon(halfplanes)
 
-    # Add artificial bounding box for halfspace calculations
-    halfspaces.append([1, 0, -calc_x_max * 2])
-    halfspaces.append([0, 1, -calc_y_max * 2])
-
-    try:
-        interior_point = np.array([opt_x, opt_y])
-        hs = HalfspaceIntersection(np.array(halfspaces), interior_point)
-        verts = hs.intersections
-        hull = ConvexHull(verts)
-        ordered_verts = verts[hull.vertices]
-        poly_x = np.append(ordered_verts[:, 0], ordered_verts[0, 0])
-        poly_y = np.append(ordered_verts[:, 1], ordered_verts[0, 1])
+    if polygon_pts:
+        poly_x = [p[0] for p in polygon_pts] + [polygon_pts[0][0]]
+        poly_y = [p[1] for p in polygon_pts] + [polygon_pts[0][1]]
 
         fig.add_trace(
             go.Scatter(
                 x=poly_x,
                 y=poly_y,
+                mode="lines",
                 fill="toself",
                 fillcolor="rgba(46, 204, 113, 0.25)",
-                line=dict(color="rgba(46, 204, 113, 0.5)", width=1),
+                line=dict(color="rgba(46, 204, 113, 0.6)", width=1),
                 name="Feasible Region",
                 hoverinfo="skip",
-                showlegend=True
             )
         )
-    except Exception:
-        pass
+    else:
+        st.warning("Could not resolve a bounded feasible region for this variable pair.")
 
-    # 2. CONTOUR LINES & CONSTRAINTS
+    # ------------------------------------------------------------------
+    # 2. CONTOUR LINES & CONSTRAINTS (drawn across the extended grid)
+    # ------------------------------------------------------------------
     fig.add_trace(
         go.Contour(
             x=x_vals,
@@ -365,7 +419,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                 fig.add_trace(
                     go.Scatter(
                         x=[x_val, x_val],
-                        y=[0, calc_y_max],
+                        y=[0, grid_y_max],
                         mode='lines',
                         line=dict(color=line_color, width=2),
                         name=f"C{idx+1}: {constr_label}",
@@ -373,7 +427,9 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                     )
                 )
 
+    # ------------------------------------------------------------------
     # 3. OPTIMAL POINT MARKER
+    # ------------------------------------------------------------------
     fig.add_trace(
         go.Scatter(
             x=[opt_x],
@@ -387,10 +443,24 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         )
     )
 
+    # Lock the INITIAL viewport to the tight, human-scaled range around the
+    # optimum. Since the underlying data (contours, constraint lines, and the
+    # feasible polygon) is computed across the much larger grid_x_max /
+    # grid_y_max range above, zooming or panning out stays fully populated.
     fig.update_layout(
         title="",
-        xaxis=dict(title=x_name, range=[0, view_x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
-        yaxis=dict(title=y_name, range=[0, view_y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
+        xaxis=dict(
+            title=x_name,
+            range=[0, view_x_max],
+            showgrid=True,
+            gridcolor='rgba(200,200,200,0.4)'
+        ),
+        yaxis=dict(
+            title=y_name,
+            range=[0, view_y_max],
+            showgrid=True,
+            gridcolor='rgba(200,200,200,0.4)'
+        ),
         template="plotly_white",
         height=600,
         margin=dict(l=40, r=40, t=20, b=120),
