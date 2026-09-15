@@ -514,7 +514,7 @@ with col1:
                  type="primary" if st.session_state.page == "example" else "secondary"):
         st.session_state.page = "example"
 with col2:
-    if st.button("✍️ Build Your Own LP", use_container_width=True,
+    if st.button("✍️ Solve LP Problem", use_container_width=True,
                  type="primary" if st.session_state.page == "custom" else "secondary"):
         st.session_state.page = "custom"
 
