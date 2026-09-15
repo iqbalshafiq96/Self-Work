@@ -188,7 +188,6 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
 
 def compute_feasible_polygon_vertices(halfplanes, bounds_x, bounds_y):
     """Calculates corner intersection vertices of half-planes to create a smooth polygon."""
-    # Add bounding box constraints to prevent infinite boundaries
     all_planes = list(halfplanes)
     all_planes.append((1.0, 0.0, bounds_x[1]))    # x <= x_max
     all_planes.append((-1.0, 0.0, -bounds_x[0]))  # x >= x_min
@@ -210,7 +209,6 @@ def compute_feasible_polygon_vertices(halfplanes, bounds_x, bounds_y):
             x = (c1 * b2 - c2 * b1) / det
             y = (a1 * c2 - a2 * c1) / det
 
-            # Verify if point satisfies all linear half-plane inequalities
             feasible = True
             for a, b, c in all_planes:
                 if a * x + b * y > c + 1e-6:
@@ -227,7 +225,6 @@ def compute_feasible_polygon_vertices(halfplanes, bounds_x, bounds_y):
     if len(pts) < 3:
         return None, None
 
-    # Order points clockwise around polygon perimeter via Convex Hull
     try:
         hull = ConvexHull(pts)
         ordered_pts = pts[hull.vertices]
@@ -247,7 +244,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     default_x_idx = var_names.index(default_x) if default_x in var_names else 0
 
     st.markdown("**2D Projection Settings**")
-    col_x, col_y = st.columns(2)
+    col_x, col_y, col_n = st.columns(3)
 
     with col_x:
         x_name = st.selectbox("X-Axis Variable", var_names, index=default_x_idx, key="contour_x_var")
@@ -257,6 +254,17 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
 
     with col_y:
         y_name = st.selectbox("Y-Axis Variable", y_options, index=default_y_idx, key="contour_y_var")
+
+    with col_n:
+        n_contours = st.number_input(
+            "Objective Contours (N)", 
+            min_value=5, 
+            max_value=300, 
+            value=60, 
+            step=5, 
+            key="n_contours_input",
+            help="Higher values increase contour frequency and produce finer intervals."
+        )
 
     x_idx = var_names.index(x_name)
     y_idx = var_names.index(y_name)
@@ -315,7 +323,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     )
 
     if poly_x is not None and len(poly_x) > 0:
-        # Close loop
         px = np.append(poly_x, poly_x[0])
         py = np.append(poly_y, poly_y[0])
 
@@ -343,6 +350,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
             y=y_vals,
             z=Z,
             contours_coloring="lines",
+            ncontours=int(n_contours),
             contours=dict(
                 showlabels=True,
                 labelfont=dict(size=10, color='navy')
