@@ -214,11 +214,16 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     opt_x = result["x"][x_name]
     opt_y = result["x"][y_name]
 
-    x_max = max(opt_x * 1.5, 10.0)
-    y_max = max(opt_y * 1.5, 10.0)
+    # Initial viewport bounds
+    view_x_max = max(opt_x * 1.5, 10.0)
+    view_y_max = max(opt_y * 1.5, 10.0)
 
-    x_vals = np.linspace(0, x_max, 250)
-    y_vals = np.linspace(0, y_max, 250)
+    # Extended computational grid bounds to support seamless zooming out
+    calc_x_max = view_x_max * 10.0
+    calc_y_max = view_y_max * 10.0
+
+    x_vals = np.linspace(0, calc_x_max, 400)
+    y_vals = np.linspace(0, calc_y_max, 400)
     X, Y = np.meshgrid(x_vals, y_vals)
 
     fixed_objective_contrib = result.get("obj_const", 0.0)
@@ -341,7 +346,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                 fig.add_trace(
                     go.Scatter(
                         x=[x_val, x_val],
-                        y=[0, y_max],
+                        y=[0, calc_y_max],
                         mode='lines',
                         line=dict(color=line_color, width=2),
                         name=f"C{idx+1}: {constr_label}",
@@ -365,8 +370,8 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
 
     fig.update_layout(
         title="",
-        xaxis=dict(title=x_name, range=[0, x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
-        yaxis=dict(title=y_name, range=[0, y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
+        xaxis=dict(title=x_name, range=[0, view_x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
+        yaxis=dict(title=y_name, range=[0, view_y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         template="plotly_white",
         height=600,
         margin=dict(l=40, r=40, t=20, b=120),
