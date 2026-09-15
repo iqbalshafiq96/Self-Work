@@ -9,7 +9,6 @@ from scipy.optimize import linprog
 st.set_page_config(page_title="LP Optimizer", layout="centered")
 
 IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-
 RESERVED_WORDS = {
     "Min", "Max", "min", "max", "Abs", "abs", "sin", "cos", "tan",
     "exp", "log", "sqrt", "True", "False", "None", "and", "or", "not"
@@ -20,7 +19,6 @@ CONSTRAINT_COLORS = [
     "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
 ]
 
-# Color palette for unique variable badges
 VAR_BADGE_COLORS = [
     {"bg": "#e1f5fe", "text": "#0288d1", "border": "#81d4fa"},
     {"bg": "#f3e5f5", "text": "#7b1fa2", "border": "#ce93d8"},
@@ -37,21 +35,19 @@ if "result_example" not in st.session_state:
 if "result_custom" not in st.session_state:
     st.session_state.result_custom = None
 
-
 # ========================================================================
 # LP ENGINE - parsing, linearity check, solving
 # ========================================================================
+
 def extract_identifiers(text: str) -> set:
     tokens = set(IDENTIFIER_RE.findall(text))
     return tokens - RESERVED_WORDS
-
 
 def highlight_variables_in_text(text: str, detected_vars: list) -> str:
     """Replaces variable occurrences in text with HTML styled badges."""
     if not text or not detected_vars:
         return text
-
-    # Sort identifiers by length descending to avoid partial string replacements
+    
     sorted_vars = sorted(detected_vars, key=len, reverse=True)
     pattern = re.compile(r"\b(" + "|".join(re.escape(v) for v in sorted_vars) + r")\b")
 
@@ -71,7 +67,6 @@ def highlight_variables_in_text(text: str, detected_vars: list) -> str:
         return f'<span style="{style}">{var}</span>'
 
     return pattern.sub(replacer, text)
-
 
 def parse_equation_or_inequality(expr_str: str, local_dict: dict):
     expr_str = expr_str.strip()
@@ -94,7 +89,6 @@ def parse_equation_or_inequality(expr_str: str, local_dict: dict):
     sym_rhs = sp.sympify(rhs, locals=local_dict)
     diff = sym_lhs - sym_rhs
     return diff, rel
-
 
 def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: list, bounds_dict: dict):
     if not var_names:
@@ -185,72 +179,69 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
     else:
         return {"success": False, "message": f"Solver failed: {res.message}"}
 
+# ========================================================================
+# CONVEX POLYGON GEOMETRY HELPERS FOR FEASIBLE REGION
+# ========================================================================
 
-def compute_feasible_polygon(halfplanes, tol=1e-7):
-    """
-    Computes the convex polygon that is the intersection of a set of 2D half-planes.
+def compute_feasible_polygon(A_ub, b_ub, bounds_x, bounds_y, max_extent_x, max_extent_y):
+    """Computes a ordered polygon representing the 2D feasible space using half-space intersection."""
+    poly = [
+        np.array([bounds_x[0], bounds_y[0]]),
+        np.array([max_extent_x, bounds_y[0]]),
+        np.array([max_extent_x, max_extent_y]),
+        np.array([bounds_x[0], max_extent_y])
+    ]
 
-    halfplanes: list of (a, b, c) each representing the constraint a*x + b*y <= c
+    halfspaces = []
+    if bounds_x[1] is not None:
+        halfspaces.append((np.array([1.0, 0.0]), bounds_x[1]))
+    if bounds_y[1] is not None:
+        halfspaces.append((np.array([0.0, 1.0]), bounds_y[1]))
 
-    Returns an ordered list of (x, y) vertices tracing the polygon boundary
-    (ready to be closed and filled), or None if the region is empty / degenerate.
-    """
-    n = len(halfplanes)
-    candidate_points = []
+    for a, b in zip(A_ub, b_ub):
+        halfspaces.append((np.array([a[0], a[1]]), b))
 
-    # Every vertex of the feasible polygon lies at the intersection of two
-    # of the bounding lines, so enumerate all pairwise intersections first.
-    for i in range(n):
-        a1, b1, c1 = halfplanes[i]
-        for j in range(i + 1, n):
-            a2, b2, c2 = halfplanes[j]
-            det = a1 * b2 - a2 * b1
-            if abs(det) < tol:
-                continue  # parallel lines -> no unique intersection
-            x = (c1 * b2 - c2 * b1) / det
-            y = (a1 * c2 - a2 * c1) / det
-            candidate_points.append((x, y))
+    for normal, val in halfspaces:
+        if len(poly) == 0:
+            break
+        poly = clip_polygon_by_halfspace(poly, normal, val)
 
-    if not candidate_points:
-        return None
+    if len(poly) < 3:
+        return None, None
 
-    # Keep only the intersection points that satisfy every half-plane
-    # (these, and only these, are true vertices of the feasible region).
-    feasible_points = []
-    for (x, y) in candidate_points:
-        ok = True
-        for (a, b, c) in halfplanes:
-            slack_tol = 1e-6 * max(1.0, abs(c))
-            if a * x + b * y > c + slack_tol:
-                ok = False
-                break
-        if ok:
-            feasible_points.append((x, y))
+    poly = np.array(poly)
+    return poly[:, 0], poly[:, 1]
 
-    if not feasible_points:
-        return None
+def clip_polygon_by_halfspace(poly, normal, val):
+    """Clips a 2D convex polygon using Sutherland-Hodgman against normal . x <= val."""
+    def is_inside(p):
+        return np.dot(normal, p) <= val + 1e-9
 
-    # Deduplicate near-identical vertices (degenerate/overlapping constraints)
-    unique_points = []
-    for p in feasible_points:
-        if not any(abs(p[0] - q[0]) < 1e-6 and abs(p[1] - q[1]) < 1e-6 for q in unique_points):
-            unique_points.append(p)
+    def line_intersection(p1, p2):
+        d1 = np.dot(normal, p1) - val
+        d2 = np.dot(normal, p2) - val
+        t = d1 / (d1 - d2)
+        return p1 + t * (p2 - p1)
 
-    if len(unique_points) < 3:
-        return unique_points if unique_points else None
+    new_poly = []
+    for i in range(len(poly)):
+        cur = poly[i]
+        prev = poly[i - 1]
+        cur_in = is_inside(cur)
+        prev_in = is_inside(prev)
 
-    # Order vertices around the centroid so the polygon traces its boundary cleanly
-    cx = sum(p[0] for p in unique_points) / len(unique_points)
-    cy = sum(p[1] for p in unique_points) / len(unique_points)
-    unique_points.sort(key=lambda p: np.arctan2(p[1] - cy, p[0] - cx))
+        if cur_in:
+            if not prev_in:
+                new_poly.append(line_intersection(prev, cur))
+            new_poly.append(cur)
+        elif prev_in:
+            new_poly.append(line_intersection(prev, cur))
 
-    return unique_points
-
+    return new_poly
 
 def plot_interactive_contour_lines(result: dict, default_x: str = None, default_y: str = None):
-    """Generate an interactive 2D objective contour plot with a crisp polygonal feasible region."""
+    """Generate an interactive 2D objective contour plot with smooth polygon feasible region."""
     var_names = result["var_names"]
-
     if len(var_names) < 2:
         st.info("Interactive contour line plots require at least 2 decision variables.")
         return
@@ -275,19 +266,13 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     opt_x = result["x"][x_name]
     opt_y = result["x"][y_name]
 
-    # Initial (visible-on-load) viewport around the optimum
-    view_x_max = max(opt_x * 1.5, 10.0)
-    view_y_max = max(opt_y * 1.5, 10.0)
+    # Camera view domain (default range)
+    x_view_max = max(opt_x * 1.5, 10.0)
+    y_view_max = max(opt_y * 1.5, 10.0)
 
-    # Extended calculation grid so contour lines, constraint lines, and the
-    # shaded feasible region all stay populated when the user zooms/pans out
-    GRID_MULTIPLIER = 10
-    grid_x_max = view_x_max * GRID_MULTIPLIER
-    grid_y_max = view_y_max * GRID_MULTIPLIER
-
-    x_vals = np.linspace(0, grid_x_max, 250)
-    y_vals = np.linspace(0, grid_y_max, 250)
-    X, Y = np.meshgrid(x_vals, y_vals)
+    # 20x extended computation domain to keep graphics unbroken during zoom/pan out
+    x_calc_max = x_view_max * 20.0
+    y_calc_max = y_view_max * 20.0
 
     fixed_objective_contrib = result.get("obj_const", 0.0)
     c = result["c"]
@@ -302,71 +287,59 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     if fixed_vars_summary:
         st.caption(f"ℹ️ Other variables held constant at optimal values: **{', '.join(fixed_vars_summary)}**")
 
-    c_x = c[x_idx]
-    c_y = c[y_idx]
-    Z = c_x * X + c_y * Y + fixed_objective_contrib
-
-    fig = go.Figure()
-
-    # ------------------------------------------------------------------
-    # 1. FEASIBLE REGION AS A CLEAN, MATHEMATICALLY EXACT CONVEX POLYGON
-    # ------------------------------------------------------------------
-    halfplanes = []  # each entry: (a, b, c) meaning a*x + b*y <= c
-
+    # Projection of 2D constraint equations
+    A_ub_2d, b_ub_2d = [], []
     A_ub = result.get("A_ub", [])
     b_ub = result.get("b_ub", [])
+
     if A_ub and b_ub:
         for a, b in zip(A_ub, b_ub):
             eff_b = b
             for v_i in range(len(var_names)):
                 if v_i not in (x_idx, y_idx):
                     eff_b -= a[v_i] * result["x"][var_names[v_i]]
-            a_x, a_y = a[x_idx], a[y_idx]
-            if abs(a_x) > 1e-12 or abs(a_y) > 1e-12:
-                halfplanes.append((a_x, a_y, eff_b))
+            A_ub_2d.append([a[x_idx], a[y_idx]])
+            b_ub_2d.append(eff_b)
 
     bounds = result.get("bounds", [])
     x_min_b, x_max_b = bounds[x_idx] if x_idx < len(bounds) else (0, None)
     y_min_b, y_max_b = bounds[y_idx] if y_idx < len(bounds) else (0, None)
 
-    # Lower bounds -> -x <= -x_min, -y <= -y_min
-    halfplanes.append((-1.0, 0.0, -(x_min_b if x_min_b is not None else 0.0)))
-    halfplanes.append((0.0, -1.0, -(y_min_b if y_min_b is not None else 0.0)))
+    fig = go.Figure()
 
-    # Upper bounds -> use the real bound if set, otherwise cap at the extended grid edge
-    # (keeps the polygon closed/bounded even for unbounded decision variables)
-    halfplanes.append((1.0, 0.0, x_max_b if x_max_b is not None else grid_x_max))
-    halfplanes.append((0.0, 1.0, y_max_b if y_max_b is not None else grid_y_max))
+    # 1. SHADE FEASIBLE REGION (Smooth closed 2D polygon fill)
+    poly_x, poly_y = compute_feasible_polygon(
+        A_ub_2d, b_ub_2d,
+        (max(0.0, x_min_b if x_min_b else 0.0), x_max_b),
+        (max(0.0, y_min_b if y_min_b else 0.0), y_max_b),
+        x_calc_max, y_calc_max
+    )
 
-    polygon_pts = compute_feasible_polygon(halfplanes)
-
-    if polygon_pts:
-        poly_x = [p[0] for p in polygon_pts] + [polygon_pts[0][0]]
-        poly_y = [p[1] for p in polygon_pts] + [polygon_pts[0][1]]
-
+    if poly_x is not None:
         fig.add_trace(
             go.Scatter(
                 x=poly_x,
                 y=poly_y,
-                mode="lines",
                 fill="toself",
                 fillcolor="rgba(46, 204, 113, 0.25)",
-                line=dict(color="rgba(46, 204, 113, 0.6)", width=1),
+                line=dict(color="rgba(0,0,0,0)"),
                 name="Feasible Region",
                 hoverinfo="skip",
+                showlegend=True
             )
         )
-    else:
-        st.warning("Could not resolve a bounded feasible region for this variable pair.")
 
-    # ------------------------------------------------------------------
-    # 2. CONTOUR LINES & CONSTRAINTS (drawn across the extended grid)
-    # ------------------------------------------------------------------
+    # 2. CONTOUR LINES (Extended computation domain)
+    x_vals_calc = np.linspace(0, x_calc_max, 400)
+    y_vals_calc = np.linspace(0, y_calc_max, 400)
+    X_calc, Y_calc = np.meshgrid(x_vals_calc, y_vals_calc)
+    Z_calc = c[x_idx] * X_calc + c[y_idx] * Y_calc + fixed_objective_contrib
+
     fig.add_trace(
         go.Contour(
-            x=x_vals,
-            y=y_vals,
-            z=Z,
+            x=x_vals_calc,
+            y=y_vals_calc,
+            z=Z_calc,
             contours_coloring="lines",
             contours=dict(
                 showlabels=True,
@@ -390,23 +363,19 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         )
     )
 
+    # 3. DRAW EXACT CONSTRAINT LINES
     raw_constraints = result.get("raw_constraints", [])
-    if A_ub and b_ub:
-        for idx, (a, b) in enumerate(zip(A_ub, b_ub)):
-            eff_b = b
-            for v_i in range(len(var_names)):
-                if v_i not in (x_idx, y_idx):
-                    eff_b -= a[v_i] * result["x"][var_names[v_i]]
-
-            a_x, a_y = a[x_idx], a[y_idx]
+    if A_ub_2d and b_ub_2d:
+        for idx, (a_2d, eff_b) in enumerate(zip(A_ub_2d, b_ub_2d)):
+            a_x, a_y = a_2d[0], a_2d[1]
             line_color = CONSTRAINT_COLORS[idx % len(CONSTRAINT_COLORS)]
             constr_label = raw_constraints[idx] if idx < len(raw_constraints) else f"Constraint {idx+1}"
 
             if abs(a_y) > 1e-6:
-                y_line = (eff_b - a_x * x_vals) / a_y
+                y_line = (eff_b - a_x * x_vals_calc) / a_y
                 fig.add_trace(
                     go.Scatter(
-                        x=x_vals,
+                        x=x_vals_calc,
                         y=y_line,
                         mode='lines',
                         line=dict(color=line_color, width=2),
@@ -419,7 +388,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                 fig.add_trace(
                     go.Scatter(
                         x=[x_val, x_val],
-                        y=[0, grid_y_max],
+                        y=[0, y_calc_max],
                         mode='lines',
                         line=dict(color=line_color, width=2),
                         name=f"C{idx+1}: {constr_label}",
@@ -427,9 +396,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                     )
                 )
 
-    # ------------------------------------------------------------------
-    # 3. OPTIMAL POINT MARKER
-    # ------------------------------------------------------------------
+    # 4. OPTIMAL POINT MARKER
     fig.add_trace(
         go.Scatter(
             x=[opt_x],
@@ -443,24 +410,11 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         )
     )
 
-    # Lock the INITIAL viewport to the tight, human-scaled range around the
-    # optimum. Since the underlying data (contours, constraint lines, and the
-    # feasible polygon) is computed across the much larger grid_x_max /
-    # grid_y_max range above, zooming or panning out stays fully populated.
+    # Locked camera range to standard view window
     fig.update_layout(
         title="",
-        xaxis=dict(
-            title=x_name,
-            range=[0, view_x_max],
-            showgrid=True,
-            gridcolor='rgba(200,200,200,0.4)'
-        ),
-        yaxis=dict(
-            title=y_name,
-            range=[0, view_y_max],
-            showgrid=True,
-            gridcolor='rgba(200,200,200,0.4)'
-        ),
+        xaxis=dict(title=x_name, range=[0, x_view_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
+        yaxis=dict(title=y_name, range=[0, y_view_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         template="plotly_white",
         height=600,
         margin=dict(l=40, r=40, t=20, b=120),
@@ -478,11 +432,9 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
 
     st.plotly_chart(fig, use_container_width=True)
 
-
 def display_results(result: dict, sense: str, default_x: str = None, default_y: str = None):
     if result["success"]:
         st.success("Optimization Completed Successfully!")
-
         col1, _ = st.columns(2)
         with col1:
             st.metric(label=f"Optimal Objective Value ({sense})", value=f"{result['fun']:,.4f}")
@@ -499,10 +451,10 @@ def display_results(result: dict, sense: str, default_x: str = None, default_y: 
     else:
         st.error(f"Solver Error: {result['message']}")
 
-
 # ========================================================================
 # ROUTER
 # ========================================================================
+
 if "page" not in st.session_state:
     st.session_state.page = "example"
 
@@ -520,22 +472,21 @@ with col2:
 
 st.divider()
 
-
 def page_example():
     st.header("Refinery crude oil purchasing")
     st.markdown(
         """
-A refinery buys crude oil from several suppliers and refines it into gasoline, diesel,
-and fuel oil. Each crude costs a different amount per m³ and yields a different mix of
-finished products - some crudes are richer in gasoline, others in diesel or fuel oil.
+        A refinery buys crude oil from several suppliers and refines it into gasoline, diesel,
+        and fuel oil. Each crude costs a different amount per m³ and yields a different mix of
+        finished products - some crudes are richer in gasoline, others in diesel or fuel oil.
 
-The refinery wants to decide **how much of each crude to buy and process per day** in
-order to **maximize Gross Refinery Margin (GRM)** - total product revenue minus crude
-purchase cost - while staying within crude supply limits, total daily processing
-(throughput) capacity, and how much of each product the market will absorb.
+        The refinery wants to decide how much of each crude to buy and process per day in
+        order to maximize Gross Refinery Margin (GRM) - total product revenue minus crude
+        purchase cost - while staying within crude supply limits, total daily processing
+        (throughput) capacity, and how much of each product the market will absorb.
 
-Four crude types are available: **Oman, Tapis, Labuan,** and **Murban.**
-"""
+        Four crude types are available: Oman, Tapis, Labuan, and Murban.
+        """
     )
 
     objective_str = (
@@ -592,12 +543,11 @@ Four crude types are available: **Oman, Tapis, Labuan,** and **Murban.**
             default_y="Murban"
         )
 
-
 def page_custom():
     st.header("Build your own LP problem")
     st.caption(
-        "Use plain, meaningful variable names instead of x, y — e.g. `Utility`, "
-        "`RawMaterial`. Any word works as a variable, and the detected list "
+        "Use plain, meaningful variable names instead of x, y — e.g. Utility, "
+        "RawMaterial. Any word works as a variable, and the detected list "
         "below updates as you type."
     )
 
@@ -615,11 +565,9 @@ def page_custom():
         height=120
     )
 
-    # Parse all variables present across objective function and constraint text boxes
     all_text = obj_input + "\n" + constraints_input
     detected_vars = sorted(list(extract_identifiers(all_text)))
 
-    # Variable Bounds Section - Positioned right under constraints
     enable_bounds = st.checkbox("Enable Custom Variable Bounds", value=False)
     bounds_dict = {}
 
@@ -637,12 +585,10 @@ def page_custom():
         else:
             st.warning("No variables detected yet to configure bounds.")
     else:
-        # Default non-negativity bounds (0, ∞) when disabled
         bounds_dict = {var: (0.0, None) for var in detected_vars}
 
     st.divider()
 
-    # Render uniquely colored badges directly under input boxes
     if detected_vars:
         badge_spans = []
         for i, var in enumerate(detected_vars):
@@ -663,9 +609,6 @@ def page_custom():
         badges_html = " ".join(badge_spans)
         st.markdown(f"**Recognized Variables:** {badges_html}", unsafe_allow_html=True)
 
-        # -----------------------------------------------------------------
-        # Dynamic Colored Preview Box for Objective and Constraints
-        # -----------------------------------------------------------------
         with st.expander("Optimization Problem Statement Preview", expanded=True):
             highlighted_obj = highlight_variables_in_text(obj_input, detected_vars)
             st.markdown(
@@ -699,7 +642,6 @@ def page_custom():
 
     if st.session_state.result_custom is not None:
         display_results(st.session_state.result_custom, sense)
-
 
 if st.session_state.page == "example":
     page_example()
