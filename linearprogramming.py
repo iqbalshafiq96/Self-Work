@@ -21,6 +21,7 @@ CONSTRAINT_COLORS = [
     "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
 ]
 
+# Color palette for unique variable badges
 VAR_BADGE_COLORS = [
     {"bg": "#e1f5fe", "text": "#0288d1", "border": "#81d4fa"},
     {"bg": "#f3e5f5", "text": "#7b1fa2", "border": "#ce93d8"},
@@ -185,57 +186,58 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
         return {"success": False, "message": f"Solver failed: {res.message}"}
 
 
-def compute_feasible_polygon_vertices(A_lines, b_lines, x_range, y_range):
-    """Computes exact geometric vertices of the convex feasible region using half-plane intersection."""
-    # Define bounding box constraints
-    all_A = list(A_lines) + [
-        [-1.0, 0.0], [1.0, 0.0],
-        [0.0, -1.0], [0.0, 1.0]
-    ]
-    all_b = list(b_lines) + [
-        -x_range[0], x_range[1],
-        -y_range[0], y_range[1]
-    ]
+def compute_feasible_polygon_vertices(halfplanes, bounds_x, bounds_y):
+    """Calculates corner intersection vertices of half-planes to create a smooth polygon."""
+    # Add bounding box constraints to prevent infinite boundaries
+    all_planes = list(halfplanes)
+    all_planes.append((1.0, 0.0, bounds_x[1]))    # x <= x_max
+    all_planes.append((-1.0, 0.0, -bounds_x[0]))  # x >= x_min
+    all_planes.append((0.0, 1.0, bounds_y[1]))    # y <= y_max
+    all_planes.append((0.0, -1.0, -bounds_y[0]))  # y >= y_min
 
     intersections = []
-    num_constraints = len(all_A)
+    num_planes = len(all_planes)
 
-    for i in range(num_constraints):
-        for j in range(i + 1, num_constraints):
-            A_mat = np.array([all_A[i], all_A[j]])
-            b_vec = np.array([all_b[i], all_b[j]])
+    for i in range(num_planes):
+        for j in range(i + 1, num_planes):
+            a1, b1, c1 = all_planes[i]
+            a2, b2, c2 = all_planes[j]
 
-            det = np.linalg.det(A_mat)
+            det = a1 * b2 - a2 * b1
             if abs(det) < 1e-9:
                 continue
 
-            pt = np.linalg.solve(A_mat, b_vec)
-            
-            # Check feasibility against all linear inequalities
+            x = (c1 * b2 - c2 * b1) / det
+            y = (a1 * c2 - a2 * c1) / det
+
+            # Verify if point satisfies all linear half-plane inequalities
             feasible = True
-            for k in range(num_constraints):
-                if np.dot(all_A[k], pt) > all_b[k] + 1e-6:
+            for a, b, c in all_planes:
+                if a * x + b * y > c + 1e-6:
                     feasible = False
                     break
 
             if feasible:
-                intersections.append(pt)
+                intersections.append((x, y))
 
     if not intersections:
         return None, None
 
-    pts = np.unique(np.round(np.array(intersections), 6), axis=0)
+    pts = np.unique(np.round(intersections, 6), axis=0)
     if len(pts) < 3:
         return None, None
 
-    # Sort vertices in counter-clockwise order via ConvexHull
-    hull = ConvexHull(pts)
-    hull_pts = pts[hull.vertices]
-    return hull_pts[:, 0], hull_pts[:, 1]
+    # Order points clockwise around polygon perimeter via Convex Hull
+    try:
+        hull = ConvexHull(pts)
+        ordered_pts = pts[hull.vertices]
+        return ordered_pts[:, 0], ordered_pts[:, 1]
+    except Exception:
+        return None, None
 
 
 def plot_interactive_contour_lines(result: dict, default_x: str = None, default_y: str = None):
-    """Generate an interactive 2D objective contour plot with exact polygon-shaded feasible region."""
+    """Generate an interactive 2D objective contour plot with vector-shaded feasible region."""
     var_names = result["var_names"]
 
     if len(var_names) < 2:
@@ -262,17 +264,13 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     opt_x = result["x"][x_name]
     opt_y = result["x"][y_name]
 
-    # Initial view ranges
+    # Initial view boundaries
     view_x_max = max(opt_x * 1.5, 10.0)
     view_y_max = max(opt_y * 1.5, 10.0)
 
-    # Extended computational grid for 20x zooming without clipping artifacts
-    calc_x_max = view_x_max * 20.0
-    calc_y_max = view_y_max * 20.0
-
-    x_vals = np.linspace(0, calc_x_max, 400)
-    y_vals = np.linspace(0, calc_y_max, 400)
-    X, Y = np.meshgrid(x_vals, y_vals)
+    # Calculation range for lines & contour grid across zooming out
+    calc_x_max = view_x_max * 10.0
+    calc_y_max = view_y_max * 10.0
 
     fixed_objective_contrib = result.get("obj_const", 0.0)
     c = result["c"]
@@ -287,65 +285,58 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     if fixed_vars_summary:
         st.caption(f"ℹ️ Other variables held constant at optimal values: **{', '.join(fixed_vars_summary)}**")
 
-    c_x = c[x_idx]
-    c_y = c[y_idx]
-    Z = c_x * X + c_y * Y + fixed_objective_contrib
-
-    fig = go.Figure()
-
-    # Collect 2D projection half-space constraints (A_2d * [x, y]^T <= b_2d)
-    A_2d, b_2d = [], []
-
+    # Collect line half-planes for vector geometric shading
+    halfplanes = []
     A_ub = result.get("A_ub", [])
     b_ub = result.get("b_ub", [])
+
     if A_ub and b_ub:
         for a, b in zip(A_ub, b_ub):
             eff_b = b
             for v_i in range(len(var_names)):
                 if v_i not in (x_idx, y_idx):
                     eff_b -= a[v_i] * result["x"][var_names[v_i]]
-            A_2d.append([a[x_idx], a[y_idx]])
-            b_2d.append(eff_b)
+            halfplanes.append((a[x_idx], a[y_idx], eff_b))
 
     bounds = result.get("bounds", [])
     x_min_b, x_max_b = bounds[x_idx] if x_idx < len(bounds) else (0, None)
     y_min_b, y_max_b = bounds[y_idx] if y_idx < len(bounds) else (0, None)
 
-    if x_min_b is not None:
-        A_2d.append([-1.0, 0.0])
-        b_2d.append(-x_min_b)
-    if x_max_b is not None:
-        A_2d.append([1.0, 0.0])
-        b_2d.append(x_max_b)
-    if y_min_b is not None:
-        A_2d.append([0.0, -1.0])
-        b_2d.append(-y_min_b)
-    if y_max_b is not None:
-        A_2d.append([0.0, 1.0])
-        b_2d.append(y_max_b)
+    b_x_min = 0.0 if x_min_b is None else x_min_b
+    b_x_max = calc_x_max if x_max_b is None else min(x_max_b, calc_x_max)
+    b_y_min = 0.0 if y_min_b is None else y_min_b
+    b_y_max = calc_y_max if y_max_b is None else min(y_max_b, calc_y_max)
 
-    # 1. SHADE FEASIBLE REGION (EXACT CONVEX POLYGON)
+    fig = go.Figure()
+
+    # 1. SHADE FEASIBLE REGION AS A VECTOR POLYGON UNDER CONSTRAINTS
     poly_x, poly_y = compute_feasible_polygon_vertices(
-        A_2d, b_2d, 
-        x_range=(0, calc_x_max), 
-        y_range=(0, calc_y_max)
+        halfplanes, bounds_x=(b_x_min, b_x_max), bounds_y=(b_y_min, b_y_max)
     )
 
     if poly_x is not None and len(poly_x) > 0:
+        # Close loop
+        px = np.append(poly_x, poly_x[0])
+        py = np.append(poly_y, poly_y[0])
+
         fig.add_trace(
             go.Scatter(
-                x=list(poly_x) + [poly_x[0]],
-                y=list(poly_y) + [poly_y[0]],
+                x=px,
+                y=py,
                 fill="toself",
                 fillcolor="rgba(46, 204, 113, 0.25)",
-                line=dict(color="rgba(46, 204, 113, 0.5)", width=1),
+                line=dict(color="rgba(46, 204, 113, 0.6)", width=1),
                 name="Feasible Region",
-                hoverinfo="skip",
-                showlegend=True
+                hoverinfo="skip"
             )
         )
 
-    # 2. CONTOUR LINES & CONSTRAINTS
+    # 2. CONTOUR LINES FOR OBJECTIVE FUNCTION
+    x_vals = np.linspace(0, calc_x_max, 250)
+    y_vals = np.linspace(0, calc_y_max, 250)
+    X, Y = np.meshgrid(x_vals, y_vals)
+    Z = c[x_idx] * X + c[y_idx] * Y + fixed_objective_contrib
+
     fig.add_trace(
         go.Contour(
             x=x_vals,
@@ -374,6 +365,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         )
     )
 
+    # 3. DRAW CONSTRAINT LINES
     raw_constraints = result.get("raw_constraints", [])
     if A_ub and b_ub:
         for idx, (a, b) in enumerate(zip(A_ub, b_ub)):
@@ -411,7 +403,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                     )
                 )
 
-    # 3. OPTIMAL POINT MARKER
+    # 4. OPTIMAL POINT MARKER
     fig.add_trace(
         go.Scatter(
             x=[opt_x],
@@ -440,7 +432,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
             x=0.5,
             bgcolor="rgba(255,255,255,0.9)",
             bordercolor="rgba(200,200,200,0.6)",
-            border_width=1
+            borderwidth=1
         ),
     )
 
