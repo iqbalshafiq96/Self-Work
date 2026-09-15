@@ -5,7 +5,7 @@ import streamlit as st
 import sympy as sp
 import plotly.graph_objects as go
 from scipy.optimize import linprog
-from scipy.spatial import ConvexHull
+from scipy.spatial import HalfspaceIntersection, ConvexHull
 
 st.set_page_config(page_title="LP Optimizer", layout="centered")
 
@@ -21,6 +21,7 @@ CONSTRAINT_COLORS = [
     "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
 ]
 
+# Color palette for unique variable badges
 VAR_BADGE_COLORS = [
     {"bg": "#e1f5fe", "text": "#0288d1", "border": "#81d4fa"},
     {"bg": "#f3e5f5", "text": "#7b1fa2", "border": "#ce93d8"},
@@ -51,6 +52,7 @@ def highlight_variables_in_text(text: str, detected_vars: list) -> str:
     if not text or not detected_vars:
         return text
 
+    # Sort identifiers by length descending to avoid partial string replacements
     sorted_vars = sorted(detected_vars, key=len, reverse=True)
     pattern = re.compile(r"\b(" + "|".join(re.escape(v) for v in sorted_vars) + r")\b")
 
@@ -62,10 +64,10 @@ def highlight_variables_in_text(text: str, detected_vars: list) -> str:
             f"background-color: {color['bg']}; "
             f"color: {color['text']}; "
             f"border: 1px solid {color['border']}; "
-            f"padding: 1px 6px; "
-            f"border-radius: 4px; "
-            f"font-weight: 600; "
-            f"font-family: monospace;"
+            "padding: 1px 6px; "
+            "border-radius: 4px; "
+            "font-weight: 600; "
+            "font-family: monospace;"
         )
         return f'<span style="{style}">{var}</span>'
 
@@ -185,61 +187,8 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
         return {"success": False, "message": f"Solver failed: {res.message}"}
 
 
-def compute_2d_feasible_polygon(x_min, x_max, y_min, y_max, A_2d, b_2d):
-    """Computes exact corner vertices of the feasible region polygon using ConvexHull."""
-    lines = [
-        (1, 0, x_max),
-        (-1, 0, -x_min),
-        (0, 1, y_max),
-        (0, -1, -y_min)
-    ]
-
-    for a, b in zip(A_2d, b_2d):
-        lines.append((a[0], a[1], b))
-
-    intersections = []
-    num_lines = len(lines)
-
-    for i in range(num_lines):
-        for j in range(i + 1, num_lines):
-            a1, b1, c1 = lines[i]
-            a2, b2, c2 = lines[j]
-
-            det = a1 * b2 - a2 * b1
-            if abs(det) < 1e-9:
-                continue
-
-            px = (c1 * b2 - c2 * b1) / det
-            py = (a1 * c2 - a2 * c1) / det
-
-            if (x_min - 1e-5 <= px <= x_max + 1e-5) and (y_min - 1e-5 <= py <= y_max + 1e-5):
-                is_feasible = True
-                for a_k, b_k, c_k in lines:
-                    if a_k * px + b_k * py > c_k + 1e-5:
-                        is_feasible = False
-                        break
-                if is_feasible:
-                    intersections.append((px, py))
-
-    if len(intersections) < 3:
-        return None, None
-
-    pts = np.unique(np.round(intersections, decimals=6), axis=0)
-    if len(pts) < 3:
-        return None, None
-
-    try:
-        hull = ConvexHull(pts)
-        hull_pts = pts[hull.vertices]
-        px = list(hull_pts[:, 0]) + [hull_pts[0, 0]]
-        py = list(hull_pts[:, 1]) + [hull_pts[0, 1]]
-        return px, py
-    except Exception:
-        return None, None
-
-
 def plot_interactive_contour_lines(result: dict, default_x: str = None, default_y: str = None):
-    """Generate an interactive 2D objective contour plot with a smooth vector feasible polygon."""
+    """Generate an interactive 2D objective contour plot with smooth polygon feasible region."""
     var_names = result["var_names"]
 
     if len(var_names) < 2:
@@ -266,13 +215,17 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     opt_x = result["x"][x_name]
     opt_y = result["x"][y_name]
 
-    # Focal Viewport Range (default locked camera)
+    # Initial viewport bounds
     view_x_max = max(opt_x * 1.5, 10.0)
     view_y_max = max(opt_y * 1.5, 10.0)
 
-    # Calculation Grid extended 20x beyond standard viewport for smooth zoom/pan response
-    calc_x_max = view_x_max * 20.0
-    calc_y_max = view_y_max * 20.0
+    # Extended bounds (10x) for panning/zooming without clipping elements
+    calc_x_max = view_x_max * 10.0
+    calc_y_max = view_y_max * 10.0
+
+    x_vals = np.linspace(0, calc_x_max, 400)
+    y_vals = np.linspace(0, calc_y_max, 400)
+    X, Y = np.meshgrid(x_vals, y_vals)
 
     fixed_objective_contrib = result.get("obj_const", 0.0)
     c = result["c"]
@@ -287,8 +240,15 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     if fixed_vars_summary:
         st.caption(f"ℹ️ Other variables held constant at optimal values: **{', '.join(fixed_vars_summary)}**")
 
-    # Extract 2D linear constraints
-    A_2d, b_2d = [], []
+    c_x = c[x_idx]
+    c_y = c[y_idx]
+    Z = c_x * X + c_y * Y + fixed_objective_contrib
+
+    fig = go.Figure()
+
+    # 1. SHADE FEASIBLE REGION VIA CONVEX POLYGON (HalfspaceIntersection)
+    halfspaces = []
+
     A_ub = result.get("A_ub", [])
     b_ub = result.get("b_ub", [])
 
@@ -298,57 +258,67 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
             for v_i in range(len(var_names)):
                 if v_i not in (x_idx, y_idx):
                     eff_b -= a[v_i] * result["x"][var_names[v_i]]
-            A_2d.append([a[x_idx], a[y_idx]])
-            b_2d.append(eff_b)
+            halfspaces.append([a[x_idx], a[y_idx], -eff_b])
 
-    # Boundary handling for box bounds
     bounds = result.get("bounds", [])
     x_min_b, x_max_b = bounds[x_idx] if x_idx < len(bounds) else (0, None)
     y_min_b, y_max_b = bounds[y_idx] if y_idx < len(bounds) else (0, None)
 
-    calc_x_min = x_min_b if x_min_b is not None else 0.0
-    calc_y_min = y_min_b if y_min_b is not None else 0.0
-    upper_x = min(calc_x_max, x_max_b) if x_max_b is not None else calc_x_max
-    upper_y = min(calc_y_max, y_max_b) if y_max_b is not None else calc_y_max
+    if x_min_b is not None:
+        halfspaces.append([-1, 0, x_min_b])
+    else:
+        halfspaces.append([-1, 0, 0])
 
-    fig = go.Figure()
+    if y_min_b is not None:
+        halfspaces.append([0, -1, y_min_b])
+    else:
+        halfspaces.append([0, -1, 0])
 
-    # 1. FEASIBLE REGION - CLOSED VECTOR POLYGON (fill='toself')
-    poly_x, poly_y = compute_2d_feasible_polygon(
-        calc_x_min, upper_x, calc_y_min, upper_y, A_2d, b_2d
-    )
+    if x_max_b is not None:
+        halfspaces.append([1, 0, -x_max_b])
+    if y_max_b is not None:
+        halfspaces.append([0, 1, -y_max_b])
 
-    if poly_x and poly_y:
+    # Add artificial bounding box for halfspace calculations
+    halfspaces.append([1, 0, -calc_x_max * 2])
+    halfspaces.append([0, 1, -calc_y_max * 2])
+
+    try:
+        interior_point = np.array([opt_x, opt_y])
+        hs = HalfspaceIntersection(np.array(halfspaces), interior_point)
+        verts = hs.intersections
+        hull = ConvexHull(verts)
+        ordered_verts = verts[hull.vertices]
+        poly_x = np.append(ordered_verts[:, 0], ordered_verts[0, 0])
+        poly_y = np.append(ordered_verts[:, 1], ordered_verts[0, 1])
+
         fig.add_trace(
             go.Scatter(
                 x=poly_x,
                 y=poly_y,
                 fill="toself",
                 fillcolor="rgba(46, 204, 113, 0.25)",
-                line=dict(color="rgba(46, 204, 113, 0.6)", width=1.5),
+                line=dict(color="rgba(46, 204, 113, 0.5)", width=1),
                 name="Feasible Region",
-                hoverinfo="none",
+                hoverinfo="skip",
                 showlegend=True
             )
         )
+    except Exception:
+        pass
 
-    # 2. OBJECTIVE CONTOUR LINES (Extended over expanded grid)
-    x_vals_calc = np.linspace(calc_x_min, calc_x_max, 400)
-    y_vals_calc = np.linspace(calc_y_min, calc_y_max, 400)
-    X, Y = np.meshgrid(x_vals_calc, y_vals_calc)
-    Z = c[x_idx] * X + c[y_idx] * Y + fixed_objective_contrib
-
+    # 2. CONTOUR LINES & CONSTRAINTS
     fig.add_trace(
         go.Contour(
-            x=x_vals_calc,
-            y=y_vals_calc,
+            x=x_vals,
+            y=y_vals,
             z=Z,
             contours_coloring="lines",
             contours=dict(
                 showlabels=True,
-                labelfont=dict(size=10, color="navy")
+                labelfont=dict(size=10, color='navy')
             ),
-            line=dict(color="#1f77b4", width=1.5, dash="dash"),
+            line=dict(color='#1f77b4', width=1.5, dash='dash'),
             showscale=False,
             showlegend=False,
             hoverinfo="x+y+z"
@@ -359,28 +329,32 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         go.Scatter(
             x=[None],
             y=[None],
-            mode="lines",
-            line=dict(color="#1f77b4", width=1.5, dash="dash"),
+            mode='lines',
+            line=dict(color='#1f77b4', width=1.5, dash='dash'),
             name="Objective Contour",
             showlegend=True
         )
     )
 
-    # 3. CONSTRAINT LINES (Plotted across full 20x extent)
     raw_constraints = result.get("raw_constraints", [])
-    if A_2d and b_2d:
-        for idx, (a_2d_row, eff_b) in enumerate(zip(A_2d, b_2d)):
-            a_x, a_y = a_2d_row[0], a_2d_row[1]
+    if A_ub and b_ub:
+        for idx, (a, b) in enumerate(zip(A_ub, b_ub)):
+            eff_b = b
+            for v_i in range(len(var_names)):
+                if v_i not in (x_idx, y_idx):
+                    eff_b -= a[v_i] * result["x"][var_names[v_i]]
+
+            a_x, a_y = a[x_idx], a[y_idx]
             line_color = CONSTRAINT_COLORS[idx % len(CONSTRAINT_COLORS)]
             constr_label = raw_constraints[idx] if idx < len(raw_constraints) else f"Constraint {idx+1}"
 
             if abs(a_y) > 1e-6:
-                y_line = (eff_b - a_x * x_vals_calc) / a_y
+                y_line = (eff_b - a_x * x_vals) / a_y
                 fig.add_trace(
                     go.Scatter(
-                        x=x_vals_calc,
+                        x=x_vals,
                         y=y_line,
-                        mode="lines",
+                        mode='lines',
                         line=dict(color=line_color, width=2),
                         name=f"C{idx+1}: {constr_label}",
                         hoverinfo="x+y"
@@ -391,43 +365,32 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                 fig.add_trace(
                     go.Scatter(
                         x=[x_val, x_val],
-                        y=[calc_y_min, calc_y_max],
-                        mode="lines",
+                        y=[0, calc_y_max],
+                        mode='lines',
                         line=dict(color=line_color, width=2),
                         name=f"C{idx+1}: {constr_label}",
                         hoverinfo="x+y"
                     )
                 )
 
-    # 4. OPTIMAL POINT MARKER
+    # 3. OPTIMAL POINT MARKER
     fig.add_trace(
         go.Scatter(
             x=[opt_x],
             y=[opt_y],
-            mode="markers+text",
-            marker=dict(color="#d62728", size=12, symbol="circle", line=dict(color="black", width=1)),
-            text=[f" Optimal ({opt_x:,.2f}, {opt_y:,.2f})"],
+            mode='markers+text',
+            marker=dict(color='#d62728', size=12, symbol='circle', line=dict(color='black', width=1)),
+            text=[f" Optimal ({opt_x:.2f}, {opt_y:.2f})"],
             textposition="top right",
             name="Optimal Solution",
             hoverinfo="x+y"
         )
     )
 
-    # Lock camera view while keeping grid assets extended for pan/zoom
     fig.update_layout(
         title="",
-        xaxis=dict(
-            title=x_name,
-            range=[calc_x_min, view_x_max],
-            showgrid=True,
-            gridcolor="rgba(200,200,200,0.4)"
-        ),
-        yaxis=dict(
-            title=y_name,
-            range=[calc_y_min, view_y_max],
-            showgrid=True,
-            gridcolor="rgba(200,200,200,0.4)"
-        ),
+        xaxis=dict(title=x_name, range=[0, view_x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
+        yaxis=dict(title=y_name, range=[0, view_y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         template="plotly_white",
         height=600,
         margin=dict(l=40, r=40, t=20, b=120),
@@ -582,9 +545,11 @@ def page_custom():
         height=120
     )
 
+    # Parse all variables present across objective function and constraint text boxes
     all_text = obj_input + "\n" + constraints_input
     detected_vars = sorted(list(extract_identifiers(all_text)))
 
+    # Variable Bounds Section - Positioned right under constraints
     enable_bounds = st.checkbox("Enable Custom Variable Bounds", value=False)
     bounds_dict = {}
 
@@ -602,10 +567,12 @@ def page_custom():
         else:
             st.warning("No variables detected yet to configure bounds.")
     else:
+        # Default non-negativity bounds (0, ∞) when disabled
         bounds_dict = {var: (0.0, None) for var in detected_vars}
 
     st.divider()
 
+    # Render uniquely colored badges directly under input boxes
     if detected_vars:
         badge_spans = []
         for i, var in enumerate(detected_vars):
@@ -614,18 +581,21 @@ def page_custom():
                 f"background-color: {color['bg']}; "
                 f"color: {color['text']}; "
                 f"border: 1px solid {color['border']}; "
-                f"padding: 3px 9px; "
-                f"border-radius: 6px; "
-                f"font-weight: 600; "
-                f"font-size: 0.9em; "
-                f"display: inline-block; "
-                f"margin-right: 4px;"
+                "padding: 3px 9px; "
+                "border-radius: 6px; "
+                "font-weight: 600; "
+                "font-size: 0.9em; "
+                "display: inline-block; "
+                "margin-right: 4px;"
             )
             badge_spans.append(f'<span style="{style}">{var}</span>')
 
         badges_html = " ".join(badge_spans)
         st.markdown(f"**Recognized Variables:** {badges_html}", unsafe_allow_html=True)
 
+        # -----------------------------------------------------------------
+        # Dynamic Colored Preview Box for Objective and Constraints
+        # -----------------------------------------------------------------
         with st.expander("Optimization Problem Statement Preview", expanded=True):
             highlighted_obj = highlight_variables_in_text(obj_input, detected_vars)
             st.markdown(
