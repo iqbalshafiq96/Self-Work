@@ -645,7 +645,7 @@ def page_custom():
                 "that fracKerosene not exceed 0.75 to keep the Kerosene product within its freeze-point specification, "
                 "and that fracAGO be at least 0.20 to meet a contracted minimum production requirement for AGO."
             ),
-            height=160
+            height=320
         )
         if st.button("🤖 Parse with Gemini", type="secondary"):
             if not natural_prompt.strip():
