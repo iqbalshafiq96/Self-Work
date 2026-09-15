@@ -52,7 +52,6 @@ class LPProblemSchema(BaseModel):
 
 def parse_lp_with_gemini(user_prompt: str, api_key: str = None) -> LPProblemSchema:
     """Extracts LP parameters from natural language using Google AI Studio Gemini API."""
-    # Retrieve key from Streamlit secrets or environment if not explicitly provided
     resolved_api_key = api_key or st.secrets.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
     
     if not resolved_api_key:
@@ -534,7 +533,7 @@ def display_results(result: dict, sense: str, default_x: str = None, default_y: 
 # ROUTER & PAGES
 # ========================================================================
 if "page" not in st.session_state:
-    st.session_state.page = "example"
+    st.session_state.page = "custom"  # Default selection set to Build your own LP
 
 st.title("Linear Programming Optimizer")
 
