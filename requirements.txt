@@ -14,3 +14,6 @@ pyvis
 seaborn
 thermo
 sympy
+langchain-core
+langchain-google-genai
+pydantic
