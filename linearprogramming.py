@@ -46,19 +46,19 @@ if "result_custom" not in st.session_state:
 # ========================================================================
 class LPProblemSchema(BaseModel):
     sense: str = Field(description="Optimization sense: 'Maximize' or 'Minimize'")
-    objective_function: str = Field(description="Algebraic objective expression without 'Maximize' or 'Minimize' prefix, e.g., '40*Utility + 30*RawMaterial'")
-    constraints: list[str] = Field(description="List of constraint equations using <=, >=, or =, e.g., ['2*Utility + RawMaterial <= 100', 'Utility + 2*RawMaterial <= 80']")
+    objective_function: str = Field(description="Algebraic objective expression without 'Maximize' or 'Minimize' prefix, e.g., '12*fracKerosene - 12*fracAGO'")
+    constraints: list[str] = Field(description="List of constraint equations using <=, >=, or =, e.g., ['6*fracKerosene - 8*fracAGO <= 2.5', 'fracKerosene <= 0.75']")
 
 
 def parse_lp_with_gemini(user_prompt: str, api_key: str = None) -> LPProblemSchema:
     """Extracts LP parameters from natural language using Google AI Studio Gemini API."""
     resolved_api_key = api_key or st.secrets.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    
+
     if not resolved_api_key:
         raise ValueError("Google API Key not found. Please add GOOGLE_API_KEY to Streamlit Secrets.")
 
     llm = ChatGoogleGenerativeAI(
-        model="gemini-3.6-flash",
+        model="gemini-2.5-flash",
         temperature=0,
         google_api_key=resolved_api_key
     )
@@ -68,7 +68,7 @@ def parse_lp_with_gemini(user_prompt: str, api_key: str = None) -> LPProblemSche
     system_prompt = (
         "You are an expert operations research assistant. Parse the user's natural language linear programming problem. "
         "Extract decision variables, formulate the algebraic objective function, and construct clean constraint equations. "
-        "Do NOT include unit labels or currency signs in algebraic terms. Standardize variable names using standard Python identifier names (e.g., Oman, Tapis, x, y)."
+        "Do NOT include unit labels or currency signs in algebraic terms. Standardize variable names using standard Python identifier names (e.g., fracKerosene, fracAGO, x, y)."
     )
 
     return structured_llm.invoke([
@@ -317,8 +317,8 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     opt_x = result["x"][x_name]
     opt_y = result["x"][y_name]
 
-    view_x_max = max(opt_x * 1.5, 10.0)
-    view_y_max = max(opt_y * 1.5, 10.0)
+    view_x_max = max(opt_x * 1.5, 2.0)
+    view_y_max = max(opt_y * 1.5, 2.0)
 
     calc_x_max = view_x_max * 10.0
     calc_y_max = view_y_max * 10.0
@@ -629,14 +629,14 @@ def page_custom():
     with st.expander("✨ Auto-parse problem statement using Google AI Studio (Gemini)", expanded=True):
         natural_prompt = st.text_area(
             "Describe your Linear Programming problem in natural language:",
-            placeholder="Maximize profit where Utility brings 40 profit and RawMaterial brings 30 profit. Each Utility takes 2 units of labor and 1 unit of material. Each RawMaterial takes 1 unit of labor and 2 units of material. Total labor available is 100 and material is 80.",
+            placeholder="Maximize profit: 12*fracKerosene - 12*fracAGO subject to constraints 6*fracKerosene - 8*fracAGO <= 2.5...",
             height=100
         )
         if st.button("🤖 Parse with Gemini", type="secondary"):
             if not natural_prompt.strip():
                 st.warning("Please enter a natural language problem statement.")
             else:
-                with st.spinner("Parsing problem with Gemini 1.5 Flash..."):
+                with st.spinner("Parsing problem with Gemini..."):
                     try:
                         parsed = parse_lp_with_gemini(natural_prompt)
                         st.session_state["parsed_sense"] = parsed.sense
@@ -647,13 +647,20 @@ def page_custom():
                         st.error(f"Failed to parse via Gemini API: {e}")
 
     default_sense = st.session_state.get("parsed_sense", "Maximize")
-    default_obj = st.session_state.get("parsed_obj", "40 * Utility + 30 * RawMaterial")
-    default_constraints = st.session_state.get("parsed_constraints", "2 * Utility + 1 * RawMaterial <= 100\n1 * Utility + 2 * RawMaterial <= 80")
+    default_obj = st.session_state.get("parsed_obj", "12 * fracKerosene - 12 * fracAGO")
+    default_constraints = st.session_state.get(
+        "parsed_constraints",
+        "6 * fracKerosene - 8 * fracAGO <= 2.5\n"
+        "4 * fracKerosene - 3 * fracAGO <= 2.6\n"
+        "fracKerosene <= 0.75\n"
+        "fracAGO >= 0.20\n"
+        "fracKerosene >= 0\n"
+        "fracAGO <= 1"
+    )
 
     st.caption(
-        "Use plain, meaningful variable names — e.g. `x`,`y`,`Utility`, "
-        "`RawMaterial`. Any word works as a variable, and the detected list "
-        "below updates as you type."
+        "Use plain, meaningful variable names — e.g. `fracKerosene`, `fracAGO`, `x`, `y`. "
+        "Any word works as a variable, and the detected list below updates as you type."
     )
 
     col_opt, col_sense = st.columns([3, 1])
@@ -668,7 +675,7 @@ def page_custom():
     constraints_input = st.text_area(
         "Constraints List",
         value=default_constraints,
-        height=120
+        height=160
     )
 
     all_text = obj_input + "\n" + constraints_input
@@ -747,7 +754,12 @@ def page_custom():
         )
 
     if st.session_state.result_custom is not None:
-        display_results(st.session_state.result_custom, sense)
+        display_results(
+            st.session_state.result_custom, 
+            sense,
+            default_x="fracKerosene",
+            default_y="fracAGO"
+        )
 
 
 if st.session_state.page == "example":
