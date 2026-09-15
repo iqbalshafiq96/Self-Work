@@ -1,3 +1,4 @@
+import os
 import re
 import numpy as np
 import pandas as pd
@@ -49,22 +50,28 @@ class LPProblemSchema(BaseModel):
     constraints: list[str] = Field(description="List of constraint equations using <=, >=, or =, e.g., ['2*Utility + RawMaterial <= 100', 'Utility + 2*RawMaterial <= 80']")
 
 
-def parse_lp_with_gemini(user_prompt: str, api_key: str) -> LPProblemSchema:
+def parse_lp_with_gemini(user_prompt: str, api_key: str = None) -> LPProblemSchema:
     """Extracts LP parameters from natural language using Google AI Studio Gemini API."""
+    # Retrieve key from Streamlit secrets or environment if not explicitly provided
+    resolved_api_key = api_key or st.secrets.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    
+    if not resolved_api_key:
+        raise ValueError("Google API Key not found. Please add GOOGLE_API_KEY to Streamlit Secrets.")
+
     llm = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash",
         temperature=0,
-        google_api_key=api_key
+        google_api_key=resolved_api_key
     )
-    
+
     structured_llm = llm.with_structured_output(LPProblemSchema)
-    
+
     system_prompt = (
         "You are an expert operations research assistant. Parse the user's natural language linear programming problem. "
         "Extract decision variables, formulate the algebraic objective function, and construct clean constraint equations. "
         "Do NOT include unit labels or currency signs in algebraic terms. Standardize variable names using standard Python identifier names (e.g., Oman, Tapis, x, y)."
     )
-    
+
     return structured_llm.invoke([
         ("system", system_prompt),
         ("user", user_prompt)
@@ -462,7 +469,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
 
     x_min_view = None if allow_negative else 0
     y_min_view = None if allow_negative else 0
-    
+
     xaxis_config = dict(
         title=x_name, 
         range=[x_min_view, view_x_max], 
@@ -621,21 +628,18 @@ def page_custom():
 
     # --- AI PARSER SECTION ---
     with st.expander("✨ Auto-parse problem statement using Google AI Studio (Gemini)", expanded=True):
-        api_key_input = st.text_input("Google Gemini API Key", type="password", help="Get a free key from aistudio.google.com")
         natural_prompt = st.text_area(
             "Describe your Linear Programming problem in natural language:",
             placeholder="Maximize profit where Utility brings 40 profit and RawMaterial brings 30 profit. Each Utility takes 2 units of labor and 1 unit of material. Each RawMaterial takes 1 unit of labor and 2 units of material. Total labor available is 100 and material is 80.",
             height=100
         )
         if st.button("🤖 Parse with Gemini", type="secondary"):
-            if not api_key_input:
-                st.error("Please enter a valid Google AI Studio API Key.")
-            elif not natural_prompt.strip():
+            if not natural_prompt.strip():
                 st.warning("Please enter a natural language problem statement.")
             else:
                 with st.spinner("Parsing problem with Gemini 1.5 Flash..."):
                     try:
-                        parsed = parse_lp_with_gemini(natural_prompt, api_key_input)
+                        parsed = parse_lp_with_gemini(natural_prompt)
                         st.session_state["parsed_sense"] = parsed.sense
                         st.session_state["parsed_obj"] = parsed.objective_function
                         st.session_state["parsed_constraints"] = "\n".join(parsed.constraints)
