@@ -266,6 +266,13 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
             help="Higher values increase contour frequency and produce finer intervals."
         )
 
+    lock_nonnegative = st.checkbox(
+        "Lock Negative Axes (x, y ≥ 0)", 
+        value=True, 
+        key="lock_nonnegative_cb",
+        help="When checked, prevents the plot axes from displaying values below zero."
+    )
+
     x_idx = var_names.index(x_name)
     y_idx = var_names.index(y_name)
 
@@ -425,10 +432,28 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         )
     )
 
+    # Configure axis restrictions based on checkbox state
+    xaxis_config = dict(
+        title=x_name, 
+        range=[0, view_x_max], 
+        showgrid=True, 
+        gridcolor='rgba(200,200,200,0.4)'
+    )
+    yaxis_config = dict(
+        title=y_name, 
+        range=[0, view_y_max], 
+        showgrid=True, 
+        gridcolor='rgba(200,200,200,0.4)'
+    )
+
+    if lock_nonnegative:
+        xaxis_config["rangemode"] = "nonnegative"
+        yaxis_config["rangemode"] = "nonnegative"
+
     fig.update_layout(
         title="",
-        xaxis=dict(title=x_name, range=[0, view_x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
-        yaxis=dict(title=y_name, range=[0, view_y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
+        xaxis=xaxis_config,
+        yaxis=yaxis_config,
         template="plotly_white",
         height=600,
         margin=dict(l=40, r=40, t=20, b=120),
