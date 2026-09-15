@@ -266,11 +266,12 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
             help="Higher values increase contour frequency and produce finer intervals."
         )
 
-    lock_nonnegative = st.checkbox(
-        "Lock Negative Axes (x, y ≥ 0)", 
-        value=True, 
-        key="lock_nonnegative_cb",
-        help="When checked, prevents the plot axes from displaying values below zero."
+    # Checkbox for restricting negative ranges
+    allow_negative = st.checkbox(
+        "Allow Negative Axes Ranges", 
+        value=False, 
+        key="allow_neg_axes",
+        help="If unticked (default), axes will strictly lock to 0 as the minimum value when scrolling or panning."
     )
 
     x_idx = var_names.index(x_name)
@@ -346,8 +347,11 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         )
 
     # 2. CONTOUR LINES FOR OBJECTIVE FUNCTION
-    x_vals = np.linspace(0, calc_x_max, 250)
-    y_vals = np.linspace(0, calc_y_max, 250)
+    x_min_calc = -calc_x_max if allow_negative else 0
+    y_min_calc = -calc_y_max if allow_negative else 0
+
+    x_vals = np.linspace(x_min_calc, calc_x_max, 250)
+    y_vals = np.linspace(y_min_calc, calc_y_max, 250)
     X, Y = np.meshgrid(x_vals, y_vals)
     Z = c[x_idx] * X + c[y_idx] * Y + fixed_objective_contrib
 
@@ -410,7 +414,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                 fig.add_trace(
                     go.Scatter(
                         x=[x_val, x_val],
-                        y=[0, calc_y_max],
+                        y=[y_min_calc, calc_y_max],
                         mode='lines',
                         line=dict(color=line_color, width=2),
                         name=f"C{idx+1}: {constr_label}",
@@ -432,23 +436,26 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         )
     )
 
-    # Configure axis restrictions based on checkbox state
+    # Layout axis configurations based on non-negativity settings
+    x_min_view = None if allow_negative else 0
+    y_min_view = None if allow_negative else 0
+    
     xaxis_config = dict(
         title=x_name, 
-        range=[0, view_x_max], 
+        range=[x_min_view, view_x_max], 
         showgrid=True, 
         gridcolor='rgba(200,200,200,0.4)'
     )
     yaxis_config = dict(
         title=y_name, 
-        range=[0, view_y_max], 
+        range=[y_min_view, view_y_max], 
         showgrid=True, 
         gridcolor='rgba(200,200,200,0.4)'
     )
 
-    if lock_nonnegative:
-        xaxis_config["rangemode"] = "nonnegative"
-        yaxis_config["rangemode"] = "nonnegative"
+    if not allow_negative:
+        xaxis_config.update(dict(rangemode="nonnegative", minallowed=0))
+        yaxis_config.update(dict(rangemode="nonnegative", minallowed=0))
 
     fig.update_layout(
         title="",
