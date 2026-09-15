@@ -5,7 +5,6 @@ import streamlit as st
 import sympy as sp
 import plotly.graph_objects as go
 from scipy.optimize import linprog
-from scipy.spatial import ConvexHull
 
 st.set_page_config(page_title="LP Optimizer", layout="centered")
 
@@ -21,6 +20,7 @@ CONSTRAINT_COLORS = [
     "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
 ]
 
+# Color palette for unique variable badges
 VAR_BADGE_COLORS = [
     {"bg": "#e1f5fe", "text": "#0288d1", "border": "#81d4fa"},
     {"bg": "#f3e5f5", "text": "#7b1fa2", "border": "#ce93d8"},
@@ -185,98 +185,8 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
         return {"success": False, "message": f"Solver failed: {res.message}"}
 
 
-# ========================================================================
-# FEASIBLE REGION GEOMETRY HELPER
-# ========================================================================
-def compute_feasible_polygon_2d(A_2d, b_2d, bounds_2d, max_extent):
-    """
-    Computes the vertices of the 2D feasible region polygon by evaluating
-    all line-line intersections and filtering for feasibility.
-    """
-    lines = [] # Equations in form: a*x + b*y = c
-
-    # Add 2D linear inequality constraints
-    for a, b_val in zip(A_2d, b_2d):
-        lines.append((a[0], a[1], b_val))
-
-    # Add variable bounds
-    x_min, x_max = bounds_2d[0]
-    y_min, y_max = bounds_2d[1]
-
-    lines.append((-1.0, 0.0, -x_min if x_min is not None else 0.0))
-    lines.append((0.0, -1.0, -y_min if y_min is not None else 0.0))
-
-    if x_max is not None:
-        lines.append((1.0, 0.0, x_max))
-    else:
-        lines.append((1.0, 0.0, max_extent))
-
-    if y_max is not None:
-        lines.append((0.0, 1.0, y_max))
-    else:
-        lines.append((0.0, 1.0, max_extent))
-
-    intersections = []
-    num_lines = len(lines)
-
-    for i in range(num_lines):
-        for j in range(i + 1, num_lines):
-            a1, b1, c1 = lines[i]
-            a2, b2, c2 = lines[j]
-            det = a1 * b2 - a2 * b1
-
-            if abs(det) > 1e-9:
-                px = (c1 * b2 - c2 * b1) / det
-                py = (a1 * c2 - a2 * c1) / det
-
-                # Check if intersection is within reasonable bounds
-                if -1e-5 <= px <= max_extent + 1e-5 and -1e-5 <= py <= max_extent + 1e-5:
-                    intersections.append((px, py))
-
-    # Filter points that satisfy all linear inequalities
-    feasible_pts = []
-    for px, py in intersections:
-        is_feasible = True
-        for a, b_val in zip(A_2d, b_2d):
-            if a[0] * px + a[1] * py > b_val + 1e-5:
-                is_feasible = False
-                break
-
-        if is_feasible:
-            if x_min is not None and px < x_min - 1e-5:
-                is_feasible = False
-            if x_max is not None and px > x_max + 1e-5:
-                is_feasible = False
-            if y_min is not None and py < y_min - 1e-5:
-                is_feasible = False
-            if y_max is not None and py > y_max + 1e-5:
-                is_feasible = False
-
-        if is_feasible:
-            feasible_pts.append((px, py))
-
-    if len(feasible_pts) < 3:
-        return None, None
-
-    pts = np.unique(np.round(feasible_pts, decimals=6), axis=0)
-    if len(pts) < 3:
-        return None, None
-
-    try:
-        hull = ConvexHull(pts)
-        ordered_pts = pts[hull.vertices]
-        px_list = list(ordered_pts[:, 0]) + [ordered_pts[0, 0]]
-        py_list = list(ordered_pts[:, 1]) + [ordered_pts[0, 1]]
-        return px_list, py_list
-    except Exception:
-        return None, None
-
-
-# ========================================================================
-# PLOTTING
-# ========================================================================
 def plot_interactive_contour_lines(result: dict, default_x: str = None, default_y: str = None):
-    """Generate an interactive 2D objective contour plot with exact polygon feasible region."""
+    """Generate an interactive 2D objective contour plot with smooth polygon feasible region."""
     var_names = result["var_names"]
 
     if len(var_names) < 2:
@@ -303,17 +213,17 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     opt_x = result["x"][x_name]
     opt_y = result["x"][y_name]
 
-    # Initial view frame scale
-    viewport_x_max = max(opt_x * 1.5, 10.0)
-    viewport_y_max = max(opt_y * 1.5, 10.0)
+    # Target camera view range
+    x_view_max = max(opt_x * 1.5, 10.0)
+    y_view_max = max(opt_y * 1.5, 10.0)
 
-    # Extended calculation domain scale (10x zoom-out protection)
-    calc_x_max = viewport_x_max * 10.0
-    calc_y_max = viewport_y_max * 10.0
+    # Extended calculation grid (20x) for panning/zooming without clipping
+    x_calc_max = x_view_max * 20.0
+    y_calc_max = y_view_max * 20.0
 
-    x_vals_calc = np.linspace(0, calc_x_max, 300)
-    y_vals_calc = np.linspace(0, calc_y_max, 300)
-    X_calc, Y_calc = np.meshgrid(x_vals_calc, y_vals_calc)
+    x_vals = np.linspace(0, x_calc_max, 500)
+    y_vals = np.linspace(0, y_calc_max, 500)
+    X, Y = np.meshgrid(x_vals, y_vals)
 
     fixed_objective_contrib = result.get("obj_const", 0.0)
     c = result["c"]
@@ -328,17 +238,18 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
     if fixed_vars_summary:
         st.caption(f"ℹ️ Other variables held constant at optimal values: **{', '.join(fixed_vars_summary)}**")
 
-    c_x, c_y = c[x_idx], c[y_idx]
-    Z_calc = c_x * X_calc + c_y * Y_calc + fixed_objective_contrib
+    c_x = c[x_idx]
+    c_y = c[y_idx]
+    Z = c_x * X + c_y * Y + fixed_objective_contrib
 
     fig = go.Figure()
 
-    # 1. COMPUTE AND DRAW CONVEX POLYGON FEASIBLE REGION
+    # 1. CONSTRUCT SMOOTH CONVEX POLYGON FOR FEASIBLE REGION
+    # Formulate 2D linear inequality systems: A_2d * [x, y]^T <= b_2d
+    A_2d, b_2d = [], []
+
     A_ub = result.get("A_ub", [])
     b_ub = result.get("b_ub", [])
-    bounds = result.get("bounds", [])
-
-    A_2d, b_2d = [], []
     if A_ub and b_ub:
         for a, b in zip(A_ub, b_ub):
             eff_b = b
@@ -348,33 +259,62 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
             A_2d.append([a[x_idx], a[y_idx]])
             b_2d.append(eff_b)
 
-    bounds_2d = [
-        bounds[x_idx] if x_idx < len(bounds) else (0, None),
-        bounds[y_idx] if y_idx < len(bounds) else (0, None)
-    ]
+    bounds = result.get("bounds", [])
+    x_min_b, x_max_b = bounds[x_idx] if x_idx < len(bounds) else (0, None)
+    y_min_b, y_max_b = bounds[y_idx] if y_idx < len(bounds) else (0, None)
 
-    poly_x, poly_y = compute_feasible_polygon_2d(A_2d, b_2d, bounds_2d, max_extent=calc_x_max)
+    # Non-negativity and user-defined variable bounds
+    A_2d.append([-1.0, 0.0]); b_2d.append(- (x_min_b if x_min_b is not None else 0.0))
+    A_2d.append([0.0, -1.0]); b_2d.append(- (y_min_b if y_min_b is not None else 0.0))
+    if x_max_b is not None:
+        A_2d.append([1.0, 0.0]); b_2d.append(x_max_b)
+    if y_max_b is not None:
+        A_2d.append([0.0, 1.0]); b_2d.append(y_max_b)
 
-    if poly_x and poly_y:
+    A_2d = np.array(A_2d)
+    b_2d = np.array(b_2d)
+
+    # Calculate intersection vertices of all bounding lines
+    vertices = []
+    n_lines = len(b_2d)
+    for i in range(n_lines):
+        for j in range(i + 1, n_lines):
+            M = np.vstack([A_2d[i], A_2d[j]])
+            if abs(np.linalg.det(M)) > 1e-9:
+                pt = np.linalg.solve(M, [b_2d[i], b_2d[j]])
+                if np.all(A_2d @ pt <= b_2d + 1e-6):
+                    vertices.append(pt)
+
+    if vertices:
+        vertices = np.unique(np.round(vertices, 6), axis=0)
+        # Sort vertices counter-clockwise around center mass to form a smooth polygon
+        center = vertices.mean(axis=0)
+        angles = np.arctan2(vertices[:, 1] - center[1], vertices[:, 0] - center[0])
+        sorted_vertices = vertices[np.argsort(angles)]
+
+        px = np.append(sorted_vertices[:, 0], sorted_vertices[0, 0])
+        py = np.append(sorted_vertices[:, 1], sorted_vertices[0, 1])
+
         fig.add_trace(
             go.Scatter(
-                x=poly_x,
-                y=poly_y,
+                x=px,
+                y=py,
                 fill="toself",
                 fillcolor="rgba(46, 204, 113, 0.25)",
-                line=dict(color="rgba(46, 204, 113, 0.6)", width=1.5),
+                line=dict(color="rgba(46, 204, 113, 0.0)", width=0),
+                mode="lines",
                 name="Feasible Region",
                 hoverinfo="skip",
                 showlegend=True
             )
         )
 
-    # 2. CONTOUR LINES
+    # 2. CONTOUR LINES & CONSTRAINTS
     fig.add_trace(
         go.Contour(
-            x=x_vals_calc,
-            y=y_vals_calc,
-            z=Z_calc,
+            x=x_vals,
+            y=y_vals,
+            z=Z,
             contours_coloring="lines",
             contours=dict(
                 showlabels=True,
@@ -398,7 +338,6 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
         )
     )
 
-    # 3. CONSTRAINT LINES (EXTENDED DOMAIN)
     raw_constraints = result.get("raw_constraints", [])
     if A_ub and b_ub:
         for idx, (a, b) in enumerate(zip(A_ub, b_ub)):
@@ -412,10 +351,10 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
             constr_label = raw_constraints[idx] if idx < len(raw_constraints) else f"Constraint {idx+1}"
 
             if abs(a_y) > 1e-6:
-                y_line = (eff_b - a_x * x_vals_calc) / a_y
+                y_line = (eff_b - a_x * x_vals) / a_y
                 fig.add_trace(
                     go.Scatter(
-                        x=x_vals_calc,
+                        x=x_vals,
                         y=y_line,
                         mode='lines',
                         line=dict(color=line_color, width=2),
@@ -428,7 +367,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                 fig.add_trace(
                     go.Scatter(
                         x=[x_val, x_val],
-                        y=[0, calc_y_max],
+                        y=[0, y_calc_max],
                         mode='lines',
                         line=dict(color=line_color, width=2),
                         name=f"C{idx+1}: {constr_label}",
@@ -436,7 +375,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
                     )
                 )
 
-    # 4. OPTIMAL POINT MARKER
+    # 3. OPTIMAL POINT MARKER
     fig.add_trace(
         go.Scatter(
             x=[opt_x],
@@ -452,8 +391,8 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
 
     fig.update_layout(
         title="",
-        xaxis=dict(title=x_name, range=[0, viewport_x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
-        yaxis=dict(title=y_name, range=[0, viewport_y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
+        xaxis=dict(title=x_name, range=[0, x_view_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
+        yaxis=dict(title=y_name, range=[0, y_view_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)'),
         template="plotly_white",
         height=600,
         margin=dict(l=40, r=40, t=20, b=120),
