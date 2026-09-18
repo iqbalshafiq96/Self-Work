@@ -85,6 +85,46 @@ def extract_identifiers(text: str) -> set:
     return tokens - RESERVED_WORDS
 
 
+def check_expression_linearity(expr_str: str, var_names: list) -> tuple[bool, str]:
+    """
+    Analyzes an expression using SymPy to detect higher-order terms, variable products,
+    or non-linear functions (e.g. x^2, x*y, sin(x), sqrt(x)).
+    Returns (is_linear, message).
+    """
+    if not expr_str.strip():
+        return True, ""
+
+    try:
+        sym_dict = {v: sp.Symbol(v) for v in var_names}
+        parsed_expr = sp.sympify(expr_str, locals=sym_dict)
+    except Exception as e:
+        return False, f"Syntax / parsing error: {e}"
+
+    free_symbols = parsed_expr.free_symbols
+    if not free_symbols:
+        return True, ""
+
+    # Check polynomial degree / non-polynomial terms across all detected variables
+    for sym in free_symbols:
+        try:
+            poly = sp.Poly(parsed_expr, sym)
+            if poly.degree(sym) > 1:
+                return False, f"Higher-order polynomial term detected for variable '{sym.name}' (degree = {poly.degree(sym)})."
+        except sp.PolynomialError:
+            return False, f"Non-polynomial or non-linear transcendental term (e.g., trig, log, exp, fractional exponent) detected containing variable '{sym.name}'."
+
+    # Check for cross-variable products (e.g., x * y)
+    if len(free_symbols) > 1:
+        try:
+            poly = sp.Poly(parsed_expr, *list(free_symbols))
+            if poly.total_degree() > 1:
+                return False, f"Multiplicative interaction term between variables detected (total degree = {poly.total_degree()})."
+        except sp.PolynomialError:
+            return False, "Non-linear term or cross-variable multiplication detected."
+
+    return True, ""
+
+
 def highlight_variables_in_text(text: str, detected_vars: list) -> str:
     """Replaces variable occurrences in text with HTML styled badges."""
     if not text or not detected_vars:
@@ -101,10 +141,10 @@ def highlight_variables_in_text(text: str, detected_vars: list) -> str:
             f"background-color: {color['bg']}; "
             f"color: {color['text']}; "
             f"border: 1px solid {color['border']}; "
-            "padding: 1px 6px; "
-            "border-radius: 4px; "
-            "font-weight: 600; "
-            "font-family: monospace;"
+            f"padding: 1px 6px; "
+            f"border-radius: 4px; "
+            f"font-weight: 600; "
+            f"font-family: monospace;"
         )
         return f'<span style="{style}">{var}</span>'
 
@@ -141,6 +181,11 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
     var_names = sorted(list(var_names))
     sym_vars = [sp.Symbol(v) for v in var_names]
     local_dict = {v: sym_vars[i] for i, v in enumerate(var_names)}
+
+    # Validate objective linearity
+    is_lin, lin_msg = check_expression_linearity(objective_str, var_names)
+    if not is_lin:
+        return {"success": False, "message": f"Non-linear objective function: {lin_msg}"}
 
     try:
         obj_expr = sp.sympify(objective_str, locals=local_dict)
@@ -685,6 +730,19 @@ def page_custom():
     with col_opt:
         obj_input = st.text_input("Objective Function", value=default_obj)
 
+    # --- NON-LINEARITY DETECTION ENGINE FOR OBJECTIVE FUNCTION ---
+    all_text = obj_input + "\n" + default_constraints
+    detected_vars = sorted(list(extract_identifiers(all_text)))
+    is_obj_linear, obj_lin_err = check_expression_linearity(obj_input, detected_vars)
+
+    if not is_obj_linear:
+        st.error(
+            f"⚠️ **Non-Linear Objective Detected:** The HiGHS Simplex LP solver cannot solve this function.\n\n"
+            f"**Reason:** {obj_lin_err}\n\n"
+            f"*Please reformulate your objective function as a strictly linear expression (degree = 1 with linear coefficients).*",
+            icon="🚨"
+        )
+
     st.subheader("Constraints")
     st.caption("Enter one constraint per line using `<=`, `>=`, or `=`.")
     constraints_input = st.text_area(
@@ -693,6 +751,7 @@ def page_custom():
         height=160
     )
 
+    # Re-extract detected variables including user modifications to constraints
     all_text = obj_input + "\n" + constraints_input
     detected_vars = sorted(list(extract_identifiers(all_text)))
 
@@ -725,12 +784,12 @@ def page_custom():
                 f"background-color: {color['bg']}; "
                 f"color: {color['text']}; "
                 f"border: 1px solid {color['border']}; "
-                "padding: 3px 9px; "
-                "border-radius: 6px; "
-                "font-weight: 600; "
-                "font-size: 0.9em; "
-                "display: inline-block; "
-                "margin-right: 4px;"
+                f"padding: 3px 9px; "
+                f"border-radius: 6px; "
+                f"font-weight: 600; "
+                f"font-size: 0.9em; "
+                f"display: inline-block; "
+                f"margin-right: 4px;"
             )
             badge_spans.append(f'<span style="{style}">{var}</span>')
 
@@ -758,7 +817,7 @@ def page_custom():
 
     st.divider()
 
-    if st.button("Solve Custom LP", type="primary"):
+    if st.button("Solve Custom LP", type="primary", disabled=not is_obj_linear):
         constraints_list = [c.strip() for c in constraints_input.split("\n") if c.strip()]
         st.session_state.result_custom = solve_lp(
             objective_str=obj_input,
