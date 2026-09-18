@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 import sympy as sp
 import plotly.graph_objects as go
+import requests
 from scipy.optimize import linprog
 from scipy.spatial import ConvexHull
 from pydantic import BaseModel, Field
@@ -104,7 +105,6 @@ def check_expression_linearity(expr_str: str, var_names: list) -> tuple[bool, st
     if not free_symbols:
         return True, ""
 
-    # Check polynomial degree / non-polynomial terms across all detected variables
     for sym in free_symbols:
         try:
             poly = sp.Poly(parsed_expr, sym)
@@ -113,7 +113,6 @@ def check_expression_linearity(expr_str: str, var_names: list) -> tuple[bool, st
         except sp.PolynomialError:
             return False, f"Non-polynomial or non-linear transcendental term (e.g., trig, log, exp, fractional exponent) detected containing variable '{sym.name}'."
 
-    # Check for cross-variable products (e.g., x * y)
     if len(free_symbols) > 1:
         try:
             poly = sp.Poly(parsed_expr, *list(free_symbols))
@@ -182,7 +181,6 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
     sym_vars = [sp.Symbol(v) for v in var_names]
     local_dict = {v: sym_vars[i] for i, v in enumerate(var_names)}
 
-    # Validate objective linearity
     is_lin, lin_msg = check_expression_linearity(objective_str, var_names)
     if not is_lin:
         return {"success": False, "message": f"Non-linear objective function: {lin_msg}"}
@@ -270,7 +268,6 @@ def solve_lp(objective_str: str, constraints_list: list, sense: str, var_names: 
 
 
 def compute_feasible_polygon_vertices(halfplanes, bounds_x, bounds_y):
-    """Calculates corner intersection vertices of half-planes to create a smooth polygon."""
     all_planes = list(halfplanes)
     all_planes.append((1.0, 0.0, bounds_x[1]))    # x <= x_max
     all_planes.append((-1.0, 0.0, -bounds_x[0]))  # x >= x_min
@@ -317,7 +314,6 @@ def compute_feasible_polygon_vertices(halfplanes, bounds_x, bounds_y):
 
 
 def plot_interactive_contour_lines(result: dict, default_x: str = None, default_y: str = None):
-    """Generate an interactive 2D objective contour plot with vector-shaded feasible region."""
     var_names = result["var_names"]
 
     if len(var_names) < 2:
@@ -575,26 +571,8 @@ def display_results(result: dict, sense: str, default_x: str = None, default_y: 
 
 
 # ========================================================================
-# ROUTER & PAGES
+# PAGES / VIEWS
 # ========================================================================
-if "page" not in st.session_state:
-    st.session_state.page = "custom"  # Default selection set to Build your own LP
-
-st.title("Linear Programming Optimizer")
-
-col1, col2 = st.columns(2)
-with col1:
-    if st.button("📘 Example: Refinery Crude LP", use_container_width=True,
-                 type="primary" if st.session_state.page == "example" else "secondary"):
-        st.session_state.page = "example"
-with col2:
-    if st.button("✍️ Build your own LP", use_container_width=True,
-                 type="primary" if st.session_state.page == "custom" else "secondary"):
-        st.session_state.page = "custom"
-
-st.divider()
-
-
 def page_example():
     st.header("Refinery crude oil purchasing")
     st.markdown(
@@ -751,7 +729,6 @@ def page_custom():
         height=160
     )
 
-    # Re-extract detected variables including user modifications to constraints
     all_text = obj_input + "\n" + constraints_input
     detected_vars = sorted(list(extract_identifiers(all_text)))
 
@@ -836,7 +813,48 @@ def page_custom():
         )
 
 
+# ========================================================================
+# MAIN ROUTER & TOP NAVIGATION BUTTONS
+# ========================================================================
+if "page" not in st.session_state:
+    st.session_state.page = "custom"  # Default view
+
+st.title("Linear Programming Optimizer")
+
+# 3 Button Tabs Navigation
+col1, col2, col3 = st.columns(3)
+with col1:
+    if st.button("📘 Example: Refinery Crude LP", use_container_width=True,
+                 type="primary" if st.session_state.page == "example" else "secondary"):
+        st.session_state.page = "example"
+with col2:
+    if st.button("✍️ Build your own LP", use_container_width=True,
+                 type="primary" if st.session_state.page == "custom" else "secondary"):
+        st.session_state.page = "custom"
+with col3:
+    if st.button("🌐 App 2 (GitHub)", use_container_width=True,
+                 type="primary" if st.session_state.page == "app2" else "secondary"):
+        st.session_state.page = "app2"
+
+st.divider()
+
+# Page Execution Logic
 if st.session_state.page == "example":
     page_example()
-else:
+elif st.session_state.page == "custom":
     page_custom()
+elif st.session_state.page == "app2":
+    # Replace this URL with your raw GitHub App2.py file URL
+    # Format: https://raw.githubusercontent.com/<USERNAME>/<REPO>/<BRANCH>/App2.py
+    GITHUB_APP2_URL = "https://raw.githubusercontent.com/your-username/your-repo/main/App2.py"
+    
+    try:
+        response = requests.get(GITHUB_APP2_URL)
+        if response.status_code == 200:
+            app2_code = response.text
+            # Dynamically execute App2.py code within this tab scope
+            exec(app2_code)
+        else:
+            st.error(f"Failed to fetch App2.py from GitHub. HTTP Status: {response.status_code}")
+    except Exception as e:
+        st.error(f"Error loading App2.py from GitHub: {e}")
