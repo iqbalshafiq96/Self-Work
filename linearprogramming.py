@@ -819,7 +819,7 @@ def page_custom():
 if "page" not in st.session_state:
     st.session_state.page = "custom"  # Default view
 
-st.title("Linear Programming Optimizer")
+st.title("Convex Optimization Engine")
 
 # 3 Button Tabs Navigation
 col1, col2, col3 = st.columns(3)
@@ -829,12 +829,12 @@ with col1:
         st.session_state.page = "example"
         st.rerun()
 with col2:
-    if st.button("✍️ Build your own LP", use_container_width=True,
+    if st.button("✍️ Linear Optimizer", use_container_width=True,
                  type="primary" if st.session_state.page == "custom" else "secondary"):
         st.session_state.page = "custom"
         st.rerun()
 with col3:
-    if st.button("🌐 Non-Linear Optimizer - Coming Soon)", use_container_width=True,
+    if st.button("🌐 Non-Linear Optimizer)", use_container_width=True,
                  type="primary" if st.session_state.page == "app2" else "secondary"):
         st.session_state.page = "app2"
         st.rerun()
