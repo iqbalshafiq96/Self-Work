@@ -36,7 +36,7 @@ def parse_qp_with_gemini(user_prompt: str, api_key: str = None) -> QPProblemSche
         raise ValueError("Google API Key not found. Please add GOOGLE_API_KEY to Streamlit Secrets.")
 
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model="gemini-3.6-flash",
         temperature=0,
         google_api_key=resolved_api_key
     )
