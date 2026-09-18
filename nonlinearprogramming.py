@@ -515,10 +515,14 @@ def page_quadratic():
         natural_prompt_qp = st.text_area(
             "Describe your Quadratic Programming problem in natural language:",
             placeholder=(
-                "A firm produces two products, x and y. The profit function is 8*x + 10*y - 2*x**2 - 3*y**2 - 2*x*y "
-                "(in thousands of dollars), reflecting diminishing returns and interaction effects between the two "
-                "product lines. Production is limited by a shared resource: x + y must not exceed 5 units. Both "
-                "x and y must be non-negative. Maximize total profit."
+                "A petrochemical plant runs three parallel catalytic reactors, R1, R2 and R3, to convert a single feedstock into a product. "
+                "The plant must process exactly 150 kmol/h of total feed, split among the three reactors. The operating cost in USD/h of each "
+                "reactor is quadratic in its own feed rate: R1 costs 0.02 times the square of its feed rate plus 3 times its feed rate, "
+                "R2 costs 0.03 times the square of its feed rate plus 2 times its feed rate, and R3 costs 0.05 times the square of its feed rate "
+                "plus 1 times its feed rate. The reactors convert 90%, 80% and 70% of their feed to product respectively, and the plant must produce "
+                "at least 125 kmol/h of product in total. Each kmol of feed processed requires 2 MJ of cooling in R1, 3 MJ in R2 and 4 MJ in R3, "
+                "and the plant's cooling system can deliver at most 450 MJ/h. Finally, no reactor can receive a negative feed rate, and the "
+                "maximum feed rates are 80 kmol/h for R1, 70 kmol/h for R2 and 60 kmol/h for R3. Determine the feed rate to each reactor that minimizes the total operating cost."
             ),
             height=220,
             key="qp_natural_prompt"
@@ -543,11 +547,21 @@ def page_quadratic():
 
     # Set initial default values if key does not exist
     if "qp_sense" not in st.session_state:
-        st.session_state["qp_sense"] = "Maximize"
+        st.session_state["qp_sense"] = "Minimize"
     if "qp_obj_input" not in st.session_state:
-        st.session_state["qp_obj_input"] = "8*x + 10*y - 2*x**2 - 3*y**2 - 2*x*y"
+        st.session_state["qp_obj_input"] = "0.02*r1**2 + 3*r1 + 0.03*r2**2 + 2*r2 + 0.05*r3**2 + r3"
     if "qp_constraints_input" not in st.session_state:
-        st.session_state["qp_constraints_input"] = "x + y <= 5\nx >= 0\ny >= 0"
+        st.session_state["qp_constraints_input"] = (
+            "r1 + r2 + r3 = 150\n"
+            "0.9*r1 + 0.8*r2 + 0.7*r3 >= 125\n"
+            "2*r1 + 3*r2 + 4*r3 <= 450\n"
+            "r1 >= 0\n"
+            "r1 <= 80\n"
+            "r2 >= 0\n"
+            "r2 <= 70\n"
+            "r3 >= 0\n"
+            "r3 <= 60"
+        )
 
     st.caption(
         "Use plain, meaningful variable names — e.g. `x`, `y`, `qty1`. "
