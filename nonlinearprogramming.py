@@ -1,18 +1,3 @@
-# ============================================================================
-# App2.py — Quadratic Programming (QP) module, fetched dynamically from GitHub
-# and exec()'d inside app.py's "app2" tab. This file assumes it is executed
-# in the SAME global namespace as app.py, and therefore reuses the following
-# names that app.py ALREADY defines/imports (do not redefine them here):
-#
-#   st, np, pd, sp, go, BaseModel, Field, ChatGoogleGenerativeAI
-#   IDENTIFIER_RE, RESERVED_WORDS, CONSTRAINT_COLORS, VAR_BADGE_COLORS
-#   extract_identifiers, check_expression_linearity, highlight_variables_in_text,
-#   parse_equation_or_inequality, compute_feasible_polygon_vertices
-#
-# This file ONLY imports/defines what app.py does NOT already provide, and
-# defines everything needed to render and solve a Quadratic Program.
-# ============================================================================
-
 from scipy.optimize import minimize, Bounds, LinearConstraint, linprog
 import os
 
