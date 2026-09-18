@@ -827,14 +827,17 @@ with col1:
     if st.button("📘 Example: Refinery Crude LP", use_container_width=True,
                  type="primary" if st.session_state.page == "example" else "secondary"):
         st.session_state.page = "example"
+        st.rerun()
 with col2:
     if st.button("✍️ Build your own LP", use_container_width=True,
                  type="primary" if st.session_state.page == "custom" else "secondary"):
         st.session_state.page = "custom"
+        st.rerun()
 with col3:
     if st.button("🌐 Non-Linear Optimizer - Coming Soon)", use_container_width=True,
                  type="primary" if st.session_state.page == "app2" else "secondary"):
         st.session_state.page = "app2"
+        st.rerun()
 
 st.divider()
 
@@ -847,7 +850,7 @@ elif st.session_state.page == "app2":
     # Replace this URL with your raw GitHub App2.py file URL
     # Format: https://raw.githubusercontent.com/<USERNAME>/<REPO>/<BRANCH>/App2.py
     GITHUB_APP2_URL = "https://raw.githubusercontent.com/your-username/your-repo/main/App2.py"
-    
+
     try:
         response = requests.get(GITHUB_APP2_URL)
         if response.status_code == 200:
