@@ -849,7 +849,7 @@ elif st.session_state.page == "custom":
 elif st.session_state.page == "app2":
     # Replace this URL with your raw GitHub App2.py file URL
     # Format: https://raw.githubusercontent.com/<USERNAME>/<REPO>/<BRANCH>/App2.py
-    GITHUB_APP2_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/blob/main/nonlinearprogramming.py"
+    GITHUB_APP2_URL = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/nonlinearprogramming.py"
 
     try:
         response = requests.get(GITHUB_APP2_URL)
