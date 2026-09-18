@@ -13,8 +13,8 @@
 # defines everything needed to render and solve a Quadratic Program.
 # ============================================================================
 
-from scipy.optimize import minimize, Bounds, LinearConstraint
-
+from scipy.optimize import minimize, Bounds, LinearConstraint, linprog
+import os
 
 # ----------------------------------------------------------------------
 # AI PARSER (GOOGLE GEMINI) - QUADRATIC (QP)
@@ -84,8 +84,8 @@ def check_expression_quadratic(expr_str: str, var_names: list) -> tuple[bool, st
         deg = poly.total_degree()
         if deg > 2:
             return False, (f"Total degree {deg} detected — exceeds the maximum degree of 2 supported by "
-                            f"the Quadratic Programming (QP) solver. Only linear and quadratic (incl. bilinear "
-                            f"cross-product) terms are allowed, e.g., x, x**2, x*y.")
+                           f"the Quadratic Programming (QP) solver. Only linear and quadratic (incl. bilinear "
+                           f"cross-product) terms are allowed, e.g., x, x**2, x*y.")
     except sp.PolynomialError:
         return False, "Non-polynomial or transcendental term detected (e.g., trig, log, exp, fractional exponent, or division by a variable)."
 
@@ -545,21 +545,24 @@ def page_quadratic():
                 with st.spinner("Parsing problem with Gemini..."):
                     try:
                         parsed_qp = parse_qp_with_gemini(natural_prompt_qp)
-                        st.session_state["parsed_sense_qp"] = parsed_qp.sense
-                        st.session_state["parsed_obj_qp"] = parsed_qp.objective_function
-                        st.session_state["parsed_constraints_qp"] = "\n".join(parsed_qp.constraints)
+                        
+                        # Bind parsed output directly to the widget keys
+                        st.session_state["qp_sense"] = parsed_qp.sense
+                        st.session_state["qp_obj_input"] = parsed_qp.objective_function
+                        st.session_state["qp_constraints_input"] = "\n".join(parsed_qp.constraints)
+                        
                         st.success("Successfully parsed problem statement!")
+                        st.rerun()
                     except Exception as e:
                         st.error(f"Failed to parse via Gemini API: {e}")
 
-    default_sense_qp = st.session_state.get("parsed_sense_qp", "Maximize")
-    default_obj_qp = st.session_state.get("parsed_obj_qp", "8*x + 10*y - 2*x**2 - 3*y**2 - 2*x*y")
-    default_constraints_qp = st.session_state.get(
-        "parsed_constraints_qp",
-        "x + y <= 5\n"
-        "x >= 0\n"
-        "y >= 0"
-    )
+    # Set initial default values if key does not exist
+    if "qp_sense" not in st.session_state:
+        st.session_state["qp_sense"] = "Maximize"
+    if "qp_obj_input" not in st.session_state:
+        st.session_state["qp_obj_input"] = "8*x + 10*y - 2*x**2 - 3*y**2 - 2*x*y"
+    if "qp_constraints_input" not in st.session_state:
+        st.session_state["qp_constraints_input"] = "x + y <= 5\nx >= 0\ny >= 0"
 
     st.caption(
         "Use plain, meaningful variable names — e.g. `x`, `y`, `qty1`. "
@@ -569,12 +572,18 @@ def page_quadratic():
 
     col_opt_qp, col_sense_qp = st.columns([3, 1])
     with col_sense_qp:
-        sense_index_qp = 0 if default_sense_qp.lower() == "maximize" else 1
-        sense_qp = st.selectbox("Optimization Sense", ["Maximize", "Minimize"], index=sense_index_qp, key="qp_sense")
+        sense_qp = st.selectbox(
+            "Optimization Sense", 
+            ["Maximize", "Minimize"], 
+            key="qp_sense"
+        )
     with col_opt_qp:
-        obj_input_qp = st.text_input("Objective Function", value=default_obj_qp, key="qp_obj_input")
+        obj_input_qp = st.text_input(
+            "Objective Function", 
+            key="qp_obj_input"
+        )
 
-    all_text_qp = obj_input_qp + "\n" + default_constraints_qp
+    all_text_qp = obj_input_qp + "\n" + st.session_state["qp_constraints_input"]
     detected_vars_qp = sorted(list(extract_identifiers(all_text_qp)))
     is_obj_quad, obj_quad_err = check_expression_quadratic(obj_input_qp, detected_vars_qp)
 
@@ -591,7 +600,6 @@ def page_quadratic():
     st.caption("Enter one **linear** constraint per line using `<=`, `>=`, or `=` (no quadratic terms here).")
     constraints_input_qp = st.text_area(
         "Constraints List",
-        value=default_constraints_qp,
         height=160,
         key="qp_constraints_input"
     )
