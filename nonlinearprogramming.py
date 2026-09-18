@@ -1,31 +1,28 @@
 # ============================================================================
 # App2.py — Quadratic Programming (QP) module, fetched dynamically from GitHub
-# and exec()'d inside app.py's "app2" tab.
+# and exec()'d inside app.py's "app2" tab. This file assumes it is executed
+# in the SAME global namespace as app.py, and therefore reuses the following
+# names that app.py ALREADY defines/imports (do not redefine them here):
+#
+#   st, np, pd, sp, go, BaseModel, Field, ChatGoogleGenerativeAI
+#   IDENTIFIER_RE, RESERVED_WORDS, CONSTRAINT_COLORS, VAR_BADGE_COLORS
+#   extract_identifiers, check_expression_linearity, highlight_variables_in_text,
+#   parse_equation_or_inequality, compute_feasible_polygon_vertices
+#
+# This file ONLY imports/defines what app.py does NOT already provide, and
+# defines everything needed to render and solve a Quadratic Program.
 # ============================================================================
 
-import os
-from scipy.optimize import minimize, Bounds, LinearConstraint, linprog
+from scipy.optimize import minimize, Bounds, LinearConstraint
+
 
 # ----------------------------------------------------------------------
 # AI PARSER (GOOGLE GEMINI) - QUADRATIC (QP)
 # ----------------------------------------------------------------------
 class QPProblemSchema(BaseModel):
-    sense: str = Field(
-        description="Optimization sense: strictly 'Maximize' or 'Minimize'"
-    )
-    objective_function: str = Field(
-        description=(
-            "Valid Python algebraic objective expression containing all decision variables and "
-            "their coefficients/quadratic terms. MUST use explicit math operators like '*' and '**'. "
-            "Examples: '8*x + 10*y - 2*x**2 - 3*y**2 - 2*x*y' or '0.5*x**2 + y**2 - 4*x'."
-        )
-    )
-    constraints: list[str] = Field(
-        description=(
-            "List of LINEAR constraint equations/inequalities using <=, >=, or =. "
-            "Quadratic terms are strictly prohibited in constraints. Examples: ['x + y <= 10', 'x >= 0']."
-        )
-    )
+    sense: str = Field(description="Optimization sense: 'Maximize' or 'Minimize'")
+    objective_function: str = Field(description="Algebraic objective expression without 'Maximize'/'Minimize' prefix. May include quadratic terms such as 'x**2', 'x*y', e.g., '2*x**2 + 3*x*y - y'")
+    constraints: list[str] = Field(description="List of LINEAR constraint equations only, using <=, >=, or =, e.g., ['x + y <= 10', 'x >= 0']. Quadratic terms are NOT allowed in constraints.")
 
 
 def parse_qp_with_gemini(user_prompt: str, api_key: str = None) -> QPProblemSchema:
@@ -44,15 +41,12 @@ def parse_qp_with_gemini(user_prompt: str, api_key: str = None) -> QPProblemSche
     structured_llm = llm.with_structured_output(QPProblemSchema)
 
     system_prompt = (
-        "You are an expert operations research parser. Your job is to extract decision variables "
-        "and convert natural language optimization problem statements into valid algebraic mathematical expressions.\n\n"
-        "RULES:\n"
-        "1. Extract ALL decision variables mentioned in the problem.\n"
-        "2. Formulate the full objective function into a clean Python algebraic expression string. "
-        "   Use explicit multiplication stars (e.g., 2*x instead of 2x) and power operators (e.g., x**2).\n"
-        "3. Ensure the objective function includes all relevant variable interaction terms or quadratic penalties mentioned.\n"
-        "4. Constraints must strictly remain linear (e.g., x + y <= 5).\n"
-        "5. Do NOT include currency symbols, units, or equality signs in the objective function."
+        "You are an expert operations research assistant specializing in Quadratic Programming (QP). "
+        "Parse the user's natural language problem. Extract decision variables and formulate the algebraic "
+        "objective function, which MAY contain quadratic terms (e.g., x**2, x*y, 2*y**2). "
+        "Constraints MUST remain strictly LINEAR (no quadratic or cross-product terms in constraints). "
+        "Do NOT include unit labels or currency signs in algebraic terms. Standardize variable names using "
+        "standard Python identifier names (e.g., x, y, qty1, qty2)."
     )
 
     return structured_llm.invoke([
@@ -62,9 +56,15 @@ def parse_qp_with_gemini(user_prompt: str, api_key: str = None) -> QPProblemSche
 
 
 # ----------------------------------------------------------------------
-# QP-SPECIFIC VALIDATION (degree <= 2 allowed)
+# QP-SPECIFIC VALIDATION (degree <= 2 allowed; reuses sp already imported)
 # ----------------------------------------------------------------------
 def check_expression_quadratic(expr_str: str, var_names: list) -> tuple[bool, str]:
+    """
+    Analyzes an expression using SymPy and allows terms up to TOTAL DEGREE 2
+    (linear terms, pure quadratic terms like x**2, and bilinear cross terms like x*y).
+    Rejects degree > 2 polynomial terms and any non-polynomial/transcendental terms.
+    Returns (is_quadratic_or_lower, message).
+    """
     if not expr_str.strip():
         return True, ""
 
@@ -83,10 +83,11 @@ def check_expression_quadratic(expr_str: str, var_names: list) -> tuple[bool, st
         poly = sp.Poly(parsed_expr, *ordered_syms)
         deg = poly.total_degree()
         if deg > 2:
-            return False, (f"Total degree {deg} detected — exceeds maximum degree of 2 supported by "
-                           f"Quadratic Programming (QP). Only linear and quadratic terms allowed.")
+            return False, (f"Total degree {deg} detected — exceeds the maximum degree of 2 supported by "
+                            f"the Quadratic Programming (QP) solver. Only linear and quadratic (incl. bilinear "
+                            f"cross-product) terms are allowed, e.g., x, x**2, x*y.")
     except sp.PolynomialError:
-        return False, "Non-polynomial or transcendental term detected."
+        return False, "Non-polynomial or transcendental term detected (e.g., trig, log, exp, fractional exponent, or division by a variable)."
 
     return True, ""
 
@@ -95,6 +96,12 @@ def check_expression_quadratic(expr_str: str, var_names: list) -> tuple[bool, st
 # QP ENGINE - matrix extraction & solving
 # ----------------------------------------------------------------------
 def build_quadratic_matrices(obj_expr, sym_vars):
+    """
+    Decomposes a (degree <= 2) SymPy expression into:
+        expr(x) = 0.5 * x^T Q x + c^T x + const
+    using the exact Hessian (Q) and gradient-at-origin (c).
+    Returns (Q: np.ndarray, c: np.ndarray, const: float)
+    """
     n = len(sym_vars)
     zero_subs = {v: 0 for v in sym_vars}
 
@@ -110,6 +117,7 @@ def build_quadratic_matrices(obj_expr, sym_vars):
 
 
 def _qp_find_feasible_start(n, A_ub, b_ub, A_eq, b_eq, bounds_list):
+    """Phase-1 LP (zero objective) to find any feasible point as a warm start for the QP solver."""
     try:
         res0 = linprog(
             c=np.zeros(n),
@@ -153,6 +161,7 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
 
     Q_orig, c_orig, const_orig = build_quadratic_matrices(obj_expr, sym_vars)
 
+    # --- Constraints: must remain strictly LINEAR in QP mode ---
     A_ub, b_ub, A_eq, b_eq = [], [], [], []
     for constr in constraints_list:
         if not constr.strip():
@@ -259,9 +268,14 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
 
 
 # ----------------------------------------------------------------------
-# QP PLOTTING
+# QP PLOTTING (reuses compute_feasible_polygon_vertices from app.py)
 # ----------------------------------------------------------------------
 def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, default_y: str = None):
+    """
+    QP contour + feasible region plot. The objective may be quadratic, so the 2D
+    projection Z-surface is derived via exact SymPy substitution (fixing all other
+    variables at their optimal values) rather than a linear formula.
+    """
     var_names = result["var_names"]
 
     if len(var_names) < 2:
@@ -502,7 +516,7 @@ def display_results_qp(result: dict, sense: str, default_x: str = None, default_
 
 
 # ----------------------------------------------------------------------
-# PAGE
+# PAGE (mirrors page_custom()'s architecture, for quadratic objectives)
 # ----------------------------------------------------------------------
 def page_quadratic():
     st.header("QP Problem Statement (Objective Function)")
@@ -681,7 +695,8 @@ def page_quadratic():
 
 
 # ----------------------------------------------------------------------
-# ENTRY POINT
+# ENTRY POINT — this runs immediately when app.py exec()'s this file's
+# text inside the "app2" tab branch.
 # ----------------------------------------------------------------------
 if "result_qp" not in st.session_state:
     st.session_state.result_qp = None
