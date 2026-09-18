@@ -829,12 +829,12 @@ with col1:
         st.session_state.page = "example"
         st.rerun()
 with col2:
-    if st.button("✍️ Linear Optimizer", use_container_width=True,
+    if st.button("📈 Linear Optimizer", use_container_width=True,
                  type="primary" if st.session_state.page == "custom" else "secondary"):
         st.session_state.page = "custom"
         st.rerun()
 with col3:
-    if st.button("🌐 Non-Linear Optimizer", use_container_width=True,
+    if st.button("🎢 Non-Linear Optimizer", use_container_width=True,
                  type="primary" if st.session_state.page == "app2" else "secondary"):
         st.session_state.page = "app2"
         st.rerun()
