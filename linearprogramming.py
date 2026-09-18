@@ -832,7 +832,7 @@ with col2:
                  type="primary" if st.session_state.page == "custom" else "secondary"):
         st.session_state.page = "custom"
 with col3:
-    if st.button("🌐 App 2 (GitHub)", use_container_width=True,
+    if st.button("🌐 Non-Linear Optimizer - Coming Soon)", use_container_width=True,
                  type="primary" if st.session_state.page == "app2" else "secondary"):
         st.session_state.page = "app2"
 
