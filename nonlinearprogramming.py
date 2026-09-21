@@ -8,6 +8,7 @@ import pandas as pd
 from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 
+
 # ----------------------------------------------------------------------
 # AI PARSER (GOOGLE GEMINI) - QUADRATIC (QP)
 # ----------------------------------------------------------------------
@@ -154,16 +155,12 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
     Q_orig, c_orig, const_orig = build_quadratic_matrices(obj_expr, sym_vars)
 
     # --- Constraints: must remain strictly LINEAR in QP mode ---
-    # NOTE (BUGFIX): We now track the ORIGINAL index of every constraint line (as it
-    # appears in `constraints_list` / the "Parsed Constraints Preview") alongside each
-    # row we append to A_ub/b_ub. Equality constraints are routed to A_eq and are
-    # therefore absent from A_ub — without recording the original index, the plot
-    # function's `enumerate(A_ub)` position silently drifts out of sync with
-    # `raw_constraints`, causing the legend color/number for a constraint to no longer
-    # match the line actually drawn on the chart (e.g. "C5" shown in one color while the
-    # line for the real C5 equation is drawn in another). Recording `ub_orig_idx` lets
-    # the plot always look up the correct label AND the correct color using the same
-    # original constraint number everywhere (preview, legend, and chart).
+    # Every row appended to A_ub / A_eq records the ORIGINAL index of the constraint
+    # line (its position in `constraints_list`, i.e. the "C<n>" number shown in the
+    # Parsed Constraints Preview). Because equalities are routed to A_eq, a bare
+    # enumerate() over A_ub drifts out of sync with `raw_constraints` and mismatches
+    # the legend label / colour. `ub_orig_idx` / `eq_orig_idx` keep the number,
+    # colour and equation text consistent everywhere.
     A_ub, b_ub, A_eq, b_eq = [], [], [], []
     ub_orig_idx, eq_orig_idx = [], []
 
@@ -271,8 +268,8 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
         "bounds": bounds_list,
         "var_names": var_names,
         "raw_constraints": constraints_list,
-        "ub_orig_idx": ub_orig_idx,   # NEW: maps each A_ub row -> its original constraint index
-        "eq_orig_idx": eq_orig_idx,   # NEW: same, for A_eq rows (kept for completeness/future use)
+        "ub_orig_idx": ub_orig_idx,   # maps each A_ub row -> its original constraint index
+        "eq_orig_idx": eq_orig_idx,   # maps each A_eq row -> its original constraint index
     }
 
 
@@ -284,6 +281,11 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     QP contour + feasible region plot. The objective may be quadratic, so the 2D
     projection Z-surface is derived via exact SymPy substitution (fixing all other
     variables at their optimal values) rather than a linear formula.
+
+    Constraint rendering covers BOTH inequality rows (A_ub) and equality rows
+    (A_eq). Equalities are drawn as dotted lines and are also injected into the
+    feasible-region computation as a pair of opposing half-planes, so the shaded
+    region is the true projected feasible set rather than a relaxation.
     """
     var_names = result["var_names"]
 
@@ -356,17 +358,37 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     expr_2d = obj_expr.subs(subs_dict)
     z_func = sp.lambdify((x_sym, y_sym), expr_2d, "numpy")
 
-    halfplanes = []
     A_ub = result.get("A_ub", [])
     b_ub = result.get("b_ub", [])
+    A_eq = result.get("A_eq", [])
+    b_eq = result.get("b_eq", [])
 
-    if A_ub and b_ub:
-        for a, b in zip(A_ub, b_ub):
-            eff_b = b
-            for v_i in range(len(var_names)):
-                if v_i not in (x_idx, y_idx):
-                    eff_b -= a[v_i] * result["x"][var_names[v_i]]
-            halfplanes.append((a[x_idx], a[y_idx], eff_b))
+    raw_constraints = result.get("raw_constraints", [])
+    ub_orig_idx = result.get("ub_orig_idx", list(range(len(A_ub))))
+    eq_orig_idx = result.get("eq_orig_idx", list(range(len(A_eq))))
+
+    def project_rhs(a, b):
+        """Fold the non-axis variables (held at optimum) into the RHS constant."""
+        eff_b = b
+        for v_i in range(len(var_names)):
+            if v_i not in (x_idx, y_idx):
+                eff_b -= a[v_i] * result["x"][var_names[v_i]]
+        return eff_b
+
+    # --- Half-planes feeding the feasible-region polygon -------------------
+    # Inequalities contribute one half-plane each. Each EQUALITY contributes two
+    # opposing half-planes (a.x <= b AND a.x >= b), which is what forces the
+    # polygon to collapse onto the equality line instead of ignoring it.
+    halfplanes = []
+
+    for a, b in zip(A_ub, b_ub):
+        eff_b = project_rhs(a, b)
+        halfplanes.append((a[x_idx], a[y_idx], eff_b))
+
+    for a, b in zip(A_eq, b_eq):
+        eff_b = project_rhs(a, b)
+        halfplanes.append((a[x_idx], a[y_idx], eff_b))
+        halfplanes.append((-a[x_idx], -a[y_idx], -eff_b))
 
     bounds = result.get("bounds", [])
     x_min_b, x_max_b = bounds[x_idx] if x_idx < len(bounds) else (0, None)
@@ -383,20 +405,41 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
         halfplanes, bounds_x=(b_x_min, b_x_max), bounds_y=(b_y_min, b_y_max)
     )
 
+    degenerate_region = False
     if poly_x is not None and len(poly_x) > 0:
-        px = np.append(poly_x, poly_x[0])
-        py = np.append(poly_y, poly_y[0])
+        # Shoelace area — with an active equality the projected feasible set is a
+        # segment (zero area), which `fill="toself"` renders as an invisible sliver.
+        # Detect that and draw it as a visible thick line instead.
+        area = 0.0
+        if len(poly_x) >= 3:
+            area = 0.5 * abs(np.dot(poly_x, np.roll(poly_y, -1)) - np.dot(poly_y, np.roll(poly_x, -1)))
+        span = max(np.ptp(poly_x), np.ptp(poly_y), 1e-12)
+        degenerate_region = area < (1e-6 * span * span)
 
-        fig.add_trace(
-            go.Scatter(
-                x=px, y=py,
-                fill="toself",
-                fillcolor="rgba(46, 204, 113, 0.25)",
-                line=dict(color="rgba(46, 204, 113, 0.6)", width=1),
-                name="Feasible Region",
-                hoverinfo="skip"
+        if degenerate_region:
+            fig.add_trace(
+                go.Scatter(
+                    x=poly_x, y=poly_y,
+                    mode="lines",
+                    line=dict(color="rgba(46, 204, 113, 0.95)", width=6),
+                    name="Feasible Region (degenerate — segment)",
+                    hoverinfo="skip"
+                )
             )
-        )
+        else:
+            px = np.append(poly_x, poly_x[0])
+            py = np.append(poly_y, poly_y[0])
+
+            fig.add_trace(
+                go.Scatter(
+                    x=px, y=py,
+                    fill="toself",
+                    fillcolor="rgba(46, 204, 113, 0.25)",
+                    line=dict(color="rgba(46, 204, 113, 0.6)", width=1),
+                    name="Feasible Region",
+                    hoverinfo="skip"
+                )
+            )
 
     x_min_calc = -calc_x_max if allow_negative else 0
     y_min_calc = -calc_y_max if allow_negative else 0
@@ -432,57 +475,54 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     )
 
     # ------------------------------------------------------------------
-    # BUGFIX: constraint color/label alignment
+    # Constraint lines — inequalities AND equalities
     # ------------------------------------------------------------------
-    # Previously this loop used `enumerate(zip(A_ub, b_ub))` and indexed BOTH the
-    # color (`CONSTRAINT_COLORS[idx]`) and the label (`raw_constraints[idx]`) using
-    # the position *within A_ub only* (inequalities only). Since equality constraints
-    # are filtered out of A_ub (they live in A_eq instead) but `raw_constraints`
-    # contains the FULL original list, any equality constraint occurring before an
-    # inequality caused every following A_ub row to read the WRONG label from
-    # `raw_constraints`, while the trace's `line_color` (still based on the A_ub
-    # position) no longer matched the color that same constraint's number would get
-    # in the "Parsed Constraints Preview" above the chart. That's exactly what
-    # produced "C5 shown as indigo in the legend, but drawn in red on the chart".
-    #
-    # Fix: use `ub_orig_idx` (the constraint's true position in the original,
-    # unfiltered list) for BOTH the color lookup and the label/name, so the number,
-    # color, and equation text are always consistent between the legend, the plotted
-    # line, and the "Parsed Constraints Preview".
-    raw_constraints = result.get("raw_constraints", [])
-    ub_orig_idx = result.get("ub_orig_idx", list(range(len(A_ub))))
+    # Colour and label are both keyed on `orig_i`, the constraint's position in the
+    # ORIGINAL unfiltered list, so the C-number, colour and equation text always
+    # agree between the Parsed Constraints Preview, the legend and the chart.
+    # A constraint whose x- and y-axis coefficients are both zero (e.g. `r3 <= 60`
+    # while plotting r1 vs r2) has no line in this plane; it is reported in a
+    # caption instead of vanishing silently.
+    skipped_labels = []
 
-    if A_ub and b_ub:
-        for row_i, (a, b) in enumerate(zip(A_ub, b_ub)):
-            orig_i = ub_orig_idx[row_i] if row_i < len(ub_orig_idx) else row_i
+    def draw_constraint(a, b, orig_i, dash=None):
+        a_x, a_y = a[x_idx], a[y_idx]
+        color = CONSTRAINT_COLORS[orig_i % len(CONSTRAINT_COLORS)]
+        label = raw_constraints[orig_i] if orig_i < len(raw_constraints) else f"Constraint {orig_i + 1}"
+        trace_name = f"C{orig_i + 1}: {label}"
 
-            eff_b = b
-            for v_i in range(len(var_names)):
-                if v_i not in (x_idx, y_idx):
-                    eff_b -= a[v_i] * result["x"][var_names[v_i]]
+        if abs(a_x) < 1e-9 and abs(a_y) < 1e-9:
+            skipped_labels.append(f"C{orig_i + 1}")
+            return
 
-            a_x, a_y = a[x_idx], a[y_idx]
-            line_color = CONSTRAINT_COLORS[orig_i % len(CONSTRAINT_COLORS)]
-            constr_label = raw_constraints[orig_i] if orig_i < len(raw_constraints) else f"Constraint {orig_i + 1}"
+        eff_b = project_rhs(a, b)
 
-            if abs(a_y) > 1e-6:
-                y_line = (eff_b - a_x * x_vals) / a_y
-                fig.add_trace(
-                    go.Scatter(
-                        x=x_vals, y=y_line, mode='lines',
-                        line=dict(color=line_color, width=2),
-                        name=f"C{orig_i + 1}: {constr_label}", hoverinfo="x+y"
-                    )
+        if abs(a_y) > 1e-6:
+            y_line = (eff_b - a_x * x_vals) / a_y
+            fig.add_trace(
+                go.Scatter(
+                    x=x_vals, y=y_line, mode='lines',
+                    line=dict(color=color, width=2, dash=dash),
+                    name=trace_name, hoverinfo="x+y"
                 )
-            elif abs(a_x) > 1e-6:
-                x_val = eff_b / a_x
-                fig.add_trace(
-                    go.Scatter(
-                        x=[x_val, x_val], y=[y_min_calc, calc_y_max], mode='lines',
-                        line=dict(color=line_color, width=2),
-                        name=f"C{orig_i + 1}: {constr_label}", hoverinfo="x+y"
-                    )
+            )
+        else:
+            x_val = eff_b / a_x
+            fig.add_trace(
+                go.Scatter(
+                    x=[x_val, x_val], y=[y_min_calc, calc_y_max], mode='lines',
+                    line=dict(color=color, width=2, dash=dash),
+                    name=trace_name, hoverinfo="x+y"
                 )
+            )
+
+    for row_i, (a, b) in enumerate(zip(A_ub, b_ub)):
+        orig_i = ub_orig_idx[row_i] if row_i < len(ub_orig_idx) else row_i
+        draw_constraint(a, b, orig_i)
+
+    for row_i, (a, b) in enumerate(zip(A_eq, b_eq)):
+        orig_i = eq_orig_idx[row_i] if row_i < len(eq_orig_idx) else row_i
+        draw_constraint(a, b, orig_i, dash='dot')
 
     fig.add_trace(
         go.Scatter(
@@ -517,6 +557,21 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+    if A_eq:
+        st.caption("⋯ Dotted lines denote **equality** constraints.")
+
+    if degenerate_region:
+        st.caption(
+            "ℹ️ An equality constraint is active in this projection, so the feasible set collapses to a "
+            "**line segment** (zero area). It is drawn as a thick green line rather than a shaded polygon."
+        )
+
+    if skipped_labels:
+        st.caption(
+            f"ℹ️ **{', '.join(skipped_labels)}** contain no `{x_name}` or `{y_name}` terms, so they have no "
+            f"line in this 2D projection. Switch the axis variables above to view them."
+        )
 
 
 def display_results_qp(result: dict, sense: str, default_x: str = None, default_y: str = None):
