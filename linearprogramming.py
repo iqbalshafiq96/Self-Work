@@ -11,7 +11,7 @@ from scipy.spatial import ConvexHull
 from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-st.set_page_config(page_title="LP Optimizer", layout="centered")
+st.set_page_config(page_title="Optimizer Module", layout="centered")
 
 IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
