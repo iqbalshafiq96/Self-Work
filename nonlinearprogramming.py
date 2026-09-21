@@ -1,5 +1,12 @@
 from scipy.optimize import minimize, Bounds, LinearConstraint, linprog
 import os
+import sympy as sp
+import numpy as np
+import plotly.graph_objects as go
+import streamlit as st
+import pandas as pd
+from pydantic import BaseModel, Field
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 # ----------------------------------------------------------------------
 # AI PARSER (GOOGLE GEMINI) - QUADRATIC (QP)
@@ -286,7 +293,7 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
             "Objective Contours (N)",
             min_value=5,
             max_value=300,
-            value=60,
+            value=120,  # <-- Set default to 120
             step=5,
             key="n_contours_input_qp",
             help="Higher values increase contour frequency and produce finer intervals."
@@ -385,13 +392,16 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     if Z.shape != X.shape:
         Z = np.full_like(X, float(Z))
 
+    # Unified line color for contours and legend proxy
+    contour_line_color = '#1f77b4'
+
     fig.add_trace(
         go.Contour(
             x=x_vals, y=y_vals, z=Z,
             contours_coloring="lines",
             ncontours=int(n_contours),
             contours=dict(showlabels=True, labelfont=dict(size=10, color='navy')),
-            line=dict(color='#1f77b4', width=1.5, dash='dash'),
+            line=dict(color=contour_line_color, width=1.5, dash='dash'),
             showscale=False, showlegend=False, hoverinfo="x+y+z"
         )
     )
@@ -399,7 +409,7 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     fig.add_trace(
         go.Scatter(
             x=[None], y=[None], mode='lines',
-            line=dict(color='#1f77b4', width=1.5, dash='dash'),
+            line=dict(color=contour_line_color, width=1.5, dash='dash'),
             name="Objective Contour", showlegend=True
         )
     )
