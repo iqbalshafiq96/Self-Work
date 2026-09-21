@@ -1,4 +1,5 @@
 from scipy.optimize import minimize, Bounds, LinearConstraint, linprog
+from scipy.spatial import ConvexHull
 import os
 import sympy as sp
 import numpy as np
@@ -274,7 +275,82 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
 
 
 # ----------------------------------------------------------------------
-# QP PLOTTING (reuses compute_feasible_polygon_vertices from app.py)
+# FEASIBLE REGION — QP-local variant of app.py's compute_feasible_polygon_vertices
+# ----------------------------------------------------------------------
+def compute_feasible_region_qp(halfplanes, bounds_x, bounds_y):
+    """
+    Same vertex-enumeration approach as app.py's `compute_feasible_polygon_vertices`
+    (pairwise half-plane intersection -> feasibility filter -> convex hull ordering),
+    with two changes that QP requires:
+
+    1. DEGENERATE SETS ARE RETURNED, NOT DISCARDED. The LP helper bails out with
+       `if len(pts) < 3: return None, None`. When an EQUALITY constraint is active,
+       the projected feasible set is a line segment (2 vertices) or a single point
+       (1 vertex) — so the LP helper returns None and NOTHING gets highlighted. That
+       is why the feasible region never appeared for the default reactor problem,
+       which contains the equality `r1 + r2 + r3 = 150`.
+
+    2. SCALED TOLERANCES. The LP helper uses a fixed absolute 1e-6 feasibility
+       tolerance and rounds to 6 decimals. At reactor/refinery magnitudes (1e2-1e5)
+       that is tighter than the floating-point error incurred solving for the vertex,
+       so genuine vertices get rejected and near-duplicates fail to collapse. Both the
+       tolerance and the rounding now scale with the magnitude of the right-hand sides.
+
+    Returns (xs, ys, kind) where kind is "polygon", "segment", "point", or None.
+    """
+    all_planes = list(halfplanes)
+    all_planes.append((1.0, 0.0, bounds_x[1]))    # x <= x_max
+    all_planes.append((-1.0, 0.0, -bounds_x[0]))  # x >= x_min
+    all_planes.append((0.0, 1.0, bounds_y[1]))    # y <= y_max
+    all_planes.append((0.0, -1.0, -bounds_y[0]))  # y >= y_min
+
+    scale = max([abs(c) for _, _, c in all_planes] + [1.0])
+    tol = 1e-7 * scale
+
+    pts = []
+    num_planes = len(all_planes)
+
+    for i in range(num_planes):
+        for j in range(i + 1, num_planes):
+            a1, b1, c1 = all_planes[i]
+            a2, b2, c2 = all_planes[j]
+
+            det = a1 * b2 - a2 * b1
+            if abs(det) < 1e-12:
+                continue
+
+            x = (c1 * b2 - c2 * b1) / det
+            y = (a1 * c2 - a2 * c1) / det
+
+            if all(a * x + b * y <= c + tol for a, b, c in all_planes):
+                pts.append((x, y))
+
+    if not pts:
+        return None, None, None
+
+    decimals = max(0, int(9 - np.log10(max(scale, 1.0))))
+    pts = np.unique(np.round(np.array(pts, dtype=float), decimals), axis=0)
+
+    if len(pts) == 1:
+        return pts[:, 0], pts[:, 1], "point"
+    if len(pts) == 2:
+        return pts[:, 0], pts[:, 1], "segment"
+
+    try:
+        hull = ConvexHull(pts)
+        ordered_pts = pts[hull.vertices]
+        return ordered_pts[:, 0], ordered_pts[:, 1], "polygon"
+    except Exception:
+        # QHull refuses collinear input (3+ vertices all on one line). Project onto the
+        # dominant direction and keep the two extreme points as a segment.
+        d = pts - pts.mean(axis=0)
+        t = d @ np.linalg.svd(d, full_matrices=False)[2][0]
+        ordered_pts = pts[np.argsort(t)]
+        return ordered_pts[[0, -1], 0], ordered_pts[[0, -1], 1], "segment"
+
+
+# ----------------------------------------------------------------------
+# QP PLOTTING
 # ----------------------------------------------------------------------
 def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, default_y: str = None):
     """
@@ -285,8 +361,8 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     Constraint rendering covers BOTH inequality rows (A_ub) and equality rows
     (A_eq), styled identically and drawn in original constraint order. Equalities
     are additionally injected into the feasible-region computation as a pair of
-    opposing half-planes, so the shaded region is the true projected feasible set
-    rather than a relaxation.
+    opposing half-planes, so the highlighted region is the true projected feasible
+    set rather than a relaxation — including the degenerate segment/point cases.
     """
     var_names = result["var_names"]
 
@@ -376,10 +452,10 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
                 eff_b -= a[v_i] * result["x"][var_names[v_i]]
         return eff_b
 
-    # --- Half-planes feeding the feasible-region polygon -------------------
+    # --- Half-planes feeding the feasible-region computation ---------------
     # Inequalities contribute one half-plane each. Each EQUALITY contributes two
-    # opposing half-planes (a.x <= b AND a.x >= b), which is what forces the
-    # polygon to collapse onto the equality line instead of ignoring it.
+    # opposing half-planes (a.x <= b AND a.x >= b), which forces the region to
+    # collapse onto the equality line instead of ignoring it.
     halfplanes = []
 
     for a, b in zip(A_ub, b_ub):
@@ -402,45 +478,48 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
 
     fig = go.Figure()
 
-    poly_x, poly_y = compute_feasible_polygon_vertices(
+    region_x, region_y, region_kind = compute_feasible_region_qp(
         halfplanes, bounds_x=(b_x_min, b_x_max), bounds_y=(b_y_min, b_y_max)
     )
 
-    degenerate_region = False
-    if poly_x is not None and len(poly_x) > 0:
-        # Shoelace area — with an active equality the projected feasible set is a
-        # segment (zero area), which `fill="toself"` renders as an invisible sliver.
-        # Detect that and draw it as a visible thick line instead.
-        area = 0.0
-        if len(poly_x) >= 3:
-            area = 0.5 * abs(np.dot(poly_x, np.roll(poly_y, -1)) - np.dot(poly_y, np.roll(poly_x, -1)))
-        span = max(np.ptp(poly_x), np.ptp(poly_y), 1e-12)
-        degenerate_region = area < (1e-6 * span * span)
+    # Highlight the feasible set. A polygon gets the usual translucent green fill; a
+    # degenerate segment/point would be invisible under `fill="toself"`, so it is
+    # drawn as a thick line / large marker in the same green instead.
+    if region_kind == "polygon":
+        px = np.append(region_x, region_x[0])
+        py = np.append(region_y, region_y[0])
 
-        if degenerate_region:
-            fig.add_trace(
-                go.Scatter(
-                    x=poly_x, y=poly_y,
-                    mode="lines",
-                    line=dict(color="rgba(46, 204, 113, 0.95)", width=6),
-                    name="Feasible Region (degenerate — segment)",
-                    hoverinfo="skip"
-                )
+        fig.add_trace(
+            go.Scatter(
+                x=px, y=py,
+                fill="toself",
+                fillcolor="rgba(46, 204, 113, 0.25)",
+                line=dict(color="rgba(46, 204, 113, 0.6)", width=1),
+                name="Feasible Region",
+                hoverinfo="skip"
             )
-        else:
-            px = np.append(poly_x, poly_x[0])
-            py = np.append(poly_y, poly_y[0])
-
-            fig.add_trace(
-                go.Scatter(
-                    x=px, y=py,
-                    fill="toself",
-                    fillcolor="rgba(46, 204, 113, 0.25)",
-                    line=dict(color="rgba(46, 204, 113, 0.6)", width=1),
-                    name="Feasible Region",
-                    hoverinfo="skip"
-                )
+        )
+    elif region_kind == "segment":
+        fig.add_trace(
+            go.Scatter(
+                x=region_x, y=region_y,
+                mode="lines",
+                line=dict(color="rgba(46, 204, 113, 0.95)", width=7),
+                name="Feasible Region (line segment)",
+                hoverinfo="x+y"
             )
+        )
+    elif region_kind == "point":
+        fig.add_trace(
+            go.Scatter(
+                x=region_x, y=region_y,
+                mode="markers",
+                marker=dict(color="rgba(46, 204, 113, 0.95)", size=16, symbol="circle",
+                            line=dict(color="rgba(30,130,76,1)", width=2)),
+                name="Feasible Region (single point)",
+                hoverinfo="x+y"
+            )
+        )
 
     x_min_calc = -calc_x_max if allow_negative else 0
     y_min_calc = -calc_y_max if allow_negative else 0
@@ -562,10 +641,23 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
 
     st.plotly_chart(fig, use_container_width=True)
 
-    if degenerate_region:
+    if region_kind == "segment":
         st.caption(
-            "ℹ️ An equality constraint is active in this projection, so the feasible set collapses to a "
-            "**line segment** (zero area). It is drawn as a thick green line rather than a shaded polygon."
+            f"ℹ️ An equality constraint is active in this projection, so the feasible set collapses to a "
+            f"**line segment** (zero area) rather than a filled polygon. Every point on the green line is "
+            f"feasible for `{x_name}` and `{y_name}` at the fixed values of the other variables."
+        )
+    elif region_kind == "point":
+        st.caption(
+            f"ℹ️ The constraints pin this projection to a **single feasible point** "
+            f"({region_x[0]:,.4f}, {region_y[0]:,.4f}) — with the other variables held at their optimal "
+            f"values, no other `{x_name}`/`{y_name}` combination satisfies every constraint."
+        )
+    elif region_kind is None:
+        st.caption(
+            f"ℹ️ No feasible area exists in this 2D slice. The other variables are pinned at their optimal "
+            f"values, which can over-constrain the `{x_name}`–`{y_name}` projection even though the full "
+            f"problem is feasible. Try different axis variables."
         )
 
     if skipped_labels:
