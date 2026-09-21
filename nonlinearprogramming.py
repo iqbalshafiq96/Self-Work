@@ -9,6 +9,29 @@ from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 # ----------------------------------------------------------------------
+# RESET STATE HELPER
+# ----------------------------------------------------------------------
+def reset_qp_session_state():
+    """Resets all session state keys associated with Tab 3 (QP) to defaults."""
+    st.session_state["qp_sense"] = "Minimize"
+    st.session_state["qp_obj_input"] = "0.02*r1**2 + 3*r1 + 0.03*r2**2 + 2*r2 + 0.05*r3**2 + r3"
+    st.session_state["qp_constraints_input"] = (
+        "r1 + r2 + r3 = 150\n"
+        "0.9*r1 + 0.8*r2 + 0.7*r3 >= 125\n"
+        "2*r1 + 3*r2 + 4*r3 <= 450\n"
+        "r1 >= 0\n"
+        "r1 <= 80\n"
+        "r2 >= 0\n"
+        "r2 <= 70\n"
+        "r3 >= 0\n"
+        "r3 <= 60"
+    )
+    st.session_state["result_qp"] = None
+    st.session_state["qp_natural_prompt"] = ""
+    st.session_state["qp_enable_bounds"] = False
+
+
+# ----------------------------------------------------------------------
 # AI PARSER (GOOGLE GEMINI) - QUADRATIC (QP)
 # ----------------------------------------------------------------------
 class QPProblemSchema(BaseModel):
@@ -260,7 +283,7 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
 
 
 # ----------------------------------------------------------------------
-# QP PLOTTING (reuses compute_feasible_polygon_vertices from app.py)
+# QP PLOTTING
 # ----------------------------------------------------------------------
 def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, default_y: str = None):
     """
@@ -293,7 +316,7 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
             "Objective Contours (N)",
             min_value=5,
             max_value=300,
-            value=120,  # <-- Set default to 120
+            value=120,
             step=5,
             key="n_contours_input_qp",
             help="Higher values increase contour frequency and produce finer intervals."
@@ -392,7 +415,6 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     if Z.shape != X.shape:
         Z = np.full_like(X, float(Z))
 
-    # Unified line color for contours and legend proxy
     contour_line_color = '#1f77b4'
 
     fig.add_trace(
@@ -511,7 +533,7 @@ def display_results_qp(result: dict, sense: str, default_x: str = None, default_
 
 
 # ----------------------------------------------------------------------
-# PAGE (mirrors page_custom()'s architecture, for quadratic objectives)
+# PAGE
 # ----------------------------------------------------------------------
 def page_quadratic():
     st.header("QP Problem Statement (Objective Function)")
@@ -555,7 +577,7 @@ def page_quadratic():
                     except Exception as e:
                         st.error(f"Failed to parse via Gemini API: {e}")
 
-    # Set initial default values if key does not exist
+    # Set default values if not explicitly set
     if "qp_sense" not in st.session_state:
         st.session_state["qp_sense"] = "Minimize"
     if "qp_obj_input" not in st.session_state:
@@ -712,10 +734,9 @@ def page_quadratic():
 
 
 # ----------------------------------------------------------------------
-# ENTRY POINT — this runs immediately when app.py exec()'s this file's
-# text inside the "app2" tab branch.
+# ENTRY POINT
 # ----------------------------------------------------------------------
-if "result_qp" not in st.session_state:
-    st.session_state.result_qp = None
+# Automatically wipe state on entry so switching back to Tab 3 starts fresh
+reset_qp_session_state()
 
 page_quadratic()
