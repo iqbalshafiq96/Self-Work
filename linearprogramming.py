@@ -578,7 +578,7 @@ def page_example():
     st.markdown(
         """
 A refinery's supply and trading team must decide how much crude oil to purchase and process 
-each day from four available sources — Oman (costing $420/m³), Tapis ($460/m³), Labuan ($440/m³), and Murban ($450/m³) 
+each day from four available sources — Oman (costing $ 420/m³), Tapis ($ 460/m³), Labuan ($ 440/m³), and Murban ($ 450/m³) 
 — each converting into a different yield mix of finished products once refined: 
 Oman converts 35% into gasoline, 40% into diesel, and 15% into fuel oil; 
 Tapis converts 45% into gasoline, 30% into diesel, and 10% into fuel oil; 
@@ -586,7 +586,7 @@ Labuan converts 30% into gasoline, 25% into diesel, and 30% into fuel oil;
 and Murban converts 40% into gasoline, 35% into diesel, and 15% into fuel oil 
 (with the remaining volume for each crude lost to refining losses or other minor by-products). 
 The goal is to decide the daily purchase and processing volume of each crude that maximizes the 
-refinery's Gross Refinery Margin (the total revenue earned from selling gasoline at $650/m³, diesel at $580/m³, and fuel oil at $350/m³, 
+refinery's Gross Refinery Margin (the total revenue earned from selling gasoline at $ 650/m³, diesel at $ 580/m³, and fuel oil at $ 350/m³, 
 less the cost of purchasing each crude at its respective price), while respecting a set of real-world operating limits: 
 no single crude can be purchased beyond what its supplier can realistically deliver each day (Oman capped at 260,000 m³, Tapis at 45,000 m³, Labuan at 40,000 m³, and Murban at 95,000 m³), 
 the refinery's distillation units cannot physically process more than 300,000 m³ of combined crude per day regardless of how favorable the economics look, and the resulting product slate — 
