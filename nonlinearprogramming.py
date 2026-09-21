@@ -1,16 +1,17 @@
-from scipy.optimize import minimize, Bounds, LinearConstraint, linprog
 import os
-import sympy as sp
 import numpy as np
-import plotly.graphobjects as go
-import streamlit as st
 import pandas as pd
+import plotly.graphobjects as go
+import scipy.optimize
+from scipy.optimize import minimize, Bounds, LinearConstraint, linprog
+import sympy as sp
+import streamlit as st
 from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-----------------------------------------------------------------------
+# ----------------------------------------------------------------------
 # AI PARSER (GOOGLE GEMINI) - QUADRATIC (QP)
-----------------------------------------------------------------------
+# ----------------------------------------------------------------------
 class QPProblemSchema(BaseModel):
     sense: str = Field(description="Optimization sense: 'Maximize' or 'Minimize'")
     objective_function: str = Field(description="Algebraic objective expression without 'Maximize'/'Minimize' prefix. May include quadratic terms such as 'x**2', 'x*y', e.g., '2*x**2 + 3*x*y - y'")
@@ -25,7 +26,7 @@ def parse_qp_with_gemini(user_prompt: str, api_key: str = None) -> QPProblemSche
         raise ValueError("Google API Key not found. Please add GOOGLE_API_KEY to Streamlit Secrets.")
 
     llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
+        model="gemini-2.5-flash",
         temperature=0,
         google_api_key=resolved_api_key
     )
@@ -46,9 +47,9 @@ def parse_qp_with_gemini(user_prompt: str, api_key: str = None) -> QPProblemSche
         ("user", user_prompt)
     ])
 
-----------------------------------------------------------------------
+# ----------------------------------------------------------------------
 # QP-SPECIFIC VALIDATION (degree <= 2 allowed; reuses sp already imported)
-----------------------------------------------------------------------
+# ----------------------------------------------------------------------
 def check_expression_quadratic(expr_str: str, var_names: list) -> tuple[bool, str]:
     """
     Analyzes an expression using SymPy and allows terms up to TOTAL DEGREE 2
@@ -82,9 +83,9 @@ def check_expression_quadratic(expr_str: str, var_names: list) -> tuple[bool, st
 
     return True, ""
 
-----------------------------------------------------------------------
+# ----------------------------------------------------------------------
 # QP ENGINE - matrix extraction & solving
-----------------------------------------------------------------------
+# ----------------------------------------------------------------------
 def build_quadratic_matrices(obj_expr, sym_vars):
     """
     Decomposes a (degree <= 2) SymPy expression into:
@@ -125,9 +126,9 @@ def qp_find_feasible_start(n, Aub, bub, Aeq, beq, bounds_list):
 
     x0 = []
     for lo, hi in bounds_list:
-        lov = lo if lo is not None else -1.0
-        hiv = hi if hi is not None else (lov + 2.0 if lo is not None else 1.0)
-        x0.append((lov + hiv) / 2.0)
+        lo_v = lo if lo is not None else -1.0
+        hi_v = hi if hi is not None else (lo_v + 2.0 if lo is not None else 1.0)
+        x0.append((lo_v + hi_v) / 2.0)
     return np.array(x0)
 
 
@@ -180,7 +181,7 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
             Aub.append([-v for v in coeffs])
             bub.append(const_term)
             ub_orig_idx.append(orig_i)
-        elif rel in ("==", "="):
+        elif rel == "==":
             Aeq.append(coeffs)
             beq.append(-const_term)
             eq_orig_idx.append(orig_i)
@@ -205,8 +206,8 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
     def objective_hess(x):
         return Q_sym
 
-    eigvals = np.linalg.eigvalsh(Q_sym)
-    is_convex = bool(np.all(eigvals >= -1e-7))
+    eig_vals = np.linalg.eigvalsh(Q_sym)
+    is_convex = bool(np.all(eig_vals >= -1e-7))
 
     lin_constraints = []
     if Aub:
@@ -250,7 +251,7 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
         "objexpr": obj_expr,
         "symvars": sym_vars,
         "isconvex": is_convex,
-        "eigvals": eigvals,
+        "eigvals": eig_vals,
         "Aub": Aub,
         "bub": bub,
         "Aeq": Aeq,
@@ -262,80 +263,84 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
         "eqorigidx": eq_orig_idx,
     }
 
-----------------------------------------------------------------------
+# ----------------------------------------------------------------------
 # QP PLOTTING
-----------------------------------------------------------------------
-def plot_interactive_contour_lines_qp(result: dict, defaultx: str = None, defaulty: str = None):
-    varnames = result["varnames"]
+# ----------------------------------------------------------------------
+def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, default_y: str = None):
+    """
+    QP contour + feasible region plot. The objective may be quadratic, so the 2D
+    projection Z-surface is derived via exact SymPy substitution.
+    """
+    var_names = result["varnames"]
 
-    if len(varnames) < 2:
+    if len(var_names) < 2:
         st.info("Interactive contour line plots require at least 2 decision variables.")
         return
 
-    default_x_idx = varnames.index(defaultx) if defaultx in varnames else 0
+    default_x_idx = var_names.index(default_x) if default_x in var_names else 0
 
     st.markdown("### 2D Projection Settings")
-    colx, coly, coln = st.columns(3)
+    col_x, col_y, col_n = st.columns(3)
 
-    with colx:
-        xname = st.selectbox("X-Axis Variable", varnames, index=default_x_idx, key="contourxvarqp")
+    with col_x:
+        x_name = st.selectbox("X-Axis Variable", var_names, index=default_x_idx, key="contour_xvar_qp")
 
-    yoptions = [v for v in varnames if v != xname]
-    default_y_idx = yoptions.index(defaulty) if defaulty in yoptions else 0
+    y_options = [v for v in var_names if v != x_name]
+    default_y_idx = y_options.index(default_y) if default_y in y_options else 0
 
-    with coly:
-        yname = st.selectbox("Y-Axis Variable", yoptions, index=default_y_idx, key="contouryvarqp")
+    with col_y:
+        y_name = st.selectbox("Y-Axis Variable", y_options, index=default_y_idx, key="contour_yvar_qp")
 
-    with coln:
-        ncontours = st.number_input(
+    with col_n:
+        n_contours = st.number_input(
             "Objective Contours (N)",
             min_value=5,
             max_value=300,
             value=120,
             step=5,
-            key="ncontoursinputqp",
+            key="ncontours_input_qp",
             help="Higher values increase contour frequency and produce finer intervals."
         )
 
     allow_negative = st.checkbox(
         "Allow Negative Axes Ranges",
         value=False,
-        key="allownegaxesqp",
+        key="allow_neg_axes_qp",
         help="If unticked (default), axes will strictly lock to 0 as the minimum value when scrolling or panning."
     )
 
-    xidx = varnames.index(xname)
-    yidx = varnames.index(yname)
+    x_idx = var_names.index(x_name)
+    y_idx = var_names.index(y_name)
 
-    optx = result["x"][xname]
-    opty = result["x"][yname]
+    opt_x = result["x"][x_name]
+    opt_y = result["x"][y_name]
 
-    view_xmax = max(abs(optx) * 1.5, 2.0)
-    view_ymax = max(abs(opty) * 1.5, 2.0)
+    view_x_max = max(abs(opt_x) * 1.5, 2.0)
+    view_y_max = max(abs(opt_y) * 1.5, 2.0)
 
-    calc_xmax = view_xmax * 10.0
-    calc_ymax = view_ymax * 10.0
+    calc_x_max = view_x_max * 10.0
+    calc_y_max = view_y_max * 10.0
 
     fixed_vars_summary = []
-    for idx, vname in enumerate(varnames):
-        if idx not in (xidx, yidx):
-            val = result["x"][vname]
-            fixed_vars_summary.append(f"{vname} = {val:,.4f}")
+    for idx, v_name in enumerate(var_names):
+        if idx not in (x_idx, y_idx):
+            val = result["x"][v_name]
+            fixed_vars_summary.append(f"{v_name} = {val:,.4f}")
 
     if fixed_vars_summary:
         st.caption(f"ℹ️ Other variables held constant at optimal values: {', '.join(fixed_vars_summary)}")
 
-    objexpr = result["objexpr"]
-    symvars = result["symvars"]
+    obj_expr = result["objexpr"]
+    sym_vars = result["symvars"]
     subs_dict = {
         sv: result["x"][vn]
-        for vn, sv in zip(varnames, symvars)
-        if vn not in (xname, yname)
+        for vn, sv in zip(var_names, sym_vars)
+        if vn not in (x_name, y_name)
     }
-    xsym = sp.Symbol(xname)
-    ysym = sp.Symbol(yname)
-    expr2d = objexpr.subs(subs_dict)
-    zfunc = sp.lambdify((xsym, ysym), expr2d, "numpy")
+    x_sym = sp.Symbol(x_name)
+    y_sym = sp.Symbol(y_name)
+    expr_2d = obj_expr.subs(subs_dict)
+    z_func = sp.lambdify((x_sym, y_sym), expr_2d, "numpy")
 
     halfplanes = []
     Aub = result.get("Aub", [])
@@ -343,30 +348,30 @@ def plot_interactive_contour_lines_qp(result: dict, defaultx: str = None, defaul
 
     if Aub and bub:
         for a, b in zip(Aub, bub):
-            effb = b
-            for vi in range(len(varnames)):
-                if vi not in (xidx, yidx):
-                    effb -= a[vi] * result["x"][varnames[vi]]
-            halfplanes.append((a[xidx], a[yidx], effb))
+            eff_b = b
+            for vi in range(len(var_names)):
+                if vi not in (x_idx, y_idx):
+                    eff_b -= a[vi] * result["x"][var_names[vi]]
+            halfplanes.append((a[x_idx], a[y_idx], eff_b))
 
     bounds = result.get("bounds", [])
-    xminb, xmaxb = bounds[xidx] if xidx < len(bounds) else (0, None)
-    yminb, ymaxb = bounds[yidx] if yidx < len(bounds) else (0, None)
+    xmin_b, xmax_b = bounds[x_idx] if x_idx < len(bounds) else (0, None)
+    ymin_b, ymax_b = bounds[y_idx] if y_idx < len(bounds) else (0, None)
 
-    bxmin = (-calc_xmax if allow_negative else 0.0) if xminb is None else xminb
-    bxmax = calc_xmax if xmaxb is None else min(xmaxb, calc_xmax)
-    bymin = (-calc_ymax if allow_negative else 0.0) if yminb is None else yminb
-    bymax = calc_ymax if ymaxb is None else min(ymaxb, calc_ymax)
+    bxmin = (-calc_x_max if allow_negative else 0.0) if xmin_b is None else xmin_b
+    bxmax = calc_x_max if xmax_b is None else min(xmax_b, calc_x_max)
+    bymin = (-calc_y_max if allow_negative else 0.0) if ymin_b is None else ymin_b
+    bymax = calc_y_max if ymax_b is None else min(ymax_b, calc_y_max)
 
     fig = go.Figure()
 
-    polyx, polyy = compute_feasible_polygon_vertices(
-        halfplanes, boundsx=(bxmin, bxmax), boundsy=(bymin, bymax)
+    poly_x, poly_y = compute_feasible_polygon_vertices(
+        halfplanes, bounds_x=(bxmin, bxmax), bounds_y=(bymin, bymax)
     )
 
-    if polyx is not None and len(polyx) > 0:
-        px = np.append(polyx, polyx[0])
-        py = np.append(polyy, polyy[0])
+    if poly_x is not None and len(poly_x) > 0:
+        px = np.append(poly_x, poly_x[0])
+        py = np.append(poly_y, poly_y[0])
 
         fig.add_trace(
             go.Scatter(
@@ -379,14 +384,14 @@ def plot_interactive_contour_lines_qp(result: dict, defaultx: str = None, defaul
             )
         )
 
-    xmin_calc = -calc_xmax if allow_negative else 0
-    ymin_calc = -calc_ymax if allow_negative else 0
+    xmin_calc = -calc_x_max if allow_negative else 0
+    ymin_calc = -calc_y_max if allow_negative else 0
 
-    xvals = np.linspace(xmin_calc, calc_xmax, 250)
-    yvals = np.linspace(ymin_calc, calc_ymax, 250)
-    X, Y = np.meshgrid(xvals, yvals)
+    x_vals = np.linspace(xmin_calc, calc_x_max, 250)
+    y_vals = np.linspace(ymin_calc, calc_y_max, 250)
+    X, Y = np.meshgrid(x_vals, y_vals)
 
-    Z = np.asarray(zfunc(X, Y), dtype=float)
+    Z = np.asarray(z_func(X, Y), dtype=float)
     if Z.shape != X.shape:
         Z = np.full_like(X, float(Z))
 
@@ -394,9 +399,9 @@ def plot_interactive_contour_lines_qp(result: dict, defaultx: str = None, defaul
 
     fig.add_trace(
         go.Contour(
-            x=xvals, y=yvals, z=Z,
+            x=x_vals, y=y_vals, z=Z,
             contours_coloring="lines",
-            ncontours=int(ncontours),
+            ncontours=int(n_contours),
             contours=dict(showlabels=True, labelfont=dict(size=10, color='navy')),
             line=dict(color=contour_line_color, width=1.5, dash='dash'),
             showscale=False, showlegend=False, hoverinfo="x+y+z"
@@ -415,42 +420,42 @@ def plot_interactive_contour_lines_qp(result: dict, defaultx: str = None, defaul
     ub_orig_idx = result.get("uborigidx", list(range(len(Aub))))
 
     if Aub and bub:
-        for rowi, (a, b) in enumerate(zip(Aub, bub)):
-            origi = ub_orig_idx[rowi] if rowi < len(ub_orig_idx) else rowi
+        for row_i, (a, b) in enumerate(zip(Aub, bub)):
+            orig_i = ub_orig_idx[row_i] if row_i < len(ub_orig_idx) else row_i
 
-            effb = b
-            for vi in range(len(varnames)):
-                if vi not in (xidx, yidx):
-                    effb -= a[vi] * result["x"][varnames[vi]]
+            eff_b = b
+            for vi in range(len(var_names)):
+                if vi not in (x_idx, y_idx):
+                    eff_b -= a[vi] * result["x"][var_names[vi]]
 
-            ax, ay = a[xidx], a[yidx]
-            line_color = CONSTRAINT_COLORS[origi % len(CONSTRAINT_COLORS)]
-            constr_label = raw_constraints[origi] if origi < len(raw_constraints) else f"Constraint {origi + 1}"
+            ax, ay = a[x_idx], a[y_idx]
+            line_color = CONSTRAINT_COLORS[orig_i % len(CONSTRAINT_COLORS)]
+            constr_label = raw_constraints[orig_i] if orig_i < len(raw_constraints) else f"Constraint {orig_i + 1}"
 
             if abs(ay) > 1e-6:
-                yline = (effb - ax * xvals) / ay
+                y_line = (eff_b - ax * x_vals) / ay
                 fig.add_trace(
                     go.Scatter(
-                        x=xvals, y=yline, mode='lines',
+                        x=x_vals, y=y_line, mode='lines',
                         line=dict(color=line_color, width=2),
-                        name=f"C{origi + 1}: {constr_label}", hoverinfo="x+y"
+                        name=f"C{orig_i + 1}: {constr_label}", hoverinfo="x+y"
                     )
                 )
             elif abs(ax) > 1e-6:
-                xval = effb / ax
+                x_val = eff_b / ax
                 fig.add_trace(
                     go.Scatter(
-                        x=[xval, xval], y=[ymin_calc, calc_ymax], mode='lines',
+                        x=[x_val, x_val], y=[ymin_calc, calc_y_max], mode='lines',
                         line=dict(color=line_color, width=2),
-                        name=f"C{origi + 1}: {constr_label}", hoverinfo="x+y"
+                        name=f"C{orig_i + 1}: {constr_label}", hoverinfo="x+y"
                     )
                 )
 
     fig.add_trace(
         go.Scatter(
-            x=[optx], y=[opty], mode='markers+text',
+            x=[opt_x], y=[opt_y], mode='markers+text',
             marker=dict(color='#d62728', size=12, symbol='circle', line=dict(color='black', width=1)),
-            text=[f" Optimal ({optx:.2f}, {opty:.2f})"],
+            text=[f" Optimal ({opt_x:.2f}, {opt_y:.2f})"],
             textposition="top right", name="Optimal Solution", hoverinfo="x+y"
         )
     )
@@ -458,8 +463,8 @@ def plot_interactive_contour_lines_qp(result: dict, defaultx: str = None, defaul
     xmin_view = None if allow_negative else 0
     ymin_view = None if allow_negative else 0
 
-    xaxis_config = dict(title=xname, range=[xmin_view, view_xmax], showgrid=True, gridcolor='rgba(200,200,200,0.4)')
-    yaxis_config = dict(title=yname, range=[ymin_view, view_ymax], showgrid=True, gridcolor='rgba(200,200,200,0.4)')
+    xaxis_config = dict(title=x_name, range=[xmin_view, view_x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)')
+    yaxis_config = dict(title=y_name, range=[ymin_view, view_y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)')
 
     if not allow_negative:
         xaxis_config.update(dict(rangemode="nonnegative", minallowed=0))
@@ -481,7 +486,7 @@ def plot_interactive_contour_lines_qp(result: dict, defaultx: str = None, defaul
     st.plotly_chart(fig, use_container_width=True)
 
 
-def display_results_qp(result: dict, sense: str, defaultx: str = None, defaulty: str = None):
+def display_results_qp(result: dict, sense: str, default_x: str = None, default_y: str = None):
     if result["success"]:
         st.success("Optimization Completed Successfully!")
 
@@ -502,17 +507,17 @@ def display_results_qp(result: dict, sense: str, defaultx: str = None, defaulty:
             st.metric(label=f"Optimal Objective Value ({sense})", value=f"{result['fun']:,.4f}")
 
         st.subheader("Optimal Decision Variable Values")
-        dfres = pd.DataFrame(list(result["x"].items()), columns=["Variable", "Optimal Value"])
-        st.dataframe(dfres.style.format({"Optimal Value": "{:,.4f}"}), use_container_width=True)
+        df_res = pd.DataFrame(list(result["x"].items()), columns=["Variable", "Optimal Value"])
+        st.dataframe(df_res.style.format({"Optimal Value": "{:,.4f}"}), use_container_width=True)
 
         st.subheader("Interactive Objective Contour Map & Feasible Area")
-        plot_interactive_contour_lines_qp(result, defaultx=defaultx, defaulty=defaulty)
+        plot_interactive_contour_lines_qp(result, default_x=default_x, default_y=default_y)
     else:
         st.error(f"Solver Error: {result['message']}")
 
-----------------------------------------------------------------------
-# PAGE FUNCTION
-----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# PAGE
+# ----------------------------------------------------------------------
 def page_quadratic():
     st.header("QP Problem Statement (Objective Function)")
     st.caption(
@@ -535,9 +540,9 @@ def page_quadratic():
                 "maximum feed rates are 80 kmol/h for R1, 70 kmol/h for R2 and 60 kmol/h for R3. Determine the feed rate to each reactor that minimizes the total operating cost."
             ),
             height=220,
-            key="qpnaturalprompt"
+            key="qp_natural_prompt"
         )
-        if st.button("🤖 Parse with Gemini", type="secondary", key="qpparsebtn"):
+        if st.button("🤖 Parse with Gemini", type="secondary", key="qp_parse_btn"):
             if not natural_prompt_qp.strip():
                 st.warning("Please enter a natural language problem statement.")
             else:
@@ -545,21 +550,21 @@ def page_quadratic():
                     try:
                         parsed_qp = parse_qp_with_gemini(natural_prompt_qp)
 
-                        st.session_state["qpsense"] = parsed_qp.sense
-                        st.session_state["qpobjinput"] = parsed_qp.objective_function
-                        st.session_state["qpconstraintsinput"] = "\n".join(parsed_qp.constraints)
+                        st.session_state["qp_sense"] = parsed_qp.sense
+                        st.session_state["qp_obj_input"] = parsed_qp.objective_function
+                        st.session_state["qp_constraints_input"] = "\n".join(parsed_qp.constraints)
 
                         st.success("Successfully parsed problem statement!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed to parse via Gemini API: {e}")
 
-    if "qpsense" not in st.session_state:
-        st.session_state["qpsense"] = "Minimize"
-    if "qpobjinput" not in st.session_state:
-        st.session_state["qpobjinput"] = "0.02*r1**2 + 3*r1 + 0.03*r2**2 + 2*r2 + 0.05*r3**2 + r3"
-    if "qpconstraintsinput" not in st.session_state:
-        st.session_state["qpconstraintsinput"] = (
+    if "qp_sense" not in st.session_state:
+        st.session_state["qp_sense"] = "Minimize"
+    if "qp_obj_input" not in st.session_state:
+        st.session_state["qp_obj_input"] = "0.02*r1**2 + 3*r1 + 0.03*r2**2 + 2*r2 + 0.05*r3**2 + r3"
+    if "qp_constraints_input" not in st.session_state:
+        st.session_state["qp_constraints_input"] = (
             "r1 + r2 + r3 = 150\n"
             "0.9*r1 + 0.8*r2 + 0.7*r3 >= 125\n"
             "2*r1 + 3*r2 + 4*r3 <= 450\n"
@@ -577,27 +582,27 @@ def page_quadratic():
         "constraints must stay linear."
     )
 
-    coloptqp, colsenseqp = st.columns([3, 1])
-    with colsenseqp:
-        senseqp = st.selectbox(
+    col_opt_qp, col_sense_qp = st.columns([3, 1])
+    with col_sense_qp:
+        sense_qp = st.selectbox(
             "Optimization Sense",
             ["Maximize", "Minimize"],
-            key="qpsense"
+            key="qp_sense"
         )
-    with coloptqp:
-        objinputqp = st.text_input(
+    with col_opt_qp:
+        obj_input_qp = st.text_input(
             "Objective Function",
-            key="qpobjinput"
+            key="qp_obj_input"
         )
 
-    alltextqp = objinputqp + "\n" + st.session_state["qpconstraintsinput"]
-    detectedvarsqp = sorted(list(extract_identifiers(alltextqp)))
-    isobjquad, objquaderr = check_expression_quadratic(objinputqp, detectedvarsqp)
+    all_text_qp = obj_input_qp + "\n" + st.session_state["qp_constraints_input"]
+    detected_vars_qp = sorted(list(extract_identifiers(all_text_qp)))
+    is_obj_quad, obj_quad_err = check_expression_quadratic(obj_input_qp, detected_vars_qp)
 
-    if not isobjquad:
+    if not is_obj_quad:
         st.error(
             f"⚠️ Unsupported Objective Detected: The QP solver requires degree ≤ 2.\n\n"
-            f"Reason: {objquaderr}\n\n"
+            f"Reason: {obj_quad_err}\n\n"
             f"Please reformulate your objective function so every term has total degree ≤ 2 "
             f"(constants, linear terms like x, pure quadratic terms like x**2, or bilinear terms like x*y).",
             icon="🚨"
@@ -605,112 +610,112 @@ def page_quadratic():
 
     st.subheader("Constraints")
     st.caption("Enter one linear constraint per line using <=, >=, or = (no quadratic terms here).")
-    constraintsinputqp = st.text_area(
+    constraints_input_qp = st.text_area(
         "Constraints List",
         height=160,
-        key="qpconstraintsinput"
+        key="qp_constraints_input"
     )
 
-    alltextqp = objinputqp + "\n" + constraintsinputqp
-    detectedvarsqp = sorted(list(extract_identifiers(alltextqp)))
+    all_text_qp = obj_input_qp + "\n" + constraints_input_qp
+    detected_vars_qp = sorted(list(extract_identifiers(all_text_qp)))
 
-    nonlinearconstraints = []
-    for line in [c.strip() for c in constraintsinputqp.split("\n") if c.strip()]:
+    nonlinear_constraints = []
+    for line in [c.strip() for c in constraints_input_qp.split("\n") if c.strip()]:
         try:
-            symdict = {v: sp.Symbol(v) for v in detectedvarsqp}
-            diff, _ = parse_equation_or_inequality(line, symdict)
+            sym_dict = {v: sp.Symbol(v) for v in detected_vars_qp}
+            diff, _ = parse_equation_or_inequality(line, sym_dict)
             if diff is not None:
-                islinline, linerr = check_expression_linearity(str(diff), detectedvarsqp)
-                if not islinline:
-                    nonlinearconstraints.append((line, linerr))
+                is_lin_line, lin_err = check_expression_linearity(str(diff), detected_vars_qp)
+                if not is_lin_line:
+                    nonlinear_constraints.append((line, lin_err))
         except Exception:
             pass
 
-    if nonlinearconstraints:
-        msgs = "\n".join([f"- {ln} → {err}" for ln, err in nonlinearconstraints])
+    if nonlinear_constraints:
+        msgs = "\n".join([f"- {ln} → {err}" for ln, err in nonlinear_constraints])
         st.error(
             f"⚠️ Non-Linear Constraint(s) Detected: QP mode only allows quadratic terms in the "
             f"objective; all constraints must be linear.\n\n{msgs}",
             icon="🚨"
         )
 
-    enableboundsqp = st.checkbox("Enable Custom Variable Bounds", value=False, key="qpenablebounds")
-    boundsdictqp = {}
+    enable_bounds_qp = st.checkbox("Enable Custom Variable Bounds", value=False, key="qp_enable_bounds")
+    bounds_dict_qp = {}
 
-    if enableboundsqp:
+    if enable_bounds_qp:
         st.markdown("Configure Bounds")
-        if detectedvarsqp:
-            cols = st.columns(min(len(detectedvarsqp), 4))
-            for i, var in enumerate(detectedvarsqp):
+        if detected_vars_qp:
+            cols = st.columns(min(len(detected_vars_qp), 4))
+            for i, var in enumerate(detected_vars_qp):
                 with cols[i % 4]:
                     st.write(f"{var}")
-                    minval = st.number_input(f"Min ({var})", value=0.0, key=f"qpmin{var}")
-                    hasmax = st.checkbox(f"Set Max ({var})", key=f"qphasmax{var}")
-                    maxval = st.number_input(f"Max ({var})", value=100.0, key=f"qpmax{var}") if hasmax else None
-                    boundsdictqp[var] = (minval, maxval)
+                    min_val = st.number_input(f"Min ({var})", value=0.0, key=f"qp_min_{var}")
+                    has_max = st.checkbox(f"Set Max ({var})", key=f"qp_has_max_{var}")
+                    max_val = st.number_input(f"Max ({var})", value=100.0, key=f"qp_max_{var}") if has_max else None
+                    bounds_dict_qp[var] = (min_val, max_val)
         else:
             st.warning("No variables detected yet to configure bounds.")
     else:
-        boundsdictqp = {var: (0.0, None) for var in detectedvarsqp}
+        bounds_dict_qp = {var: (0.0, None) for var in detected_vars_qp}
 
     st.divider()
 
-    if detectedvarsqp:
-        badgespans = []
-        for i, var in enumerate(detectedvarsqp):
+    if detected_vars_qp:
+        badge_spans = []
+        for i, var in enumerate(detected_vars_qp):
             color = VAR_BADGE_COLORS[i % len(VAR_BADGE_COLORS)]
             style = (
                 f"background-color: {color['bg']}; color: {color['text']}; "
                 f"border: 1px solid {color['border']}; padding: 3px 9px; border-radius: 6px; "
                 f"font-weight: 600; font-size: 0.9em; display: inline-block; margin-right: 4px;"
             )
-            badgespans.append(f'<span style="{style}">{var}</span>')
+            badge_spans.append(f'<span style="{style}">{var}</span>')
 
-        badgeshtml = " ".join(badgespans)
-        st.markdown(f"Recognized Variables: {badgeshtml}", unsafe_allow_html=True)
+        badges_html = " ".join(badge_spans)
+        st.markdown(f"Recognized Variables: {badges_html}", unsafe_allow_html=True)
 
         with st.expander("Optimization Problem Statement Preview", expanded=True):
-            highlighted_obj = highlight_variables_in_text(objinputqp, detectedvarsqp)
+            highlighted_obj = highlight_variables_in_text(obj_input_qp, detected_vars_qp)
             st.markdown(
-                f"Parsed Objective: **{senseqp}** &nbsp; {highlighted_obj}",
+                f"Parsed Objective: **{sense_qp}** &nbsp; {highlighted_obj}",
                 unsafe_allow_html=True,
             )
 
-            lines = [c.strip() for c in constraintsinputqp.split("\n") if c.strip()]
+            lines = [c.strip() for c in constraints_input_qp.split("\n") if c.strip()]
             if lines:
                 st.markdown("Parsed Constraints:")
                 for idx, line in enumerate(lines, 1):
-                    h_line = highlight_variables_in_text(line, detectedvarsqp)
+                    h_line = highlight_variables_in_text(line, detected_vars_qp)
                     st.markdown(f"&nbsp;&nbsp;**C{idx}:** {h_line}", unsafe_allow_html=True)
     else:
         st.markdown("No variables detected yet.")
 
     st.divider()
 
-    solvedisabledqp = (not isobjquad) or bool(nonlinearconstraints)
-    if st.button("Solve Quadratic Program", type="primary", disabled=solvedisabledqp, key="qpsolvebtn"):
-        constraintslistqp = [c.strip() for c in constraintsinputqp.split("\n") if c.strip()]
+    solve_disabled_qp = (not is_obj_quad) or bool(nonlinear_constraints)
+    if st.button("Solve Quadratic Program", type="primary", disabled=solve_disabled_qp, key="qp_solve_btn"):
+        constraints_list_qp = [c.strip() for c in constraints_input_qp.split("\n") if c.strip()]
         st.session_state.resultqp = solve_qp(
-            objective_str=objinputqp,
-            constraints_list=constraintslistqp,
-            sense=senseqp,
-            var_names=detectedvarsqp,
-            bounds_dict=boundsdictqp
+            objective_str=obj_input_qp,
+            constraints_list=constraints_list_qp,
+            sense=sense_qp,
+            var_names=detected_vars_qp,
+            bounds_dict=bounds_dict_qp
         )
 
     if st.session_state.resultqp is not None:
-        defaultxqp = detectedvarsqp[0] if len(detectedvarsqp) > 0 else None
-        defaultyqp = detectedvarsqp[1] if len(detectedvarsqp) > 1 else None
+        default_x_qp = detected_vars_qp[0] if len(detected_vars_qp) > 0 else None
+        default_y_qp = detected_vars_qp[1] if len(detected_vars_qp) > 1 else None
         display_results_qp(
             st.session_state.resultqp,
-            senseqp,
-            defaultx=defaultxqp,
-            defaulty=defaultyqp
+            sense_qp,
+            default_x=default_x_qp,
+            default_y=default_y_qp
         )
 
-----------------------------------------------------------------------
+# ----------------------------------------------------------------------
 # ENTRY POINT
-----------------------------------------------------------------------
+# ----------------------------------------------------------------------
 if "resultqp" not in st.session_state:
     st.session_state.resultqp = None
 
