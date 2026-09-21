@@ -576,23 +576,8 @@ def display_results(result: dict, sense: str, default_x: str = None, default_y: 
 def page_example():
     st.header("Refinery crude oil purchasing")
     st.markdown(
-        """
-A refinery's supply and trading team must decide how much crude oil to purchase and process 
-each day from four available sources — Oman (costing $ 420/m³), Tapis ($ 460/m³), Labuan ($ 440/m³), and Murban ($ 450/m³) 
-— each converting into a different yield mix of finished products once refined: 
-Oman converts 35% into gasoline, 40% into diesel, and 15% into fuel oil; 
-Tapis converts 45% into gasoline, 30% into diesel, and 10% into fuel oil; 
-Labuan converts 30% into gasoline, 25% into diesel, and 30% into fuel oil; 
-and Murban converts 40% into gasoline, 35% into diesel, and 15% into fuel oil 
-(with the remaining volume for each crude lost to refining losses or other minor by-products). 
-The goal is to decide the daily purchase and processing volume of each crude that maximizes the 
-refinery's Gross Refinery Margin (the total revenue earned from selling gasoline at $ 650/m³, diesel at $ 580/m³, and fuel oil at $ 350/m³, 
-less the cost of purchasing each crude at its respective price), while respecting a set of real-world operating limits: 
-no single crude can be purchased beyond what its supplier can realistically deliver each day (Oman capped at 260,000 m³, Tapis at 45,000 m³, Labuan at 40,000 m³, and Murban at 95,000 m³), 
-the refinery's distillation units cannot physically process more than 300,000 m³ of combined crude per day regardless of how favorable the economics look, and the resulting product slate — 
-after applying each crude's conversion yields — must stay aligned with what the market can actually absorb, 
-with gasoline output needing to fall between 90,000 and 130,000 m³/day, diesel between 60,000 and 90,000 m³/day, and fuel oil clearing at least a 20,000 m³/day floor 
-to satisfy standing offtake commitments — so that the crude buying plan is not just theoretically profitable on paper, but is one the refinery can supply, physically convert, and actually sell into the market.
+        r"""
+A refinery's supply and trading team must decide how much crude oil to purchase and process each day from four available sources — Oman (costing \$420/m³), Tapis (\$460/m³), Labuan (\$440/m³), and Murban (\$450/m³) — each converting into a different yield mix of finished products once refined: Oman converts 35% into gasoline, 40% into diesel, and 15% into fuel oil; Tapis converts 45% into gasoline, 30% into diesel, and 10% into fuel oil; Labuan converts 30% into gasoline, 25% into diesel, and 30% into fuel oil; and Murban converts 40% into gasoline, 35% into diesel, and 15% into fuel oil (with the remaining volume for each crude lost to refining losses or other minor by-products). The goal is to decide the daily purchase and processing volume of each crude that maximizes the refinery's Gross Refinery Margin (the total revenue earned from selling gasoline at \$650/m³, diesel at \$580/m³, and fuel oil at \$350/m³, less the cost of purchasing each crude at its respective price), while respecting a set of real-world operating limits: no single crude can be purchased beyond what its supplier can realistically deliver each day (Oman capped at 260,000 m³, Tapis at 45,000 m³, Labuan at 40,000 m³, and Murban at 95,000 m³), the refinery's distillation units cannot physically process more than 300,000 m³ of combined crude per day regardless of how favorable the economics look, and the resulting product slate — after applying each crude's conversion yields — must stay aligned with what the market can actually absorb, with gasoline output needing to fall between 90,000 and 130,000 m³/day, diesel between 60,000 and 90,000 m³/day, and fuel oil clearing at least a 20,000 m³/day floor to satisfy standing offtake commitments — so that the crude buying plan is not just theoretically profitable on paper, but is one the refinery can supply, physically convert, and actually sell into the market.
 
 The refinery wants to decide **how much of each crude to buy and process per day** in
 order to **maximize Gross Refinery Margin (GRM)** - total product revenue minus crude
