@@ -283,9 +283,10 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     variables at their optimal values) rather than a linear formula.
 
     Constraint rendering covers BOTH inequality rows (A_ub) and equality rows
-    (A_eq). Equalities are drawn as dotted lines and are also injected into the
-    feasible-region computation as a pair of opposing half-planes, so the shaded
-    region is the true projected feasible set rather than a relaxation.
+    (A_eq), styled identically and drawn in original constraint order. Equalities
+    are additionally injected into the feasible-region computation as a pair of
+    opposing half-planes, so the shaded region is the true projected feasible set
+    rather than a relaxation.
     """
     var_names = result["var_names"]
 
@@ -485,7 +486,7 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     # caption instead of vanishing silently.
     skipped_labels = []
 
-    def draw_constraint(a, b, orig_i, dash=None):
+    def draw_constraint(a, b, orig_i):
         a_x, a_y = a[x_idx], a[y_idx]
         color = CONSTRAINT_COLORS[orig_i % len(CONSTRAINT_COLORS)]
         label = raw_constraints[orig_i] if orig_i < len(raw_constraints) else f"Constraint {orig_i + 1}"
@@ -502,7 +503,7 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
             fig.add_trace(
                 go.Scatter(
                     x=x_vals, y=y_line, mode='lines',
-                    line=dict(color=color, width=2, dash=dash),
+                    line=dict(color=color, width=2),
                     name=trace_name, hoverinfo="x+y"
                 )
             )
@@ -511,18 +512,21 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
             fig.add_trace(
                 go.Scatter(
                     x=[x_val, x_val], y=[y_min_calc, calc_y_max], mode='lines',
-                    line=dict(color=color, width=2, dash=dash),
+                    line=dict(color=color, width=2),
                     name=trace_name, hoverinfo="x+y"
                 )
             )
 
+    # Merge inequality and equality rows, then draw in ORIGINAL constraint order so
+    # the legend reads C1, C2, C3 ... rather than listing equalities last.
+    plot_rows = []
     for row_i, (a, b) in enumerate(zip(A_ub, b_ub)):
-        orig_i = ub_orig_idx[row_i] if row_i < len(ub_orig_idx) else row_i
-        draw_constraint(a, b, orig_i)
-
+        plot_rows.append((ub_orig_idx[row_i] if row_i < len(ub_orig_idx) else row_i, a, b))
     for row_i, (a, b) in enumerate(zip(A_eq, b_eq)):
-        orig_i = eq_orig_idx[row_i] if row_i < len(eq_orig_idx) else row_i
-        draw_constraint(a, b, orig_i, dash='dot')
+        plot_rows.append((eq_orig_idx[row_i] if row_i < len(eq_orig_idx) else row_i, a, b))
+
+    for orig_i, a, b in sorted(plot_rows, key=lambda r: r[0]):
+        draw_constraint(a, b, orig_i)
 
     fig.add_trace(
         go.Scatter(
@@ -557,9 +561,6 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     )
 
     st.plotly_chart(fig, use_container_width=True)
-
-    if A_eq:
-        st.caption("⋯ Dotted lines denote **equality** constraints.")
 
     if degenerate_region:
         st.caption(
