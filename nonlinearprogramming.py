@@ -154,8 +154,20 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
     Q_orig, c_orig, const_orig = build_quadratic_matrices(obj_expr, sym_vars)
 
     # --- Constraints: must remain strictly LINEAR in QP mode ---
+    # NOTE (BUGFIX): We now track the ORIGINAL index of every constraint line (as it
+    # appears in `constraints_list` / the "Parsed Constraints Preview") alongside each
+    # row we append to A_ub/b_ub. Equality constraints are routed to A_eq and are
+    # therefore absent from A_ub — without recording the original index, the plot
+    # function's `enumerate(A_ub)` position silently drifts out of sync with
+    # `raw_constraints`, causing the legend color/number for a constraint to no longer
+    # match the line actually drawn on the chart (e.g. "C5" shown in one color while the
+    # line for the real C5 equation is drawn in another). Recording `ub_orig_idx` lets
+    # the plot always look up the correct label AND the correct color using the same
+    # original constraint number everywhere (preview, legend, and chart).
     A_ub, b_ub, A_eq, b_eq = [], [], [], []
-    for constr in constraints_list:
+    ub_orig_idx, eq_orig_idx = [], []
+
+    for orig_i, constr in enumerate(constraints_list):
         if not constr.strip():
             continue
         try:
@@ -176,12 +188,15 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
         if rel == "<=":
             A_ub.append(coeffs)
             b_ub.append(-const_term)
+            ub_orig_idx.append(orig_i)
         elif rel == ">=":
             A_ub.append([-v for v in coeffs])
             b_ub.append(const_term)
+            ub_orig_idx.append(orig_i)
         elif rel == "==":
             A_eq.append(coeffs)
             b_eq.append(-const_term)
+            eq_orig_idx.append(orig_i)
 
     bounds_list = [bounds_dict.get(v, (0, None)) for v in var_names]
     scipy_bounds = Bounds(
@@ -256,6 +271,8 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
         "bounds": bounds_list,
         "var_names": var_names,
         "raw_constraints": constraints_list,
+        "ub_orig_idx": ub_orig_idx,   # NEW: maps each A_ub row -> its original constraint index
+        "eq_orig_idx": eq_orig_idx,   # NEW: same, for A_eq rows (kept for completeness/future use)
     }
 
 
@@ -293,7 +310,7 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
             "Objective Contours (N)",
             min_value=5,
             max_value=300,
-            value=120,  # <-- Set default to 120
+            value=120,
             step=5,
             key="n_contours_input_qp",
             help="Higher values increase contour frequency and produce finer intervals."
@@ -414,17 +431,39 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
         )
     )
 
+    # ------------------------------------------------------------------
+    # BUGFIX: constraint color/label alignment
+    # ------------------------------------------------------------------
+    # Previously this loop used `enumerate(zip(A_ub, b_ub))` and indexed BOTH the
+    # color (`CONSTRAINT_COLORS[idx]`) and the label (`raw_constraints[idx]`) using
+    # the position *within A_ub only* (inequalities only). Since equality constraints
+    # are filtered out of A_ub (they live in A_eq instead) but `raw_constraints`
+    # contains the FULL original list, any equality constraint occurring before an
+    # inequality caused every following A_ub row to read the WRONG label from
+    # `raw_constraints`, while the trace's `line_color` (still based on the A_ub
+    # position) no longer matched the color that same constraint's number would get
+    # in the "Parsed Constraints Preview" above the chart. That's exactly what
+    # produced "C5 shown as indigo in the legend, but drawn in red on the chart".
+    #
+    # Fix: use `ub_orig_idx` (the constraint's true position in the original,
+    # unfiltered list) for BOTH the color lookup and the label/name, so the number,
+    # color, and equation text are always consistent between the legend, the plotted
+    # line, and the "Parsed Constraints Preview".
     raw_constraints = result.get("raw_constraints", [])
+    ub_orig_idx = result.get("ub_orig_idx", list(range(len(A_ub))))
+
     if A_ub and b_ub:
-        for idx, (a, b) in enumerate(zip(A_ub, b_ub)):
+        for row_i, (a, b) in enumerate(zip(A_ub, b_ub)):
+            orig_i = ub_orig_idx[row_i] if row_i < len(ub_orig_idx) else row_i
+
             eff_b = b
             for v_i in range(len(var_names)):
                 if v_i not in (x_idx, y_idx):
                     eff_b -= a[v_i] * result["x"][var_names[v_i]]
 
             a_x, a_y = a[x_idx], a[y_idx]
-            line_color = CONSTRAINT_COLORS[idx % len(CONSTRAINT_COLORS)]
-            constr_label = raw_constraints[idx] if idx < len(raw_constraints) else f"Constraint {idx+1}"
+            line_color = CONSTRAINT_COLORS[orig_i % len(CONSTRAINT_COLORS)]
+            constr_label = raw_constraints[orig_i] if orig_i < len(raw_constraints) else f"Constraint {orig_i + 1}"
 
             if abs(a_y) > 1e-6:
                 y_line = (eff_b - a_x * x_vals) / a_y
@@ -432,7 +471,7 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
                     go.Scatter(
                         x=x_vals, y=y_line, mode='lines',
                         line=dict(color=line_color, width=2),
-                        name=f"C{idx+1}: {constr_label}", hoverinfo="x+y"
+                        name=f"C{orig_i + 1}: {constr_label}", hoverinfo="x+y"
                     )
                 )
             elif abs(a_x) > 1e-6:
@@ -441,7 +480,7 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
                     go.Scatter(
                         x=[x_val, x_val], y=[y_min_calc, calc_y_max], mode='lines',
                         line=dict(color=line_color, width=2),
-                        name=f"C{idx+1}: {constr_label}", hoverinfo="x+y"
+                        name=f"C{orig_i + 1}: {constr_label}", hoverinfo="x+y"
                     )
                 )
 
@@ -544,12 +583,12 @@ def page_quadratic():
                 with st.spinner("Parsing problem with Gemini..."):
                     try:
                         parsed_qp = parse_qp_with_gemini(natural_prompt_qp)
-                        
+
                         # Bind parsed output directly to the widget keys
                         st.session_state["qp_sense"] = parsed_qp.sense
                         st.session_state["qp_obj_input"] = parsed_qp.objective_function
                         st.session_state["qp_constraints_input"] = "\n".join(parsed_qp.constraints)
-                        
+
                         st.success("Successfully parsed problem statement!")
                         st.rerun()
                     except Exception as e:
@@ -582,13 +621,13 @@ def page_quadratic():
     col_opt_qp, col_sense_qp = st.columns([3, 1])
     with col_sense_qp:
         sense_qp = st.selectbox(
-            "Optimization Sense", 
-            ["Maximize", "Minimize"], 
+            "Optimization Sense",
+            ["Maximize", "Minimize"],
             key="qp_sense"
         )
     with col_opt_qp:
         obj_input_qp = st.text_input(
-            "Objective Function", 
+            "Objective Function",
             key="qp_obj_input"
         )
 
