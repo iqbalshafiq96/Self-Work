@@ -339,7 +339,7 @@ def plot_interactive_contour_lines(result: dict, default_x: str = None, default_
             "Objective Contours (N)", 
             min_value=5, 
             max_value=300, 
-            value=60, 
+            value=120, 
             step=5, 
             key="n_contours_input",
             help="Higher values increase contour frequency and produce finer intervals."
