@@ -1,12 +1,174 @@
-from scipy.optimize import minimize, Bounds, LinearConstraint, linprog
 import os
+import re
 import sympy as sp
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-import pandas as pd
+from scipy.optimize import minimize, Bounds, LinearConstraint, linprog
+from scipy.spatial import ConvexHull
 from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
+
+# ----------------------------------------------------------------------
+# COLOR PALETTES & CONSTANTS
+# ----------------------------------------------------------------------
+CONSTRAINT_COLORS = [
+    '#e74c3c',  # Red
+    '#3498db',  # Blue
+    '#9b59b6',  # Purple
+    '#f39c12',  # Orange
+    '#1abc9c',  # Teal
+    '#d35400',  # Rust
+    '#2c3e50',  # Dark Slate
+    '#8e44ad',  # Deep Purple
+    '#27ae60',  # Green
+    '#16a085',  # Dark Teal
+]
+
+VAR_BADGE_COLORS = [
+    {"bg": "#EBF5FB", "text": "#1B4F72", "border": "#A9CCE3"},
+    {"bg": "#E8F8F5", "text": "#0E6251", "border": "#A3E4D7"},
+    {"bg": "#FEF9E7", "text": "#7D6608", "border": "#F9E79F"},
+    {"bg": "#F4ECF7", "text": "#512E5F", "border": "#D2B4DE"},
+    {"bg": "#FBEEE6", "text": "#6E2C00", "border": "#EDBB99"},
+]
+
+# Standard reserved math/programming words to exclude from variable parsing
+RESERVED_WORDS = {
+    "max", "min", "maximize", "minimize", "subject", "to", "st", "s.t.",
+    "and", "or", "not", "sin", "cos", "tan", "log", "exp", "sqrt", "abs"
+}
+
+
+# ----------------------------------------------------------------------
+# PARSING & GEOMETRY HELPERS
+# ----------------------------------------------------------------------
+def extract_identifiers(text: str) -> set:
+    """Extracts valid Pythonic variable names, excluding numbers and math keywords."""
+    tokens = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', text)
+    return {t for t in tokens if t.lower() not in RESERVED_WORDS}
+
+
+def highlight_variables_in_text(text: str, var_names: list) -> str:
+    """Wraps detected variables in HTML styled tags for preview rendering."""
+    if not var_names:
+        return text
+
+    sorted_vars = sorted(var_names, key=len, reverse=True)
+    pattern = r'\b(' + '|'.join(map(re.escape, sorted_vars)) + r')\b'
+
+    def replacer(match):
+        v = match.group(0)
+        idx = var_names.index(v) if v in var_names else 0
+        color = VAR_BADGE_COLORS[idx % len(VAR_BADGE_COLORS)]
+        return (f'<span style="background-color: {color["bg"]}; color: {color["text"]}; '
+                f'border: 1px solid {color["border"]}; padding: 1px 5px; border-radius: 4px; '
+                f'font-weight: 600;">{v}</span>')
+
+    return re.sub(pattern, replacer, text)
+
+
+def parse_equation_or_inequality(line_str: str, local_dict: dict):
+    """Parses a string inequality/equation into a SymPy expression (LHS - RHS) and relational sign."""
+    if "<=" in line_str:
+        parts = line_str.split("<=")
+        rel = "<="
+    elif ">=" in line_str:
+        parts = line_str.split(">=")
+        rel = ">="
+    elif "=" in line_str:
+        parts = line_str.split("=")
+        rel = "=="
+    else:
+        raise ValueError("Missing valid relational operator (<=, >=, or =).")
+
+    lhs = sp.sympify(parts[0], locals=local_dict)
+    rhs = sp.sympify(parts[1], locals=local_dict)
+    return lhs - rhs, rel
+
+
+def check_expression_linearity(expr_str: str, var_names: list) -> tuple[bool, str]:
+    """Ensures an expression has total polynomial degree <= 1 across all variables."""
+    if not expr_str.strip():
+        return True, ""
+
+    try:
+        sym_dict = {v: sp.Symbol(v) for v in var_names}
+        parsed_expr = sp.sympify(expr_str, locals=sym_dict)
+    except Exception as e:
+        return False, f"Syntax / parsing error: {e}"
+
+    free_symbols = parsed_expr.free_symbols
+    if not free_symbols:
+        return True, ""
+
+    try:
+        ordered_syms = sorted(free_symbols, key=str)
+        poly = sp.Poly(parsed_expr, *ordered_syms)
+        deg = poly.total_degree()
+        if deg > 1:
+            return False, f"Degree {deg} polynomial term detected. Constraints must be strictly linear."
+    except sp.PolynomialError:
+        return False, "Non-polynomial term detected in constraint expression."
+
+    return True, ""
+
+
+def compute_feasible_polygon_vertices(halfplanes: list, bounds_x: tuple, bounds_y: tuple):
+    """
+    Computes 2D feasible polygon vertices formed by linear halfplanes A_x*x + A_y*y <= b
+    and axis bounding box constraints via half-space intersections.
+    """
+    all_planes = list(halfplanes)
+
+    if bounds_x[0] is not None:
+        all_planes.append((-1.0, 0.0, -bounds_x[0]))
+    if bounds_x[1] is not None:
+        all_planes.append((1.0, 0.0, bounds_x[1]))
+    if bounds_y[0] is not None:
+        all_planes.append((0.0, -1.0, -bounds_y[0]))
+    if bounds_y[1] is not None:
+        all_planes.append((0.0, 1.0, bounds_y[1]))
+
+    intersections = []
+    n_planes = len(all_planes)
+
+    for i in range(n_planes):
+        for j in range(i + 1, n_planes):
+            a1, b1, c1 = all_planes[i]
+            a2, b2, c2 = all_planes[j]
+
+            det = a1 * b2 - a2 * b1
+            if abs(det) < 1e-9:
+                continue
+
+            x_int = (c1 * b2 - c2 * b1) / det
+            y_int = (a1 * c2 - a2 * c1) / det
+
+            feasible = True
+            for a_k, b_k, c_k in all_planes:
+                if a_k * x_int + b_k * y_int > c_k + 1e-7:
+                    feasible = False
+                    break
+
+            if feasible:
+                intersections.append((x_int, y_int))
+
+    if len(intersections) < 3:
+        return None, None
+
+    pts = np.unique(np.round(intersections, decimals=8), axis=0)
+    if len(pts) < 3:
+        return None, None
+
+    try:
+        hull = ConvexHull(pts)
+        sorted_pts = pts[hull.vertices]
+        return sorted_pts[:, 0], sorted_pts[:, 1]
+    except Exception:
+        return None, None
+
 
 # ----------------------------------------------------------------------
 # AI PARSER (GOOGLE GEMINI) - QUADRATIC (QP)
@@ -260,11 +422,11 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
 
 
 # ----------------------------------------------------------------------
-# QP PLOTTING
+# QP PLOTTING (SYNCHRONIZED COLOR MAP)
 # ----------------------------------------------------------------------
 def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, default_y: str = None):
     """
-    QP contour + feasible region plot with synchronized legend and constraint line colors.
+    QP contour + feasible region plot with explicitly synchronized line & legend colors.
     """
     var_names = result["var_names"]
 
@@ -390,7 +552,6 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     if Z.shape != X.shape:
         Z = np.full_like(X, float(Z))
 
-    # Unified line color for contours and legend proxy
     contour_line_color = '#1f77b4'
 
     fig.add_trace(
@@ -422,29 +583,33 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
 
             a_x, a_y = a[x_idx], a[y_idx]
             
-            # Deterministic palette assignment tied directly to constraint index
             line_color = CONSTRAINT_COLORS[idx % len(CONSTRAINT_COLORS)]
             constr_label = raw_constraints[idx] if idx < len(raw_constraints) else f"Constraint {idx+1}"
 
-            # Draw line with explicitly synchronized line & marker legend color
             if abs(a_y) > 1e-6:
                 y_line = (eff_b - a_x * x_vals) / a_y
                 fig.add_trace(
                     go.Scatter(
-                        x=x_vals, y=y_line, mode='lines',
+                        x=x_vals, y=y_line, 
+                        mode='lines',
                         line=dict(color=line_color, width=2),
                         marker=dict(color=line_color),
-                        name=f"C{idx+1}: {constr_label}", hoverinfo="x+y"
+                        name=f"C{idx+1}: {constr_label}",
+                        showlegend=True,
+                        hoverinfo="x+y"
                     )
                 )
             elif abs(a_x) > 1e-6:
                 x_val = eff_b / a_x
                 fig.add_trace(
                     go.Scatter(
-                        x=[x_val, x_val], y=[y_min_calc, calc_y_max], mode='lines',
+                        x=[x_val, x_val], y=[y_min_calc, calc_y_max], 
+                        mode='lines',
                         line=dict(color=line_color, width=2),
                         marker=dict(color=line_color),
-                        name=f"C{idx+1}: {constr_label}", hoverinfo="x+y"
+                        name=f"C{idx+1}: {constr_label}",
+                        showlegend=True,
+                        hoverinfo="x+y"
                     )
                 )
 
@@ -715,7 +880,8 @@ def page_quadratic():
 # ----------------------------------------------------------------------
 # ENTRY POINT
 # ----------------------------------------------------------------------
-if "result_qp" not in st.session_state:
-    st.session_state.result_qp = None
+if __name__ == "__main__":
+    if "result_qp" not in st.session_state:
+        st.session_state.result_qp = None
 
-page_quadratic()
+    page_quadratic()
