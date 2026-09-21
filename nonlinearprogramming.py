@@ -48,7 +48,7 @@ def parse_qp_with_gemini(user_prompt: str, api_key: str = None) -> QPProblemSche
 
 
 # ----------------------------------------------------------------------
-# QP-SPECIFIC VALIDATION (degree <= 2 allowed; reuses sp already imported)
+# QP-SPECIFIC VALIDATION
 # ----------------------------------------------------------------------
 def check_expression_quadratic(expr_str: str, var_names: list) -> tuple[bool, str]:
     """
@@ -260,13 +260,11 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
 
 
 # ----------------------------------------------------------------------
-# QP PLOTTING (reuses compute_feasible_polygon_vertices from app.py)
+# QP PLOTTING
 # ----------------------------------------------------------------------
 def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, default_y: str = None):
     """
-    QP contour + feasible region plot. The objective may be quadratic, so the 2D
-    projection Z-surface is derived via exact SymPy substitution (fixing all other
-    variables at their optimal values) rather than a linear formula.
+    QP contour + feasible region plot with synchronized legend and constraint line colors.
     """
     var_names = result["var_names"]
 
@@ -293,7 +291,7 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
             "Objective Contours (N)",
             min_value=5,
             max_value=300,
-            value=120,  # <-- Set default to 120
+            value=120,
             step=5,
             key="n_contours_input_qp",
             help="Higher values increase contour frequency and produce finer intervals."
@@ -423,15 +421,19 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
                     eff_b -= a[v_i] * result["x"][var_names[v_i]]
 
             a_x, a_y = a[x_idx], a[y_idx]
+            
+            # Deterministic palette assignment tied directly to constraint index
             line_color = CONSTRAINT_COLORS[idx % len(CONSTRAINT_COLORS)]
             constr_label = raw_constraints[idx] if idx < len(raw_constraints) else f"Constraint {idx+1}"
 
+            # Draw line with explicitly synchronized line & marker legend color
             if abs(a_y) > 1e-6:
                 y_line = (eff_b - a_x * x_vals) / a_y
                 fig.add_trace(
                     go.Scatter(
                         x=x_vals, y=y_line, mode='lines',
                         line=dict(color=line_color, width=2),
+                        marker=dict(color=line_color),
                         name=f"C{idx+1}: {constr_label}", hoverinfo="x+y"
                     )
                 )
@@ -441,6 +443,7 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
                     go.Scatter(
                         x=[x_val, x_val], y=[y_min_calc, calc_y_max], mode='lines',
                         line=dict(color=line_color, width=2),
+                        marker=dict(color=line_color),
                         name=f"C{idx+1}: {constr_label}", hoverinfo="x+y"
                     )
                 )
@@ -511,7 +514,7 @@ def display_results_qp(result: dict, sense: str, default_x: str = None, default_
 
 
 # ----------------------------------------------------------------------
-# PAGE (mirrors page_custom()'s architecture, for quadratic objectives)
+# PAGE LAYOUT
 # ----------------------------------------------------------------------
 def page_quadratic():
     st.header("QP Problem Statement (Objective Function)")
@@ -545,7 +548,6 @@ def page_quadratic():
                     try:
                         parsed_qp = parse_qp_with_gemini(natural_prompt_qp)
                         
-                        # Bind parsed output directly to the widget keys
                         st.session_state["qp_sense"] = parsed_qp.sense
                         st.session_state["qp_obj_input"] = parsed_qp.objective_function
                         st.session_state["qp_constraints_input"] = "\n".join(parsed_qp.constraints)
@@ -555,7 +557,6 @@ def page_quadratic():
                     except Exception as e:
                         st.error(f"Failed to parse via Gemini API: {e}")
 
-    # Set initial default values if key does not exist
     if "qp_sense" not in st.session_state:
         st.session_state["qp_sense"] = "Minimize"
     if "qp_obj_input" not in st.session_state:
@@ -712,8 +713,7 @@ def page_quadratic():
 
 
 # ----------------------------------------------------------------------
-# ENTRY POINT — this runs immediately when app.py exec()'s this file's
-# text inside the "app2" tab branch.
+# ENTRY POINT
 # ----------------------------------------------------------------------
 if "result_qp" not in st.session_state:
     st.session_state.result_qp = None
