@@ -293,7 +293,7 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
             "Objective Contours (N)",
             min_value=5,
             max_value=300,
-            value=120,  # <-- Set default to 120
+            value=120,
             step=5,
             key="n_contours_input_qp",
             help="Higher values increase contour frequency and produce finer intervals."
@@ -392,7 +392,6 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     if Z.shape != X.shape:
         Z = np.full_like(X, float(Z))
 
-    # Unified line color for contours and legend proxy
     contour_line_color = '#1f77b4'
 
     fig.add_trace(
@@ -549,6 +548,7 @@ def page_quadratic():
                         st.session_state["qp_sense"] = parsed_qp.sense
                         st.session_state["qp_obj_input"] = parsed_qp.objective_function
                         st.session_state["qp_constraints_input"] = "\n".join(parsed_qp.constraints)
+                        st.session_state.result_qp = None
                         
                         st.success("Successfully parsed problem statement!")
                         st.rerun()
@@ -691,6 +691,37 @@ def page_quadratic():
 
     solve_disabled_qp = (not is_obj_quad) or bool(non_linear_constraints)
     if st.button("Solve Quadratic Program", type="primary", disabled=solve_disabled_qp, key="qp_solve_btn"):
+        constraints_list_qp = [c.strip() for c in constraints_input_qp.split("\n") if c.strip()]
+        st.session_state.result_qp = solve_qp(
+            objective_str=obj_input_qp,
+            constraints_list=constraints_list_qp,
+            sense=sense_qp,
+            var_names=detected_vars_qp,
+            bounds_dict=bounds_dict_qp
+        )
+        st.session_state.qp_last_solved_params = {
+            "sense": sense_qp,
+            "obj_input": obj_input_qp,
+            "constraints_input": constraints_input_qp,
+            "bounds_dict": bounds_dict_qp,
+            "var_names": detected_vars_qp
+        }
+
+    # Automatically re-solve if inputs were previously solved and haven't changed
+    current_params = {
+        "sense": sense_qp,
+        "obj_input": obj_input_qp,
+        "constraints_input": constraints_input_qp,
+        "bounds_dict": bounds_dict_qp,
+        "var_names": detected_vars_qp
+    }
+    
+    if (
+        not solve_disabled_qp 
+        and "qp_last_solved_params" in st.session_state 
+        and st.session_state.qp_last_solved_params == current_params 
+        and st.session_state.result_qp is None
+    ):
         constraints_list_qp = [c.strip() for c in constraints_input_qp.split("\n") if c.strip()]
         st.session_state.result_qp = solve_qp(
             objective_str=obj_input_qp,
