@@ -8,12 +8,6 @@ import pandas as pd
 from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-# Define a consistent palette for indexed constraints
-CONSTRAINT_COLORS = [
-    "#E74C3C", "#3498DB", "#9B59B6", "#F1C40F", "#E67E22",
-    "#1ABC9C", "#34495E", "#D35400", "#27AE60", "#8E44AD"
-]
-
 # ----------------------------------------------------------------------
 # AI PARSER (GOOGLE GEMINI) - QUADRATIC (QP)
 # ----------------------------------------------------------------------
@@ -24,6 +18,7 @@ class QPProblemSchema(BaseModel):
 
 
 def parse_qp_with_gemini(user_prompt: str, api_key: str = None) -> QPProblemSchema:
+    """Extracts QP parameters from natural language using Google AI Studio Gemini API."""
     resolved_api_key = api_key or st.secrets.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
     if not resolved_api_key:
@@ -53,9 +48,15 @@ def parse_qp_with_gemini(user_prompt: str, api_key: str = None) -> QPProblemSche
 
 
 # ----------------------------------------------------------------------
-# QP-SPECIFIC VALIDATION
+# QP-SPECIFIC VALIDATION (degree <= 2 allowed; reuses sp already imported)
 # ----------------------------------------------------------------------
 def check_expression_quadratic(expr_str: str, var_names: list) -> tuple[bool, str]:
+    """
+    Analyzes an expression using SymPy and allows terms up to TOTAL DEGREE 2
+    (linear terms, pure quadratic terms like x**2, and bilinear cross terms like x*y).
+    Rejects degree > 2 polynomial terms and any non-polynomial/transcendental terms.
+    Returns (is_quadratic_or_lower, message).
+    """
     if not expr_str.strip():
         return True, ""
 
@@ -75,9 +76,10 @@ def check_expression_quadratic(expr_str: str, var_names: list) -> tuple[bool, st
         deg = poly.total_degree()
         if deg > 2:
             return False, (f"Total degree {deg} detected — exceeds the maximum degree of 2 supported by "
-                           f"the Quadratic Programming (QP) solver. Only linear and quadratic terms are allowed.")
+                           f"the Quadratic Programming (QP) solver. Only linear and quadratic (incl. bilinear "
+                           f"cross-product) terms are allowed, e.g., x, x**2, x*y.")
     except sp.PolynomialError:
-        return False, "Non-polynomial or transcendental term detected."
+        return False, "Non-polynomial or transcendental term detected (e.g., trig, log, exp, fractional exponent, or division by a variable)."
 
     return True, ""
 
@@ -86,6 +88,12 @@ def check_expression_quadratic(expr_str: str, var_names: list) -> tuple[bool, st
 # QP ENGINE - matrix extraction & solving
 # ----------------------------------------------------------------------
 def build_quadratic_matrices(obj_expr, sym_vars):
+    """
+    Decomposes a (degree <= 2) SymPy expression into:
+        expr(x) = 0.5 * x^T Q x + c^T x + const
+    using the exact Hessian (Q) and gradient-at-origin (c).
+    Returns (Q: np.ndarray, c: np.ndarray, const: float)
+    """
     n = len(sym_vars)
     zero_subs = {v: 0 for v in sym_vars}
 
@@ -101,6 +109,7 @@ def build_quadratic_matrices(obj_expr, sym_vars):
 
 
 def _qp_find_feasible_start(n, A_ub, b_ub, A_eq, b_eq, bounds_list):
+    """Phase-1 LP (zero objective) to find any feasible point as a warm start for the QP solver."""
     try:
         res0 = linprog(
             c=np.zeros(n),
@@ -144,12 +153,9 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
 
     Q_orig, c_orig, const_orig = build_quadratic_matrices(obj_expr, sym_vars)
 
+    # --- Constraints: must remain strictly LINEAR in QP mode ---
     A_ub, b_ub, A_eq, b_eq = [], [], [], []
-    
-    # Bound-mapped constraints list with indexed metadata
-    bound_constraints = []
-
-    for idx, constr in enumerate(constraints_list, start=1):
+    for constr in constraints_list:
         if not constr.strip():
             continue
         try:
@@ -159,45 +165,23 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
 
         is_lin_c, lin_c_msg = check_expression_linearity(str(diff), var_names)
         if not is_lin_c:
-            return {"success": False, "message": f"Constraint '{constr}' is non-linear: {lin_c_msg}"}
+            return {"success": False,
+                    "message": f"Constraint '{constr}' is non-linear ({lin_c_msg}). "
+                               f"QP mode supports quadratic terms in the OBJECTIVE only; "
+                               f"constraints must remain linear."}
 
         const_term = float(diff.as_coefficients_dict().get(1, 0))
         coeffs = [float(diff.coeff(v)) for v in sym_vars]
-        color = CONSTRAINT_COLORS[(idx - 1) % len(CONSTRAINT_COLORS)]
 
         if rel == "<=":
             A_ub.append(coeffs)
             b_ub.append(-const_term)
-            bound_constraints.append({
-                "index": idx,
-                "label": f"C{idx}: {constr}",
-                "coeffs": coeffs,
-                "b": -const_term,
-                "rel": "<=",
-                "color": color
-            })
         elif rel == ">=":
             A_ub.append([-v for v in coeffs])
             b_ub.append(const_term)
-            bound_constraints.append({
-                "index": idx,
-                "label": f"C{idx}: {constr}",
-                "coeffs": [-v for v in coeffs],
-                "b": const_term,
-                "rel": ">=",
-                "color": color
-            })
         elif rel == "==":
             A_eq.append(coeffs)
             b_eq.append(-const_term)
-            bound_constraints.append({
-                "index": idx,
-                "label": f"C{idx}: {constr}",
-                "coeffs": coeffs,
-                "b": -const_term,
-                "rel": "==",
-                "color": color
-            })
 
     bounds_list = [bounds_dict.get(v, (0, None)) for v in var_names]
     scipy_bounds = Bounds(
@@ -226,7 +210,9 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
     if A_ub:
         lin_constraints.append(LinearConstraint(np.array(A_ub), -np.inf, np.array(b_ub)))
     if A_eq:
-        lin_constraints.append(LinearConstraint(np.array(A_eq), np.array(b_eq), np.array(b_eq)))
+        A_eq_np = np.array(A_eq)
+        b_eq_np = np.array(b_eq)
+        lin_constraints.append(LinearConstraint(A_eq_np, b_eq_np, b_eq_np))
 
     x0 = _qp_find_feasible_start(n, A_ub, b_ub, A_eq, b_eq, bounds_list)
 
@@ -242,7 +228,7 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
             options={"maxiter": 1000, "gtol": 1e-10, "xtol": 1e-12}
         )
     except Exception as e:
-        return {"success": False, "message": f"Solver exception: {e}"}
+        return {"success": False, "message": f"Solver raised an exception: {e}"}
 
     if not res.success and res.status not in (1, 2):
         return {"success": False, "message": f"Solver failed: {res.message}"}
@@ -270,14 +256,18 @@ def solve_qp(objective_str: str, constraints_list: list, sense: str, var_names: 
         "bounds": bounds_list,
         "var_names": var_names,
         "raw_constraints": constraints_list,
-        "bound_constraints": bound_constraints  # <-- Explicitly passed to visualizer
     }
 
 
 # ----------------------------------------------------------------------
-# QP PLOTTING (Strict Constraint Color Matching)
+# QP PLOTTING (reuses compute_feasible_polygon_vertices from app.py)
 # ----------------------------------------------------------------------
 def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, default_y: str = None):
+    """
+    QP contour + feasible region plot. The objective may be quadratic, so the 2D
+    projection Z-surface is derived via exact SymPy substitution (fixing all other
+    variables at their optimal values) rather than a linear formula.
+    """
     var_names = result["var_names"]
 
     if len(var_names) < 2:
@@ -301,11 +291,20 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     with col_n:
         n_contours = st.number_input(
             "Objective Contours (N)",
-            min_value=5, max_value=300, value=120, step=5,
-            key="n_contours_input_qp"
+            min_value=5,
+            max_value=300,
+            value=120,  # <-- Set default to 120
+            step=5,
+            key="n_contours_input_qp",
+            help="Higher values increase contour frequency and produce finer intervals."
         )
 
-    allow_negative = st.checkbox("Allow Negative Axes Ranges", value=False, key="allow_neg_axes_qp")
+    allow_negative = st.checkbox(
+        "Allow Negative Axes Ranges",
+        value=False,
+        key="allow_neg_axes_qp",
+        help="If unticked (default), axes will strictly lock to 0 as the minimum value when scrolling or panning."
+    )
 
     x_idx = var_names.index(x_name)
     y_idx = var_names.index(y_name)
@@ -315,29 +314,42 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
 
     view_x_max = max(abs(opt_x) * 1.5, 2.0)
     view_y_max = max(abs(opt_y) * 1.5, 2.0)
+
     calc_x_max = view_x_max * 10.0
     calc_y_max = view_y_max * 10.0
 
-    fixed_vars_summary = [f"{v} = {result['x'][v]:,.4f}" for idx, v in enumerate(var_names) if idx not in (x_idx, y_idx)]
+    fixed_vars_summary = []
+    for idx, v_name in enumerate(var_names):
+        if idx not in (x_idx, y_idx):
+            val = result["x"][v_name]
+            fixed_vars_summary.append(f"{v_name} = {val:,.4f}")
+
     if fixed_vars_summary:
         st.caption(f"ℹ️ Other variables held constant at optimal values: **{', '.join(fixed_vars_summary)}**")
 
     obj_expr = result["obj_expr"]
     sym_vars = result["sym_vars"]
-    subs_dict = {sv: result["x"][vn] for vn, sv in zip(var_names, sym_vars) if vn not in (x_name, y_name)}
+    subs_dict = {
+        sv: result["x"][vn]
+        for vn, sv in zip(var_names, sym_vars)
+        if vn not in (x_name, y_name)
+    }
+    x_sym = sp.Symbol(x_name)
+    y_sym = sp.Symbol(y_name)
     expr_2d = obj_expr.subs(subs_dict)
-    z_func = sp.lambdify((sp.Symbol(x_name), sp.Symbol(y_name)), expr_2d, "numpy")
+    z_func = sp.lambdify((x_sym, y_sym), expr_2d, "numpy")
 
-    # Reconstruct halfplanes for polygon calculation
     halfplanes = []
-    bound_constraints = result.get("bound_constraints", [])
-    for c_info in bound_constraints:
-        a = c_info["coeffs"]
-        eff_b = c_info["b"]
-        for v_i in range(len(var_names)):
-            if v_i not in (x_idx, y_idx):
-                eff_b -= a[v_i] * result["x"][var_names[v_i]]
-        halfplanes.append((a[x_idx], a[y_idx], eff_b))
+    A_ub = result.get("A_ub", [])
+    b_ub = result.get("b_ub", [])
+
+    if A_ub and b_ub:
+        for a, b in zip(A_ub, b_ub):
+            eff_b = b
+            for v_i in range(len(var_names)):
+                if v_i not in (x_idx, y_idx):
+                    eff_b -= a[v_i] * result["x"][var_names[v_i]]
+            halfplanes.append((a[x_idx], a[y_idx], eff_b))
 
     bounds = result.get("bounds", [])
     x_min_b, x_max_b = bounds[x_idx] if x_idx < len(bounds) else (0, None)
@@ -355,75 +367,107 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     )
 
     if poly_x is not None and len(poly_x) > 0:
-        fig.add_trace(go.Scatter(
-            x=np.append(poly_x, poly_x[0]), y=np.append(poly_y, poly_y[0]),
-            fill="toself", fillcolor="rgba(46, 204, 113, 0.25)",
-            line=dict(color="rgba(46, 204, 113, 0.6)", width=1),
-            name="Feasible Region", hoverinfo="skip"
-        ))
+        px = np.append(poly_x, poly_x[0])
+        py = np.append(poly_y, poly_y[0])
+
+        fig.add_trace(
+            go.Scatter(
+                x=px, y=py,
+                fill="toself",
+                fillcolor="rgba(46, 204, 113, 0.25)",
+                line=dict(color="rgba(46, 204, 113, 0.6)", width=1),
+                name="Feasible Region",
+                hoverinfo="skip"
+            )
+        )
 
     x_min_calc = -calc_x_max if allow_negative else 0
     y_min_calc = -calc_y_max if allow_negative else 0
+
     x_vals = np.linspace(x_min_calc, calc_x_max, 250)
     y_vals = np.linspace(y_min_calc, calc_y_max, 250)
     X, Y = np.meshgrid(x_vals, y_vals)
+
     Z = np.asarray(z_func(X, Y), dtype=float)
+    if Z.shape != X.shape:
+        Z = np.full_like(X, float(Z))
 
-    contour_line_color = "#1f77b4"
-    fig.add_trace(go.Contour(
-        x=x_vals, y=y_vals, z=Z, contours_coloring="lines",
-        ncontours=int(n_contours),
-        contours=dict(showlabels=True, labelfont=dict(size=10, color="navy")),
-        line=dict(color=contour_line_color, width=1.5, dash="dash"),
-        showscale=False, showlegend=False, hoverinfo="x+y+z"
-    ))
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None], mode="lines",
-        line=dict(color=contour_line_color, width=1.5, dash="dash"),
-        name="Objective Contour", showlegend=True
-    ))
+    # Unified line color for contours and legend proxy
+    contour_line_color = '#1f77b4'
 
-    # Plot each constraint strictly matching its mapped index & color
-    for c_info in bound_constraints:
-        a = c_info["coeffs"]
-        eff_b = c_info["b"]
-        for v_i in range(len(var_names)):
-            if v_i not in (x_idx, y_idx):
-                eff_b -= a[v_i] * result["x"][var_names[v_i]]
+    fig.add_trace(
+        go.Contour(
+            x=x_vals, y=y_vals, z=Z,
+            contours_coloring="lines",
+            ncontours=int(n_contours),
+            contours=dict(showlabels=True, labelfont=dict(size=10, color='navy')),
+            line=dict(color=contour_line_color, width=1.5, dash='dash'),
+            showscale=False, showlegend=False, hoverinfo="x+y+z"
+        )
+    )
 
-        a_x, a_y = a[x_idx], a[y_idx]
-        line_color = c_info["color"]
-        label = c_info["label"]
+    fig.add_trace(
+        go.Scatter(
+            x=[None], y=[None], mode='lines',
+            line=dict(color=contour_line_color, width=1.5, dash='dash'),
+            name="Objective Contour", showlegend=True
+        )
+    )
 
-        if abs(a_y) > 1e-6:
-            y_line = (eff_b - a_x * x_vals) / a_y
-            fig.add_trace(go.Scatter(
-                x=x_vals, y=y_line, mode="lines",
-                line=dict(color=line_color, width=2),
-                name=label, hoverinfo="x+y"
-            ))
-        elif abs(a_x) > 1e-6:
-            x_val = eff_b / a_x
-            fig.add_trace(go.Scatter(
-                x=[x_val, x_val], y=[y_min_calc, calc_y_max], mode="lines",
-                line=dict(color=line_color, width=2),
-                name=label, hoverinfo="x+y"
-            ))
+    raw_constraints = result.get("raw_constraints", [])
+    if A_ub and b_ub:
+        for idx, (a, b) in enumerate(zip(A_ub, b_ub)):
+            eff_b = b
+            for v_i in range(len(var_names)):
+                if v_i not in (x_idx, y_idx):
+                    eff_b -= a[v_i] * result["x"][var_names[v_i]]
 
-    fig.add_trace(go.Scatter(
-        x=[opt_x], y=[opt_y], mode="markers+text",
-        marker=dict(color="#d62728", size=12, symbol="circle", line=dict(color="black", width=1)),
-        text=[f" Optimal ({opt_x:.2f}, {opt_y:.2f})"],
-        textposition="top right", name="Optimal Solution", hoverinfo="x+y"
-    ))
+            a_x, a_y = a[x_idx], a[y_idx]
+            line_color = CONSTRAINT_COLORS[idx % len(CONSTRAINT_COLORS)]
+            constr_label = raw_constraints[idx] if idx < len(raw_constraints) else f"Constraint {idx+1}"
+
+            if abs(a_y) > 1e-6:
+                y_line = (eff_b - a_x * x_vals) / a_y
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_vals, y=y_line, mode='lines',
+                        line=dict(color=line_color, width=2),
+                        name=f"C{idx+1}: {constr_label}", hoverinfo="x+y"
+                    )
+                )
+            elif abs(a_x) > 1e-6:
+                x_val = eff_b / a_x
+                fig.add_trace(
+                    go.Scatter(
+                        x=[x_val, x_val], y=[y_min_calc, calc_y_max], mode='lines',
+                        line=dict(color=line_color, width=2),
+                        name=f"C{idx+1}: {constr_label}", hoverinfo="x+y"
+                    )
+                )
+
+    fig.add_trace(
+        go.Scatter(
+            x=[opt_x], y=[opt_y], mode='markers+text',
+            marker=dict(color='#d62728', size=12, symbol='circle', line=dict(color='black', width=1)),
+            text=[f" Optimal ({opt_x:.2f}, {opt_y:.2f})"],
+            textposition="top right", name="Optimal Solution", hoverinfo="x+y"
+        )
+    )
 
     x_min_view = None if allow_negative else 0
     y_min_view = None if allow_negative else 0
 
+    xaxis_config = dict(title=x_name, range=[x_min_view, view_x_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)')
+    yaxis_config = dict(title=y_name, range=[y_min_view, view_y_max], showgrid=True, gridcolor='rgba(200,200,200,0.4)')
+
+    if not allow_negative:
+        xaxis_config.update(dict(rangemode="nonnegative", minallowed=0))
+        yaxis_config.update(dict(rangemode="nonnegative", minallowed=0))
+
     fig.update_layout(
         title="",
-        xaxis=dict(title=x_name, range=[x_min_view, view_x_max], showgrid=True, gridcolor="rgba(200,200,200,0.4)"),
-        yaxis=dict(title=y_name, range=[y_min_view, view_y_max], showgrid=True, gridcolor="rgba(200,200,200,0.4)"),
+        xaxis=xaxis_config,
+        yaxis=yaxis_config,
         template="plotly_white",
         height=600,
         margin=dict(l=40, r=40, t=20, b=120),
@@ -434,3 +478,244 @@ def plot_interactive_contour_lines_qp(result: dict, default_x: str = None, defau
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+
+def display_results_qp(result: dict, sense: str, default_x: str = None, default_y: str = None):
+    if result["success"]:
+        st.success("Optimization Completed Successfully!")
+
+        if not result.get("is_convex", True):
+            eigvals = result.get("eigvals", [])
+            min_eig = float(np.min(eigvals)) if len(eigvals) else 0.0
+            st.warning(
+                f"⚠️ **Non-convex QP detected** (most negative eigenvalue of the effective Hessian = "
+                f"{min_eig:,.4f}). The solution below is a **local** optimum found by a gradient-based "
+                f"solver (trust-constr) — global optimality is **not** guaranteed for non-convex problems.",
+                icon="⚠️"
+            )
+        else:
+            st.caption("✅ Convexity check passed — the Hessian is positive semi-definite, so this solution is the **global** optimum.")
+
+        col1, _ = st.columns(2)
+        with col1:
+            st.metric(label=f"Optimal Objective Value ({sense})", value=f"{result['fun']:,.4f}")
+
+        st.subheader("Optimal Decision Variable Values")
+        df_res = pd.DataFrame(list(result["x"].items()), columns=["Variable", "Optimal Value"])
+        st.dataframe(df_res.style.format({"Optimal Value": "{:,.4f}"}), use_container_width=True)
+
+        st.subheader("Interactive Objective Contour Map & Feasible Area")
+        plot_interactive_contour_lines_qp(result, default_x=default_x, default_y=default_y)
+    else:
+        st.error(f"Solver Error: {result['message']}")
+
+
+# ----------------------------------------------------------------------
+# PAGE (mirrors page_custom()'s architecture, for quadratic objectives)
+# ----------------------------------------------------------------------
+def page_quadratic():
+    st.header("QP Problem Statement (Objective Function)")
+    st.caption(
+        "This solver supports **quadratic objective functions** (e.g., `x**2`, `3*x*y`, `-2*y**2`) "
+        "combined with **linear constraints only**. Internally it minimizes/maximizes "
+        "0.5·xᵀQx + cᵀx via SciPy's `trust-constr` solver using the exact Hessian/gradient."
+    )
+
+    with st.expander("✨ Auto-parse problem statement using Google AI Studio (Gemini)", expanded=True):
+        natural_prompt_qp = st.text_area(
+            "Describe your Quadratic Programming problem in natural language:",
+            placeholder=(
+                "A petrochemical plant runs three parallel catalytic reactors, R1, R2 and R3, to convert a single feedstock into a product. "
+                "The plant must process exactly 150 kmol/h of total feed, split among the three reactors. The operating cost in USD/h of each "
+                "reactor is quadratic in its own feed rate: R1 costs 0.02 times the square of its feed rate plus 3 times its feed rate, "
+                "R2 costs 0.03 times the square of its feed rate plus 2 times its feed rate, and R3 costs 0.05 times the square of its feed rate "
+                "plus 1 times its feed rate. The reactors convert 90%, 80% and 70% of their feed to product respectively, and the plant must produce "
+                "at least 125 kmol/h of product in total. Each kmol of feed processed requires 2 MJ of cooling in R1, 3 MJ in R2 and 4 MJ in R3, "
+                "and the plant's cooling system can deliver at most 450 MJ/h. Finally, no reactor can receive a negative feed rate, and the "
+                "maximum feed rates are 80 kmol/h for R1, 70 kmol/h for R2 and 60 kmol/h for R3. Determine the feed rate to each reactor that minimizes the total operating cost."
+            ),
+            height=220,
+            key="qp_natural_prompt"
+        )
+        if st.button("🤖 Parse with Gemini", type="secondary", key="qp_parse_btn"):
+            if not natural_prompt_qp.strip():
+                st.warning("Please enter a natural language problem statement.")
+            else:
+                with st.spinner("Parsing problem with Gemini..."):
+                    try:
+                        parsed_qp = parse_qp_with_gemini(natural_prompt_qp)
+                        
+                        # Bind parsed output directly to the widget keys
+                        st.session_state["qp_sense"] = parsed_qp.sense
+                        st.session_state["qp_obj_input"] = parsed_qp.objective_function
+                        st.session_state["qp_constraints_input"] = "\n".join(parsed_qp.constraints)
+                        
+                        st.success("Successfully parsed problem statement!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to parse via Gemini API: {e}")
+
+    # Set initial default values if key does not exist
+    if "qp_sense" not in st.session_state:
+        st.session_state["qp_sense"] = "Minimize"
+    if "qp_obj_input" not in st.session_state:
+        st.session_state["qp_obj_input"] = "0.02*r1**2 + 3*r1 + 0.03*r2**2 + 2*r2 + 0.05*r3**2 + r3"
+    if "qp_constraints_input" not in st.session_state:
+        st.session_state["qp_constraints_input"] = (
+            "r1 + r2 + r3 = 150\n"
+            "0.9*r1 + 0.8*r2 + 0.7*r3 >= 125\n"
+            "2*r1 + 3*r2 + 4*r3 <= 450\n"
+            "r1 >= 0\n"
+            "r1 <= 80\n"
+            "r2 >= 0\n"
+            "r2 <= 70\n"
+            "r3 >= 0\n"
+            "r3 <= 60"
+        )
+
+    st.caption(
+        "Use plain, meaningful variable names — e.g. `x`, `y`, `qty1`. "
+        "Quadratic/bilinear terms (`x**2`, `x*y`) are allowed **only** in the objective; "
+        "constraints must stay linear."
+    )
+
+    col_opt_qp, col_sense_qp = st.columns([3, 1])
+    with col_sense_qp:
+        sense_qp = st.selectbox(
+            "Optimization Sense", 
+            ["Maximize", "Minimize"], 
+            key="qp_sense"
+        )
+    with col_opt_qp:
+        obj_input_qp = st.text_input(
+            "Objective Function", 
+            key="qp_obj_input"
+        )
+
+    all_text_qp = obj_input_qp + "\n" + st.session_state["qp_constraints_input"]
+    detected_vars_qp = sorted(list(extract_identifiers(all_text_qp)))
+    is_obj_quad, obj_quad_err = check_expression_quadratic(obj_input_qp, detected_vars_qp)
+
+    if not is_obj_quad:
+        st.error(
+            f"⚠️ **Unsupported Objective Detected:** The QP solver requires degree ≤ 2.\n\n"
+            f"**Reason:** {obj_quad_err}\n\n"
+            f"*Please reformulate your objective function so every term has total degree ≤ 2 "
+            f"(constants, linear terms like `x`, pure quadratic terms like `x**2`, or bilinear terms like `x*y`).*",
+            icon="🚨"
+        )
+
+    st.subheader("Constraints")
+    st.caption("Enter one **linear** constraint per line using `<=`, `>=`, or `=` (no quadratic terms here).")
+    constraints_input_qp = st.text_area(
+        "Constraints List",
+        height=160,
+        key="qp_constraints_input"
+    )
+
+    all_text_qp = obj_input_qp + "\n" + constraints_input_qp
+    detected_vars_qp = sorted(list(extract_identifiers(all_text_qp)))
+
+    non_linear_constraints = []
+    for line in [c.strip() for c in constraints_input_qp.split("\n") if c.strip()]:
+        try:
+            sym_dict = {v: sp.Symbol(v) for v in detected_vars_qp}
+            diff, _ = parse_equation_or_inequality(line, sym_dict)
+            if diff is not None:
+                is_lin_line, lin_err = check_expression_linearity(str(diff), detected_vars_qp)
+                if not is_lin_line:
+                    non_linear_constraints.append((line, lin_err))
+        except Exception:
+            pass
+
+    if non_linear_constraints:
+        msgs = "\n".join([f"- `{ln}` → {err}" for ln, err in non_linear_constraints])
+        st.error(
+            f"⚠️ **Non-Linear Constraint(s) Detected:** QP mode only allows quadratic terms in the "
+            f"**objective**; all constraints must be linear.\n\n{msgs}",
+            icon="🚨"
+        )
+
+    enable_bounds_qp = st.checkbox("Enable Custom Variable Bounds", value=False, key="qp_enable_bounds")
+    bounds_dict_qp = {}
+
+    if enable_bounds_qp:
+        st.markdown("**Configure Bounds**")
+        if detected_vars_qp:
+            cols = st.columns(min(len(detected_vars_qp), 4))
+            for i, var in enumerate(detected_vars_qp):
+                with cols[i % 4]:
+                    st.write(f"**{var}**")
+                    min_val = st.number_input(f"Min ({var})", value=0.0, key=f"qp_min_{var}")
+                    has_max = st.checkbox(f"Set Max ({var})", key=f"qp_has_max_{var}")
+                    max_val = st.number_input(f"Max ({var})", value=100.0, key=f"qp_max_{var}") if has_max else None
+                    bounds_dict_qp[var] = (min_val, max_val)
+        else:
+            st.warning("No variables detected yet to configure bounds.")
+    else:
+        bounds_dict_qp = {var: (0.0, None) for var in detected_vars_qp}
+
+    st.divider()
+
+    if detected_vars_qp:
+        badge_spans = []
+        for i, var in enumerate(detected_vars_qp):
+            color = VAR_BADGE_COLORS[i % len(VAR_BADGE_COLORS)]
+            style = (
+                f"background-color: {color['bg']}; color: {color['text']}; "
+                f"border: 1px solid {color['border']}; padding: 3px 9px; border-radius: 6px; "
+                f"font-weight: 600; font-size: 0.9em; display: inline-block; margin-right: 4px;"
+            )
+            badge_spans.append(f'<span style="{style}">{var}</span>')
+
+        badges_html = " ".join(badge_spans)
+        st.markdown(f"**Recognized Variables:** {badges_html}", unsafe_allow_html=True)
+
+        with st.expander("Optimization Problem Statement Preview", expanded=True):
+            highlighted_obj = highlight_variables_in_text(obj_input_qp, detected_vars_qp)
+            st.markdown(
+                f"**Parsed Objective:** {sense_qp} &nbsp; <code>{highlighted_obj}</code>",
+                unsafe_allow_html=True,
+            )
+
+            lines = [c.strip() for c in constraints_input_qp.split("\n") if c.strip()]
+            if lines:
+                st.markdown("**Parsed Constraints:**")
+                for idx, line in enumerate(lines, 1):
+                    h_line = highlight_variables_in_text(line, detected_vars_qp)
+                    st.markdown(f"&nbsp;&nbsp;**C{idx}:** <code>{h_line}</code>", unsafe_allow_html=True)
+    else:
+        st.markdown("*No variables detected yet.*")
+
+    st.divider()
+
+    solve_disabled_qp = (not is_obj_quad) or bool(non_linear_constraints)
+    if st.button("Solve Quadratic Program", type="primary", disabled=solve_disabled_qp, key="qp_solve_btn"):
+        constraints_list_qp = [c.strip() for c in constraints_input_qp.split("\n") if c.strip()]
+        st.session_state.result_qp = solve_qp(
+            objective_str=obj_input_qp,
+            constraints_list=constraints_list_qp,
+            sense=sense_qp,
+            var_names=detected_vars_qp,
+            bounds_dict=bounds_dict_qp
+        )
+
+    if st.session_state.result_qp is not None:
+        default_x_qp = detected_vars_qp[0] if len(detected_vars_qp) > 0 else None
+        default_y_qp = detected_vars_qp[1] if len(detected_vars_qp) > 1 else None
+        display_results_qp(
+            st.session_state.result_qp,
+            sense_qp,
+            default_x=default_x_qp,
+            default_y=default_y_qp
+        )
+
+
+# ----------------------------------------------------------------------
+# ENTRY POINT — this runs immediately when app.py exec()'s this file's
+# text inside the "app2" tab branch.
+# ----------------------------------------------------------------------
+if "result_qp" not in st.session_state:
+    st.session_state.result_qp = None
+
+page_quadratic()
