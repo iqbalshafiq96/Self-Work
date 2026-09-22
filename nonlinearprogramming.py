@@ -621,8 +621,7 @@ def page_quadratic():
             "Describe your Quadratic Programming problem in natural language:",
             placeholder=(
                 "A petrochemical plant runs three parallel catalytic reactors, R1, R2 and R3, to convert a single feedstock into a product. "
-                "The plant must process exactly 150 kmol/h of total feed, split among the three reactors. The operating cost in USD/h of each "
-                "reactor is quadratic in its own feed rate: R1 costs 0.02 times the square of its feed rate plus 3 times its feed rate, "
+                "The operating cost in USD/h of each reactor is quadratic in its own feed rate: R1 costs 0.02 times the square of its feed rate plus 3 times its feed rate, "
                 "R2 costs 0.03 times the square of its feed rate plus 2 times its feed rate, and R3 costs 0.05 times the square of its feed rate "
                 "plus 1 times its feed rate. The reactors convert 90%, 80% and 70% of their feed to product respectively, and the plant must produce "
                 "at least 125 kmol/h of product in total. Each kmol of feed processed requires 2 MJ of cooling in R1, 3 MJ in R2 and 4 MJ in R3, "
@@ -657,7 +656,6 @@ def page_quadratic():
         st.session_state["qp_obj_input"] = "0.02*r1**2 + 3*r1 + 0.03*r2**2 + 2*r2 + 0.05*r3**2 + r3"
     if "qp_constraints_input" not in st.session_state:
         st.session_state["qp_constraints_input"] = (
-            "r1 + r2 + r3 = 150\n"
             "0.9*r1 + 0.8*r2 + 0.7*r3 >= 125\n"
             "2*r1 + 3*r2 + 4*r3 <= 450\n"
             "r1 >= 0\n"
