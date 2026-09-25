@@ -1,0 +1,135 @@
+import io
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+from scipy.interpolate import interp1d
+
+# ==============================================================================
+# REFERENCE COMPRESSOR MAP DATA
+# ==============================================================================
+raw_data = """deg   x   y
+-60°    5590.521333 27.69926989
+-60°    5840.758286 25.17664227
+-60°    5983.254286 22.02335773
+-60°    6031.911619 19.2905105
+-60°    6052.764571 16.06715276
+-45°    6195.260571 30.57226257
+-45°    6508.056953 28.82043826
+-45°    6730.489905 26.01751782
+-45°    6831.279619 23.31970719
+-45°    6890.363429 17.88905028
+-30°    6591.469143 32.49926989
+-30°    6866.034666 30.88759102
+-30°    7144.075809 28.04963495
+-30°    7293.523048 24.0905105
+-30°    7345.655619 19.11532845
+-15°    6827.804191 33.58540166
+-15°    7133.649143 32.00875939
+-15°    7369.984    30.01167887
+-15°    7581.990476 26.05255442
+-15°    7661.927238 20.02627817
+0°  6980.726858 34.28613129
+0°  7237.914667 33.09489019
+0°  7588.941715 30.43211713
+0°  7790.521142 26.08759102
+0°  7870.458286 20.51678867
+20° 7088.467428 34.81167887
+20° 7397.78819  33.55036505
+20° 7658.45181  32.00875939
+20° 7933.017524 28.04963495
+20° 8040.758095 20.97226353
+Surging 5590.521333 27.69926989
+Surging 6195.260571 30.57226257
+Surging 6591.469143 32.49926989
+Surging 6827.804191 33.58540166
+Surging 6980.726858 34.28613129
+Surging 7088.467428 34.81167887"""
+
+df_map = pd.read_csv(io.StringIO(raw_data), sep="\s+")
+df_map['deg_num'] = df_map['deg'].str.replace('°', '').replace('Surging', np.nan).astype(float)
+
+# ==============================================================================
+# INTERPOLATION ENGINE
+# ==============================================================================
+def interpolate_flow(target_deg, target_y):
+    if pd.isna(target_deg) or pd.isna(target_y):
+        return np.nan
+        
+    unique_degs = sorted(df_map['deg_num'].dropna().unique())
+    x_at_degs = []
+    valid_degs = []
+    
+    for d in unique_degs:
+        sub = df_map[df_map['deg_num'] == d].sort_values(by='y')
+        if sub['y'].min() <= target_y <= sub['y'].max():
+            f_interp = interp1d(sub['y'], sub['x'], bounds_error=False, fill_value="extrapolate")
+            x_at_degs.append(float(f_interp(target_y)))
+            valid_degs.append(d)
+            
+    if len(valid_degs) < 2:
+        return np.nan
+        
+    f_final = interp1d(valid_degs, x_at_degs, bounds_error=False, fill_value="extrapolate")
+    return float(f_final(target_deg))
+
+dataset['Predicted_Flow'] = dataset.apply(
+    lambda row: interpolate_flow(row['IGV Deg'], row['P13205DIF/AI1.PV (barA)']), 
+    axis=1
+)
+
+# ==============================================================================
+# PLOT SETUP & GENERATION (Maximized Visual Canvas)
+# ==============================================================================
+plt.clf()
+# Explicitly initialize with 551w x 446h pixel mapping
+fig, ax = plt.subplots(figsize=(5.51, 4.46), dpi=100)
+
+# Set transparency variables before drawing anything
+fig.patch.set_alpha(0.0)  # Makes whole canvas background transparent
+ax.patch.set_alpha(0.0)   # Makes internal plotting area background transparent
+
+categories = ["-60°", "-45°", "-30°", "-15°", "0°", "20°", "Surging"]
+custom_colors = {"-15°": "grey"}
+
+# Draw background reference map
+for cat in categories:
+    group = df_map[df_map["deg"] == cat].sort_values(by="x")
+    if group.empty:
+        continue
+        
+    if cat == "Surging":
+        ax.plot(group["x"], group["y"], color="red", linestyle="--", linewidth=2, marker="x")
+        pt = group.loc[group["x"].idxmax()]
+        ax.text(pt["x"] - 85, pt["y"], "Surge Line", color="red", fontsize=8, ha="right", va="center")
+    else:
+        line_color = custom_colors.get(cat, None)
+        line, = ax.plot(group["x"], group["y"], color=line_color, marker="o", linestyle="-")
+        pt = group.loc[group["y"].idxmax()]
+        ax.text(pt["x"] + 120, pt["y"] - 0.2, cat, color=line.get_color(), fontsize=8, ha="left", va="center")
+
+# Draw the dynamic interpolated live points (Thinner, smaller red x marks)
+clean_data = dataset.dropna(subset=['Predicted_Flow', 'P13205DIF/AI1.PV (barA)'])
+ax.scatter(
+    clean_data['Predicted_Flow'], 
+    clean_data['P13205DIF/AI1.PV (barA)'], 
+    color="red", 
+    marker="x", 
+    s=15, 
+    linewidths=0.8, 
+    zorder=5,
+    label="Actual IGV (Predicted Flow)"
+)
+
+# Formatting - Tight labels and clean ticks
+ax.tick_params(axis='both', which='major', labelsize=8, pad=2)
+ax.set_xlabel(r"Flow ($\mathrm{Nm^3/hr}$)", fontsize=8, labelpad=3)
+ax.set_ylabel(r"Discharge Pressure ($\mathrm{bar}$)", fontsize=8, labelpad=3)
+ax.grid(True, linestyle=":", alpha=0.6)
+ax.set_xlim(df_map["x"].min() - 100, df_map["x"].max() + 150)
+
+# Add Legend on the right bottom side
+ax.legend(loc="lower right", fontsize=8, framealpha=0.5)
+
+# Minimize padding to an absolute minimum to give PowerBI maximum space
+plt.tight_layout(pad=0.05)
+plt.show()
