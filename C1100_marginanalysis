@@ -1,0 +1,146 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.interpolate import griddata, interp1d
+from scipy.optimize import fsolve
+
+# 1. Capture ALL Power BI Data
+df_pbi = dataset.copy()
+
+# Extract arrays and handle potential nulls
+actual_igv_array = df_pbi['IGVdegcalc'].fillna(0).values
+actual_pressure_array = df_pbi['Discharge Pressure'].fillna(0).values
+actual_flow_array = df_pbi['Flow (m3/h)'].fillna(0).values
+
+# 2. Reference Map Data
+data = {
+    "X": [50000,53300,60000,65900,70000,73700,80000, 53300,60000,65900,70000,72000,76000,77000, 
+          67100,70000,80000,82300,90000,92900,96800,97700, 80000,90000,100000,106400,110000,113600,115900,116800, 
+          80000,90000,94900,100000,110000,118500,120000,121700,122300,122301, 77000,97700,116800,121800],
+    "Y": [2.64,2.65,2.66,2.7,2.76,2.8,2.85, 2.65,2.605,2.52,2.45,2.4,2.2,2.15, 
+          2.72,2.71,2.63,2.6,2.48,2.4,2.2,2.11, 2.86,2.81,2.7,2.6,2.54,2.4,2.2,2.05, 
+          2.86,2.84,2.8,2.75,2.61,2.4,2.33,2.2,2,1.81, 2.15,2.11,2.05,1.81],
+    "Curve": ["Surge"]*7 + ["-70°"]*7 + ["-48°"]*8 + ["0°"]*8 + ["15°"]*10 + ["Stonewall"]*4
+}
+df_map = pd.DataFrame(data)
+
+# 3. Interpolation Setup
+igv_map = {"-70°": -70, "-48°": -48, "0°": 0, "15°": 15}
+df_interp_ref = df_map[df_map["Curve"].isin(igv_map.keys())].copy()
+df_interp_ref["Angle"] = df_interp_ref["Curve"].map(igv_map)
+points = df_interp_ref[['Angle', 'Y']].values
+values = df_interp_ref['X'].values
+
+# --- 4. Calculations ---
+avg_igv = np.nanmean(actual_igv_array)
+avg_y_press = np.nanmean(actual_pressure_array)
+avg_flow_actual = np.nanmean(actual_flow_array)
+
+# Predicted Flow logic
+try:
+    x_predicted_array = griddata(points, values, (actual_igv_array, actual_pressure_array), method='linear')
+    nan_mask = np.isnan(x_predicted_array)
+    if np.any(nan_mask):
+        x_predicted_fill = griddata(points, values, (actual_igv_array[nan_mask], actual_pressure_array[nan_mask]), method='nearest')
+        x_predicted_array[nan_mask] = x_predicted_fill
+    avg_x_pred = np.nanmean(x_predicted_array)
+except:
+    x_predicted_array = np.full_like(actual_flow_array, np.nan)
+    avg_x_pred = np.nan
+
+# Define full line for Surge calculation
+y_range_full = np.linspace(df_map['Y'].min(), df_map['Y'].max(), 100)
+x_full_line = griddata(points, values, (np.full(len(y_range_full), avg_igv), y_range_full), method='linear')
+nan_mask_line = np.isnan(x_full_line)
+if np.any(nan_mask_line):
+    x_imag_fill = griddata(points, values, (np.full(np.sum(nan_mask_line), avg_igv), y_range_full[nan_mask_line]), method='nearest')
+    x_full_line[nan_mask_line] = x_imag_fill
+
+# ORIGINAL SURGE INTERSECTION LOGIC (Stayed same)
+df_surge = df_map[df_map["Curve"] == "Surge"].sort_values(by="Y")
+f_surge = interp1d(df_surge["Y"], df_surge["X"], fill_value="extrapolate")
+f_igv_line = interp1d(y_range_full, x_full_line, fill_value="extrapolate")
+
+def find_y_surge(y): return f_surge(y) - f_igv_line(y)
+y_surge_intersect = fsolve(find_y_surge, x0=avg_y_press)[0]
+x_surge_intersect = f_surge(y_surge_intersect)
+rts_value = ((y_surge_intersect - avg_y_press) / avg_y_press) * 100
+
+# NEW: STONEWALL INTERSECTION LOGIC (For cosmetic clipping)
+df_stone = df_map[df_map["Curve"] == "Stonewall"].sort_values(by="Y")
+f_stone = interp1d(df_stone["Y"], df_stone["X"], fill_value="extrapolate")
+
+def find_y_stone(y): return f_stone(y) - f_igv_line(y)
+y_stone_intersect = fsolve(find_y_stone, x0=1.9)[0]
+x_stone_intersect = f_stone(y_stone_intersect)
+
+# CREATE CLIPPED LINE (Surge to Stonewall)
+y_clipped = np.linspace(y_surge_intersect, y_stone_intersect, 100)
+x_clipped = griddata(points, values, (np.full(len(y_clipped), avg_igv), y_clipped), method='linear')
+
+# Handle NaNs in clipped line just in case
+nan_mask_clipped = np.isnan(x_clipped)
+if np.any(nan_mask_clipped):
+    x_clipped[nan_mask_clipped] = griddata(points, values, (np.full(np.sum(nan_mask_clipped), avg_igv), y_clipped[nan_mask_clipped]), method='nearest')
+
+# Turndown & Deviation
+df_minus_70 = df_map[df_map["Curve"] == "-70°"].sort_values(by="Y")
+x_minus_70_ref = np.interp(actual_pressure_array, df_minus_70["Y"], df_minus_70["X"], left=df_minus_70["X"].min(), right=df_minus_70["X"].max())
+with np.errstate(divide='ignore', invalid='ignore'):
+    average_turndown = np.nanmean(((x_predicted_array - x_minus_70_ref) / x_minus_70_ref) * 100)
+avg_x_minus70 = np.interp(avg_y_press, df_minus_70["Y"], df_minus_70["X"], left=df_minus_70["X"].min())
+flow_deviation = ((avg_x_pred - avg_flow_actual) / avg_flow_actual) * 100 if avg_flow_actual != 0 else 0
+
+# --- 5. Plotting ---
+plt.rcParams['font.family'] = 'Arial'
+fig, ax = plt.subplots(figsize=(10, 6), dpi=200)
+
+for curve in ["Surge", "-70°", "-48°", "0°", "15°", "Stonewall"]:
+    grp = df_map[df_map["Curve"] == curve]
+    c = 'red' if curve == "Surge" else ('black' if curve == "Stonewall" else None)
+    ax.plot(grp["X"], grp["Y"], label=curve, color=c, linewidth=1.5, alpha=0.8, zorder=2)
+
+# PLOT CLIPPED LINE
+line_color = '#B0BEC5' 
+ax.plot(x_clipped, y_clipped, color=line_color, linestyle=(0, (3, 2)), linewidth=1.8, zorder=3)
+
+# Horizontal Surge/Actual Lines
+line_start_x = 50000
+ax.hlines(y=y_surge_intersect, xmin=line_start_x, xmax=x_surge_intersect, colors='red', linestyles='--', linewidth=1, alpha=0.7, zorder=1)
+ax.text(line_start_x + 500, y_surge_intersect + 0.005, f'Surge: {y_surge_intersect:.2f} bara', color='red', fontsize=8, va='bottom', ha='left')
+
+ax.hlines(y=avg_y_press, xmin=line_start_x, xmax=x_surge_intersect, colors='red', linestyles='--', linewidth=1, alpha=0.7, zorder=1)
+ax.text(line_start_x + 500, avg_y_press + 0.005, f'Actual: {avg_y_press:.2f} bara', color='red', fontsize=8, va='bottom', ha='left')
+
+ax.annotate('', xy=(x_surge_intersect, y_surge_intersect), xytext=(x_surge_intersect, avg_y_press),
+            arrowprops=dict(arrowstyle='<->', color='red', linestyle='--', linewidth=1.2, alpha=0.8), zorder=6)
+
+ax.text(x_surge_intersect - 800, (y_surge_intersect + avg_y_press) / 2, 
+        f'Rise to Surge: {rts_value:.1f}%', color='red', fontsize=8, 
+        va='center', ha='right', fontweight='normal')
+
+# POSITION LABEL BELOW STONEWALL INTERSECTION
+ax.text(x_stone_intersect, y_stone_intersect - 0.03, f'Calculated IGV: {avg_igv:.1f}°', 
+        fontsize=8, color='#4A4A4A', va='top', ha='center', fontweight='bold')
+
+# Data Points
+ax.scatter(actual_flow_array, actual_pressure_array, color='#0047AB', s=12, edgecolors='white', linewidth=0.2, alpha=0.4, label='Measured flow', zorder=4)
+ax.scatter(x_predicted_array, actual_pressure_array, color='red', s=12, marker='o', edgecolors='white', linewidth=0.2, alpha=0.6, label='Predicted flow', zorder=5)
+
+# Turndown/Deviation (Stayed same)
+color_turndown, color_deviation = '#4A4A4A', '#2E5A88'
+y_offset = 0.02
+ax.annotate('', xy=(avg_x_minus70, avg_y_press + y_offset), xytext=(avg_x_pred, avg_y_press + y_offset), arrowprops=dict(arrowstyle='->', color=color_turndown, linewidth=1.2))
+ax.text((avg_x_pred + avg_x_minus70)/2, avg_y_press + y_offset + 0.005, f'Turndown: {average_turndown:.1f}%', fontsize=8, ha='center', va='bottom', color=color_turndown)
+ax.annotate('', xy=(avg_flow_actual, avg_y_press - y_offset), xytext=(avg_x_pred, avg_y_press - y_offset), arrowprops=dict(arrowstyle='<->', color=color_deviation, linewidth=1.2))
+ax.text((avg_x_pred + avg_flow_actual)/2, avg_y_press - y_offset - 0.015, f'Deviation: {flow_deviation:.1f}%', fontsize=8, ha='center', va='top', color=color_deviation)
+
+ax.set_xlim(48000, 125000)
+ax.set_ylim(1.78, 2.9)
+ax.set_xlabel("Flow (m3/hr)")
+ax.set_ylabel("Discharge Pressure (bara)")
+ax.legend(loc='lower left', fontsize=7)
+ax.grid(True, which='both', linestyle='-', linewidth=0.3, color='lightgray')
+
+plt.tight_layout()
+plt.show()
