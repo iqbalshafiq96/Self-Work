@@ -1,0 +1,93 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.interpolate import griddata
+
+# --- FONT CONFIGURATION ---
+# Setting to Segoe UI Normal
+plt.rcParams['font.family'] = 'Segoe UI'
+plt.rcParams['font.weight'] = 'normal'
+plt.rcParams['axes.labelweight'] = 'normal'
+plt.rcParams['axes.titleweight'] = 'normal'
+
+# 1. Capture and Sort Data by Time
+df_pbi = dataset.copy()
+df_pbi['Date/Time'] = pd.to_datetime(df_pbi['Date/Time'])
+df_pbi = df_pbi.sort_values(by='Date/Time').reset_index(drop=True)
+
+# Selection: 30 equally spaced points
+num_points = 30
+if len(df_pbi) > num_points:
+    indices = np.linspace(0, len(df_pbi) - 1, num_points).astype(int)
+    df_pbi = df_pbi.iloc[indices].reset_index(drop=True)
+
+actual_igv_array = df_pbi['IGVdegcalc'].fillna(0).values
+actual_pressure_array = df_pbi['Discharge Pressure'].fillna(0).values
+actual_flow_array = df_pbi['Flow (m3/h)'].fillna(0).values
+
+# 2. Reference Map Data
+data = {
+    "X": [50000,53300,60000,65900,70000,73700,80000, 53300,60000,65900,70000,72000,76000,77000, 
+          67100,70000,80000,82300,90000,92900,96800,97700, 80000,90000,100000,106400,110000,113600,115900,116800, 
+          80000,90000,94900,100000,110000,118500,120000,121700,122300,122301, 77000,97700,116800,121800],
+    "Y": [2.64,2.65,2.66,2.7,2.76,2.8,2.85, 2.65,2.605,2.52,2.45,2.4,2.2,2.15, 
+          2.72,2.71,2.63,2.6,2.48,2.4,2.2,2.11, 2.86,2.81,2.7,2.6,2.54,2.4,2.2,2.05, 
+          2.86,2.84,2.8,2.75,2.61,2.4,2.33,2.2,2,1.81, 2.15,2.11,2.05,1.81],
+    "Curve": ["Surge"]*7 + ["-70°"]*7 + ["-48°"]*8 + ["0°"]*8 + ["15°"]*10 + ["Stonewall"]*4
+}
+df_map = pd.DataFrame(data)
+
+# 3. Interpolation Setup
+igv_map = {"-70°": -70, "-48°": -48, "0°": 0, "15°": 15}
+df_interp_ref = df_map[df_map["Curve"].isin(igv_map.keys())].copy()
+df_interp_ref["Angle"] = df_interp_ref["Curve"].map(igv_map)
+points = df_interp_ref[['Angle', 'Y']].values
+values = df_interp_ref['X'].values
+
+# 4. Calculations
+try:
+    x_pred = griddata(points, values, (actual_igv_array, actual_pressure_array), method='linear')
+    nan_mask = np.isnan(x_pred)
+    if np.any(nan_mask):
+        x_pred[nan_mask] = griddata(points, values, (actual_igv_array[nan_mask], actual_pressure_array[nan_mask]), method='nearest')
+except:
+    x_pred = np.full_like(actual_flow_array, np.nan)
+
+# 5. Plotting
+fig, ax = plt.subplots(figsize=(10, 6), dpi=200)
+
+# Reference Map Curves
+for curve in ["Surge", "-70°", "-48°", "0°", "15°", "Stonewall"]:
+    grp = df_map[df_map["Curve"] == curve]
+    c = 'red' if curve == "Surge" else ('black' if curve == "Stonewall" else None)
+    ax.plot(grp["X"], grp["Y"], label=curve, color=c, linewidth=1.2, alpha=0.5, zorder=1)
+
+# Path Line with Arrows
+for i in range(len(x_pred) - 1):
+    x_start, x_end = x_pred[i], x_pred[i+1]
+    y_start, y_end = actual_pressure_array[i], actual_pressure_array[i+1]
+    ax.plot([x_start, x_end], [y_start, y_end], color='#546E7A', linewidth=0.8, alpha=0.4, zorder=2)
+    ax.annotate('', xy=((x_start+x_end)/2, (y_start+y_end)/2), xytext=(x_start, y_start),
+                arrowprops=dict(arrowstyle='->', color='#546E7A', lw=0.8, alpha=0.6, mutation_scale=10), zorder=3)
+
+# Operating Path Scatter
+ax.scatter(x_pred, actual_pressure_array, color='red', s=15, edgecolors='white', linewidth=0.5, alpha=0.6, label='Operating Path', zorder=5)
+
+# Start/End points
+ax.scatter(x_pred[0], actual_pressure_array[0], color='#2ECC71', edgecolors='white', s=60, marker='D', label='Earliest State', zorder=7)
+ax.scatter(x_pred[-1], actual_pressure_array[-1], color='#0D47A1', s=100, marker='H', linewidth=0, label='Latest State', zorder=8)
+
+# --- AXIS CONFIGURATION ---
+ax.set_xlim(48000, 125000)
+ax.set_ylim(1.78, 2.9)
+ax.set_xlabel("Flow (m3/hr)", fontsize=10)
+ax.set_ylabel("Discharge Pressure (bara)", fontsize=10)
+
+# Standard legend and ticks
+ax.legend(loc='lower left', fontsize=8, ncol=2, frameon=True)
+ax.tick_params(axis='both', labelsize=9)
+
+ax.grid(True, which='both', linestyle='-', linewidth=0.3, color='lightgray')
+
+plt.tight_layout()
+plt.show()
