@@ -562,7 +562,11 @@ selected_tab = st.radio(
 if selected_tab == "Data Correlation Matrix":
     st.write("### Feature Correlation Matrix (Lower Triangle)")
 
-    corr = df_raw.corr()
+    numeric_df = df_raw.select_dtypes(include=[np.number])
+    if numeric_df.empty:
+        numeric_df = df_raw.apply(pd.to_numeric, errors="coerce").dropna(axis=1, how="all")
+
+    corr = numeric_df.corr()
     
     # Mask upper triangle (keeping diagonal intact as requested)
     mask = np.triu(np.ones_like(corr, dtype=bool), k=1)
@@ -579,7 +583,6 @@ if selected_tab == "Data Correlation Matrix":
         [1.0, "#08519C"]
     ]
 
-    # text_auto removed here to prevent duplication with custom text annotations below
     fig = px.imshow(
         corr_masked,
         color_continuous_scale=royal_blue_colorscale,
