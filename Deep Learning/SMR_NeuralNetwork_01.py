@@ -9,33 +9,79 @@ from sklearn.preprocessing import StandardScaler
 import streamlit as st
 import streamlit.components.v1 as components
 from pyvis.network import Network
+import requests
+import io
 
 st.set_page_config(page_title="SMR Neural Net Configurator", layout="wide")
 st.title("Steam Methane Reforming (SMR) Neural Network Modeling")
-st.caption(
-    "Developed by Iqbal SHERPA 20260824. Contact me for further information"
-    " @iqbalshafiq96@gmail.com")
+st.caption("Developed by Iqbal SHERPA 20260824. Contact me for further information @iqbalshafiq96@gmail.com")
 
 # =====================================================================
-# 1. GITHUB DATA LOADING & PREPROCESSING (AUTOMATIC NORMALIZATION)
+# 0. GITHUB DIRECTORY CSV DISCOVERY & PARSING
 # =====================================================================
-GITHUB_CSV_URL = (
-    "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/SMR_Data.csv"
-)
+GITHUB_API_URL = "https://api.github.com/repos/iqbalshafiq96/Self-Work/contents/Deep%20Learning"
 
+@st.cache_data(ttl=600)
+def fetch_csv_file_list():
+    try:
+        response = requests.get(GITHUB_API_URL)
+        if response.status_code == 200:
+            files = response.json()
+            # Filter for CSV files and handle URL-encoded names
+            csv_files = [f["name"] for f in files if f["name"].lower().endswith(".csv")]
+            return csv_files
+    except Exception:
+        pass
+    # Fallback default if API limit or connection fails
+    return ["SMR_Data.csv"]
+
+available_csvs = fetch_csv_file_list()
+
+st.sidebar.header("0. Dataset Selection")
+selected_csv_filename = st.sidebar.selectbox("Select CSV File from GitHub", available_csvs)
+
+# Construct raw URL safely handling spaces (%20)
+encoded_filename = selected_csv_filename.replace(" ", "%20")
+GITHUB_CSV_URL = f"https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Deep%20Learning/{encoded_filename}"
 
 @st.cache_data
-def load_and_preprocess_smr_data(url_or_path):
+def load_and_preprocess_custom_csv(url_or_path):
+    # Read first 3 rows to inspect header layout
     try:
-        df = pd.read_csv(url_or_path)
+        preview_df = pd.read_csv(url_or_path, nrows=3, header=None)
+    except Exception as e:
+        # Fallback local test if needed
+        preview_df = pd.read_csv("SMR_Data.csv", nrows=3, header=None)
+
+    col_names = preview_df.iloc[0].values[1:]  # Skip timestamp column (index 0)
+    col_types = preview_df.iloc[1].values[1:]  # 'Independent' or 'Dependent'
+
+    # Load actual data starting from row index 2 (third row)
+    try:
+        full_df = pd.read_csv(url_or_path, header=None, skiprows=2)
     except Exception:
-        df = pd.read_csv("SMR_Data.csv")
+        full_df = pd.read_csv("SMR_Data.csv", header=None, skiprows=2)
 
-    input_cols = df.columns[:3]
-    output_cols = df.columns[3:7]
+    # Assign proper column names (excluding timestamp column from data frame values used for training)
+    data_df = full_df.iloc[:, 1:].copy()
+    data_df.columns = col_names
+    data_df = data_df.apply(pd.to_numeric, errors="coerce").dropna()
 
-    X_raw = df[input_cols].values
-    Y_raw = df[output_cols].values
+    # Identify inputs and outputs based on row 2 labels
+    input_names = [col_names[i] for i, t in enumerate(col_types) if str(t).strip().lower() == "independent"]
+    output_names = [col_names[i] for i, t in enumerate(col_types) if str(t).strip().lower() == "dependent"]
+
+    # Fallback if labels are missing or malformed
+    if not input_names or not output_names:
+        input_names = list(data_df.columns[:3])
+        output_names = list(data_df.columns[3:7])
+
+    X_raw = data_df[input_names].values
+    Y_raw = data_df[output_names].values
+
+    # Prevent NaN/Inf runtime issues
+    X_raw = np.nan_to_num(X_raw, nan=0.0, finite=0.0)
+    Y_raw = np.nan_to_num(Y_raw, nan=0.0, finite=0.0)
 
     scaler_X = StandardScaler()
     X_scaled = scaler_X.fit_transform(X_raw)
@@ -43,8 +89,7 @@ def load_and_preprocess_smr_data(url_or_path):
     scaler_Y = StandardScaler()
     Y_scaled = scaler_Y.fit_transform(Y_raw)
 
-    return df, input_cols, output_cols, X_scaled, Y_scaled, scaler_X, scaler_Y
-
+    return data_df, input_names, output_names, X_scaled, Y_scaled, scaler_X, scaler_Y
 
 try:
     (
@@ -55,12 +100,10 @@ try:
         Y_norm,
         scaler_X,
         scaler_Y,
-    ) = load_and_preprocess_smr_data(GITHUB_CSV_URL)
-    st.sidebar.success("SMR Data Loaded & Normalized from GitHub!")
+    ) = load_and_preprocess_custom_csv(GITHUB_CSV_URL)
+    st.sidebar.success(f"Loaded '{selected_csv_filename}' successfully!")
 except Exception as e:
-    st.error(
-        f"Failed to load dataset: {e}. Please ensure SMR_Data.csv exists in the repo directory."
-    )
+    st.error(f"Failed to load dataset: {e}. Please ensure valid format.")
     st.stop()
 
 num_inputs = len(input_names)
@@ -68,11 +111,12 @@ num_outputs = len(output_names)
 
 
 # =====================================================================
-# 2. SIDEBAR CONFIGURATION
+# 1. SIDEBAR CONFIGURATION (UP TO 3 HIDDEN LAYERS)
 # =====================================================================
 st.sidebar.header("1. Network Architecture")
-hidden1_size = st.sidebar.slider("Layer 1 Neurons", 1, 50, 12)
+hidden1_size = st.sidebar.slider("Layer 1 Neurons", 0, 50, 12)
 hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 50, 6)
+hidden3_size = st.sidebar.slider("Layer 3 Neurons", 0, 50, 0)
 
 global_activation = st.sidebar.selectbox(
     "Global Transfer Function (All Layers)",
@@ -85,7 +129,7 @@ activation_descriptions = {
     "ReLU": "Passes positive values directly and zeroes out negative ones. Ideal for deep networks and fast convergence.",
 }
 
-st.sidebar.caption(f"ℹ️ {activation_descriptions[global_activation]}")
+st.sidebar.caption(f"ℹ️️ {activation_descriptions[global_activation]}")
 
 st.sidebar.header("2. Optimization & Data Options")
 lr = st.sidebar.number_input(
@@ -103,10 +147,11 @@ test_ratio = st.sidebar.slider(
 
 
 # =====================================================================
-# 3. AUTOSCALING PYVIS NETWORK DIAGRAM WITH WINDOW RESIZE LISTENERS
+# 2. AUTOSCALING PYVIS NETWORK DIAGRAM (WITH 3 HIDDEN LAYERS SUPPORT)
 # =====================================================================
-def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
-    max_neurons = max(in_dim, h1, h2, out_dim)
+def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
+    active_h = [h for h in [h1, h2, h3] if h > 0]
+    max_neurons = max([in_dim, out_dim] + active_h if active_h else [in_dim, out_dim])
     dynamic_height = max(550, min(max_neurons * 65, 900))
 
     net = Network(
@@ -145,15 +190,20 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     """
     )
 
-    x_input = -600
-    x_h1 = -200
-    x_h2 = 200
-    x_output = 600 if h2 > 0 else x_h1 + 400
+    # Dynamic coordinate layout calculation based on active layers
+    layers_list = [in_dim] + active_h + [out_dim]
+    num_layer_cols = len(layers_list)
+    x_coords = np.linspace(-600, 600, num_layer_cols)
 
     input_nodes = [f"L0_N{i}" for i in range(in_dim)]
-    h1_nodes = [f"L1_N{i}" for i in range(h1)]
-    h2_nodes = [f"L2_N{i}" for i in range(h2)] if h2 > 0 else []
-    output_nodes = [f"L3_N{i}" for i in range(out_dim)]
+    layer_node_groups = [input_nodes]
+
+    for idx, h_val in enumerate(active_h):
+        layer_node_groups.append([f"L{idx+1}_N{i}" for i in range(h_val)])
+
+    output_layer_idx = len(layer_node_groups)
+    output_nodes = [f"L{output_layer_idx}_N{i}" for i in range(out_dim)]
+    layer_node_groups.append(output_nodes)
 
     def get_equal_y(index, total_count):
         if total_count == 1:
@@ -161,75 +211,36 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
         spread_height = max(350, total_count * 50)
         return -spread_height / 2 + (index / (total_count - 1)) * spread_height
 
-    # Input Layer
-    for i, nid in enumerate(input_nodes):
-        label_text = (
-            f"Input\n{input_names[i]}"
-            if i < len(input_names)
-            else f"Input\nN{i+1}"
-        )
-        net.add_node(
-            nid,
-            label=label_text,
-            x=x_input,
-            y=get_equal_y(i, in_dim),
-            color={"background": "#2C3E50", "border": "#5D6D7E"},
-            shape="circle",
-        )
+    # Add Nodes
+    for col_idx, nodes in enumerate(layer_node_groups):
+        x_pos = x_coords[col_idx]
+        for i, nid in enumerate(nodes):
+            y_pos = get_equal_y(i, len(nodes))
+            if col_idx == 0:
+                label_text = f"Input\n{input_names[i]}" if i < len(input_names) else f"Input\nN{i+1}"
+                bg, border = "#2C3E50", "#5D6D7E"
+            elif col_idx == num_layer_cols - 1:
+                label_text = f"Output\n{output_names[i]}" if i < len(output_names) else f"Output\nN{i+1}"
+                bg, border = "#7E5109", "#F39C12"
+            else:
+                label_text = " "
+                bg, border = "#1B4F72", "#3498DB"
 
-    # Hidden Layer 1
-    for i, nid in enumerate(h1_nodes):
-        net.add_node(
-            nid,
-            label=" ",
-            x=x_h1,
-            y=get_equal_y(i, h1),
-            color={"background": "#1B4F72", "border": "#3498DB"},
-            shape="circle",
-        )
+            net.add_node(
+                nid,
+                label=label_text,
+                x=x_pos,
+                y=y_pos,
+                color={"background": bg, "border": border},
+                shape="circle",
+            )
 
-    # Hidden Layer 2
-    for i, nid in enumerate(h2_nodes):
-        net.add_node(
-            nid,
-            label=" ",
-            x=x_h2,
-            y=get_equal_y(i, h2),
-            color={"background": "#0E6251", "border": "#1ABC9C"},
-            shape="circle",
-        )
-
-    # Output Layer
-    for i, nid in enumerate(output_nodes):
-        label_text = (
-            f"Output\n{output_names[i]}"
-            if i < len(output_names)
-            else f"Output\nN{i+1}"
-        )
-        net.add_node(
-            nid,
-            label=label_text,
-            x=x_output,
-            y=get_equal_y(i, out_dim),
-            color={"background": "#7E5109", "border": "#F39C12"},
-            shape="circle",
-        )
-
-    # Connections
-    for src in input_nodes:
-        for dst in h1_nodes:
-            net.add_edge(src, dst)
-
-    if h2 > 0:
-        for src in h1_nodes:
-            for dst in h2_nodes:
-                net.add_edge(src, dst)
-        for src in h2_nodes:
-            for dst in output_nodes:
-                net.add_edge(src, dst)
-    else:
-        for src in h1_nodes:
-            for dst in output_nodes:
+    # Add Connective Edges between consecutive layers
+    for col_idx in range(len(layer_node_groups) - 1):
+        src_layer = layer_node_groups[col_idx]
+        dst_layer = layer_node_groups[col_idx + 1]
+        for src in src_layer:
+            for dst in dst_layer:
                 net.add_edge(src, dst)
 
     html_content = net.generate_html()
@@ -371,35 +382,29 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
 
                         if (pos && box) {
                             var actualRadius = (box.right - box.left) / 2;
-                            var beamColor = "";
+                            var beamColor = 'rgba(52, 152, 219, ';
                             var localPhase = globalPhase;
 
                             if (node.id.startsWith('L0_')) {
                                 localPhase += 0.5;
                                 beamColor = 'rgba(93, 109, 126, ';
-                            } else if (node.id.startsWith('L1_')) {
-                                beamColor = 'rgba(52, 152, 219, ';
-                            } else if (node.id.startsWith('L2_')) {
-                                beamColor = 'rgba(26, 188, 156, ';
-                            } else if (node.id.startsWith('L3_')) {
+                            } else if (node.id.startsWith('L_last') || node.id.includes('L3_') || node.id.includes('L2_') && !node.id.startsWith('L2_N')) {
                                 localPhase += 1.0;
                                 beamColor = 'rgba(243, 156, 18, ';
                             }
 
-                            if (beamColor !== "") {
-                                var pulseIntensity = 0.5 + 0.5 * Math.sin(localPhase);
-                                var strokeWidth = 1.5 + (pulseIntensity * 2.5);
-                                var alpha = 0.5 + (pulseIntensity * 0.5);
+                            var pulseIntensity = 0.5 + 0.5 * Math.sin(localPhase);
+                            var strokeWidth = 1.5 + (pulseIntensity * 2.5);
+                            var alpha = 0.5 + (pulseIntensity * 0.5);
 
-                                ctx.beginPath();
-                                ctx.arc(pos.x, pos.y, actualRadius, 0, 2 * Math.PI, false);
-                                ctx.strokeStyle = beamColor + alpha + ')';
-                                ctx.lineWidth = strokeWidth;
-                                ctx.shadowColor = beamColor + '1.0)';
-                                ctx.shadowBlur = 6 * pulseIntensity;
-                                ctx.stroke();
-                                ctx.shadowBlur = 0;
-                            }
+                            ctx.beginPath();
+                            ctx.arc(pos.x, pos.y, actualRadius, 0, 2 * Math.PI, false);
+                            ctx.strokeStyle = beamColor + alpha + ')';
+                            ctx.lineWidth = strokeWidth;
+                            ctx.shadowColor = beamColor + '1.0)';
+                            ctx.shadowBlur = 6 * pulseIntensity;
+                            ctx.stroke();
+                            ctx.shadowBlur = 0;
                         }
                     });
 
@@ -449,24 +454,22 @@ def render_pyvis_network(in_dim, h1, h2, out_dim, act_fn):
     </body>
     """
 
-    html_content = html_content.replace(
-        "</body>", controls_and_animation_script
-    )
+    html_content = html_content.replace("</body>", controls_and_animation_script)
     components.html(html_content, height=dynamic_height)
 
 
 st.subheader("Interactive Architecture Diagram")
 render_pyvis_network(
-    num_inputs, hidden1_size, hidden2_size, num_outputs, global_activation
+    num_inputs, hidden1_size, hidden2_size, hidden3_size, num_outputs, global_activation
 )
 
 
 # =====================================================================
-# 4. MODEL CLASS & DATA PARTITIONING (DYNAMIC RANDOMIZATION)
+# 3. CONFIGURABLE MODEL CLASS (UP TO 3 HIDDEN LAYERS)
 # =====================================================================
 class ConfigurableNet(nn.Module):
 
-    def __init__(self, in_dim, h1, h2, act_fn_name, out_dim):
+    def __init__(self, in_dim, h1, h2, h3, act_fn_name, out_dim):
         super().__init__()
         act_map = {
             "Tanh (tansig)": nn.Tanh(),
@@ -475,14 +478,16 @@ class ConfigurableNet(nn.Module):
         }
         chosen_act = act_map[act_fn_name]
 
-        layers = [nn.Linear(in_dim, h1), chosen_act]
-        if h2 > 0:
-            layers.extend(
-                [nn.Linear(h1, h2), chosen_act, nn.Linear(h2, out_dim)]
-            )
-        else:
-            layers.append(nn.Linear(h1, out_dim))
+        layers = []
+        prev_dim = in_dim
 
+        for h_size in [h1, h2, h3]:
+            if h_size > 0:
+                layers.append(nn.Linear(prev_dim, h_size))
+                layers.append(chosen_act)
+                prev_dim = h_size
+
+        layers.append(nn.Linear(prev_dim, out_dim))
         self.network = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -498,13 +503,11 @@ if "active_tab" not in st.session_state:
 
 num_samples = len(X_norm)
 
-# Helper function to generate fresh random indices
 def repartition_dataset(total_samples, current_test_ratio):
     split_idx = int(total_samples * (1 - current_test_ratio))
     indices = torch.randperm(total_samples)
     return indices[:split_idx], indices[split_idx:]
 
-# Initialize train/test split in session state if missing
 if "train_idx" not in st.session_state or "test_idx" not in st.session_state:
     st.session_state.train_idx, st.session_state.test_idx = repartition_dataset(
         num_samples, test_ratio
@@ -520,50 +523,46 @@ Y_test = Y_tensor[st.session_state.test_idx]
 
 st.subheader("Dataset Summary & Partitioning")
 mcol1, mcol2, mcol3 = st.columns(3)
-mcol1.metric("Total SMR Rows", num_samples)
+mcol1.metric("Total Dataset Rows", num_samples)
 mcol2.metric("Training Samples", X_train.shape[0])
 mcol3.metric("Testing Samples", X_test.shape[0])
 
 if st.button("Initialize / Reset Model Architecture"):
-    # Reshuffle train/test splits randomly based on the selected split ratio
     st.session_state.train_idx, st.session_state.test_idx = repartition_dataset(
         num_samples, test_ratio
     )
-    
-    # Initialize a fresh PyTorch model
     st.session_state.net = ConfigurableNet(
-        num_inputs, hidden1_size, hidden2_size, global_activation, num_outputs
+        num_inputs, hidden1_size, hidden2_size, hidden3_size, global_activation, num_outputs
     )
     st.session_state.loss_history = []
-    st.success("New PyTorch SMR Model initialized with freshly randomized Train/Test sets!")
+    st.success("New PyTorch Model initialized with freshly randomized Train/Test sets!")
     st.rerun()
 
 
 # =====================================================================
-# 5. WORKFLOW TABS (STATE-PERSISTED)
+# 4. WORKFLOW TABS (ADAPTATION PHASE REMOVED)
 # =====================================================================
 st.divider()
 
 tab_options = [
     "Data Correlation Matrix",
     "Batch Training Phase",
-    "Online Adaptation Phase",
     "Model Testing & Verification",
 ]
 
 selected_tab = st.radio(
     "Workflow Navigation",
     options=tab_options,
-    index=tab_options.index(st.session_state.active_tab),
+    index=tab_options.index(st.session_state.active_tab) if st.session_state.active_tab in tab_options else 0,
     horizontal=True,
     label_visibility="collapsed",
     key="active_tab",
 )
 
 
-# --- TAB 0: CORRELATION MATRIX ---
+# --- TAB 0: CORRELATION MATRIX (LOWER TRIANGLE ONLY) ---
 if selected_tab == "Data Correlation Matrix":
-    st.write("### SMR Data Feature Correlation Matrix")
+    st.write("### Feature Correlation Matrix (Lower Triangle)")
 
     plt.rcParams["font.sans-serif"] = [
         "Segoe UI",
@@ -575,11 +574,13 @@ if selected_tab == "Data Correlation Matrix":
     plt.rcParams["axes.linewidth"] = 0.8
 
     corr = df_raw.corr()
+    mask = np.triu(np.ones_like(corr, dtype=bool))
 
     fig, ax = plt.subplots(figsize=(6.4, 4.0), dpi=150)
 
     sns.heatmap(
         corr,
+        mask=mask,
         annot=True,
         cmap="coolwarm",
         fmt=".2f",
@@ -600,9 +601,7 @@ if selected_tab == "Data Correlation Matrix":
 
 # --- TAB 1: BATCH TRAINING ---
 elif selected_tab == "Batch Training Phase":
-    st.markdown(
-        "Train the model parameters using normalized SMR training inputs (`X_train`, `Y_train`)."
-    )
+    st.markdown("Train the model parameters using normalized training inputs (`X_train`, `Y_train`).")
     epochs = st.number_input(
         "Number of Epochs", min_value=10, max_value=5000, value=200
     )
@@ -627,6 +626,11 @@ elif selected_tab == "Batch Training Phase":
                 optimizer.zero_grad()
                 output = net(X_train)
                 loss = criterion(output, Y_train)
+                
+                if torch.isnan(loss):
+                    st.error("Training encountered NaN loss. Try reducing learning rate or changing activation.")
+                    break
+
                 loss.backward()
                 optimizer.step()
 
@@ -639,55 +643,9 @@ elif selected_tab == "Batch Training Phase":
             st.success(f"Training Complete! Final Loss: {loss.item():.6f}")
 
 
-# --- TAB 2: ONLINE ADAPTATION ---
-elif selected_tab == "Online Adaptation Phase":
-    st.markdown(
-        "Update model weights step-by-step for incoming streaming process data."
-    )
-    stream_size = st.number_input(
-        "Streaming Samples", min_value=1, max_value=30, value=5
-    )
-
-    if st.button("Run Online Adaptation"):
-        if st.session_state.net is None:
-            st.warning("Please initialize the model first!")
-        else:
-            net = st.session_state.net
-            optimizer = (
-                optim.Adam(net.parameters(), lr=lr)
-                if optimizer_choice == "Adam"
-                else optim.SGD(net.parameters(), lr=lr)
-            )
-            criterion = nn.MSELoss()
-
-            status_place, chart_place = st.empty(), st.empty()
-
-            net.train()
-            for i in range(min(int(stream_size), len(X_test))):
-                x_sample, y_sample = X_test[i : i + 1], Y_test[i : i + 1]
-
-                optimizer.zero_grad()
-                pred = net(x_sample)
-                adapt_loss = criterion(pred, y_sample)
-                adapt_loss.backward()
-                optimizer.step()
-
-                st.session_state.loss_history.append(adapt_loss.item())
-                status_place.text(
-                    f"Sample {i+1}/{stream_size} | Loss: {adapt_loss.item():.6f}"
-                )
-                chart_place.line_chart(
-                    st.session_state.loss_history, y_label="MSE Loss"
-                )
-
-            st.success("Adaptation complete!")
-
-
-# --- TAB 3: MODEL TESTING & 4-OUTPUT VERIFICATION ---
+# --- TAB 2: MODEL TESTING & VERIFICATION ---
 elif selected_tab == "Model Testing & Verification":
-    st.markdown(
-        "Evaluate actual vs. predicted performance across all **4 Output Variables** (Inverted back to engineering units)."
-    )
+    st.markdown("Evaluate actual vs. predicted performance across output variables (Inverted back to engineering units).")
 
     if st.button("Evaluate Model on Test Set"):
         if st.session_state.net is None:
@@ -706,7 +664,7 @@ elif selected_tab == "Model Testing & Verification":
             st.write("### Output Verification Trends (Actual vs. Predicted)")
 
             cols = st.columns(2)
-            for idx, col_name in enumerate(output_names[:4]):
+            for idx, col_name in enumerate(output_names):
                 with cols[idx % 2]:
                     st.markdown(f"**Output {idx+1}: {col_name}**")
                     chart_data = pd.DataFrame(
@@ -724,24 +682,3 @@ elif selected_tab == "Model Testing & Verification":
                         / (np.sum((y_t - np.mean(y_t)) ** 2) + 1e-8)
                     )
                     st.caption(f"Variable R² Accuracy: {r2:.4f}")
-
-
-As of now, this app takes direct csv value for data to be trained
-Now I want to change such that the code will able to run any csv that is being located in this directory https://github.com/iqbalshafiq96/Self-Work/tree/main/Deep%20Learning
-the actual csv file may contain space, so please pare carefully
-
-About the csv
-The top row contains timestamp followed by features. 
-The second row contains value of either Independent or Dependent which is Input or Output respectively (timestamp is not labelled)
-The third row and below is the dataset that will be used for training. remember first column is timestamp so should not be included in training.
-I noticed sometime the MSE runs contain Nan, because u skip my instruction
-
-
-So in streamlit, when user select the title of the CSV, the interactive architecture diagram will reflect based in CSV label independent or dependent.
-
-Delete Adaptation Phase
-Allow user to add more neurons layer (default is 2, by 12 and 6 configuration)
-The correlation matrix only display diagonal 1.00 line and below the line.
-Please maintain the particle flowing at interactive architecture diagram
-
-
