@@ -12,8 +12,8 @@ from pyvis.network import Network
 import requests
 import io
 
-st.set_page_config(page_title="SMR Neural Net Configurator", layout="wide")
-st.title("Steam Methane Reforming (SMR) Neural Network Modeling")
+st.set_page_config(page_title="Neural Net Configurator", layout="wide")
+st.title("Process Neural Network Modeling")
 st.caption("Developed by Iqbal SHERPA 20260824. Contact me for further information @iqbalshafiq96@gmail.com")
 
 # =====================================================================
@@ -27,12 +27,10 @@ def fetch_csv_file_list():
         response = requests.get(GITHUB_API_URL)
         if response.status_code == 200:
             files = response.json()
-            # Filter for CSV files and handle URL-encoded names
             csv_files = [f["name"] for f in files if f["name"].lower().endswith(".csv")]
             return csv_files
     except Exception:
         pass
-    # Fallback default if API limit or connection fails
     return ["SMR_Data.csv"]
 
 available_csvs = fetch_csv_file_list()
@@ -40,38 +38,31 @@ available_csvs = fetch_csv_file_list()
 st.sidebar.header("0. Dataset Selection")
 selected_csv_filename = st.sidebar.selectbox("Select CSV File from GitHub", available_csvs)
 
-# Construct raw URL safely handling spaces (%20)
 encoded_filename = selected_csv_filename.replace(" ", "%20")
 GITHUB_CSV_URL = f"https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Deep%20Learning/{encoded_filename}"
 
 @st.cache_data
 def load_and_preprocess_custom_csv(url_or_path):
-    # Read first 3 rows to inspect header layout
     try:
         preview_df = pd.read_csv(url_or_path, nrows=3, header=None)
-    except Exception as e:
-        # Fallback local test if needed
+    except Exception:
         preview_df = pd.read_csv("SMR_Data.csv", nrows=3, header=None)
 
     col_names = preview_df.iloc[0].values[1:]  # Skip timestamp column (index 0)
     col_types = preview_df.iloc[1].values[1:]  # 'Independent' or 'Dependent'
 
-    # Load actual data starting from row index 2 (third row)
     try:
         full_df = pd.read_csv(url_or_path, header=None, skiprows=2)
     except Exception:
         full_df = pd.read_csv("SMR_Data.csv", header=None, skiprows=2)
 
-    # Assign proper column names (excluding timestamp column from data frame values used for training)
     data_df = full_df.iloc[:, 1:].copy()
     data_df.columns = col_names
     data_df = data_df.apply(pd.to_numeric, errors="coerce").dropna()
 
-    # Identify inputs and outputs based on row 2 labels
     input_names = [col_names[i] for i, t in enumerate(col_types) if str(t).strip().lower() == "independent"]
     output_names = [col_names[i] for i, t in enumerate(col_types) if str(t).strip().lower() == "dependent"]
 
-    # Fallback if labels are missing or malformed
     if not input_names or not output_names:
         input_names = list(data_df.columns[:3])
         output_names = list(data_df.columns[3:7])
@@ -79,9 +70,9 @@ def load_and_preprocess_custom_csv(url_or_path):
     X_raw = data_df[input_names].values
     Y_raw = data_df[output_names].values
 
-    # Prevent NaN/Inf runtime issues
-    X_raw = np.nan_to_num(X_raw, nan=0.0, finite=0.0)
-    Y_raw = np.nan_to_num(Y_raw, nan=0.0, finite=0.0)
+    # Fixed: Removed invalid 'finite' keyword argument
+    X_raw = np.nan_to_num(X_raw, nan=0.0, posinf=0.0, neginf=0.0)
+    Y_raw = np.nan_to_num(Y_raw, nan=0.0, posinf=0.0, neginf=0.0)
 
     scaler_X = StandardScaler()
     X_scaled = scaler_X.fit_transform(X_raw)
@@ -129,7 +120,7 @@ activation_descriptions = {
     "ReLU": "Passes positive values directly and zeroes out negative ones. Ideal for deep networks and fast convergence.",
 }
 
-st.sidebar.caption(f"ℹ️️ {activation_descriptions[global_activation]}")
+st.sidebar.caption(f"ℹ {activation_descriptions[global_activation]}")
 
 st.sidebar.header("2. Optimization & Data Options")
 lr = st.sidebar.number_input(
@@ -147,7 +138,7 @@ test_ratio = st.sidebar.slider(
 
 
 # =====================================================================
-# 2. AUTOSCALING PYVIS NETWORK DIAGRAM (WITH 3 HIDDEN LAYERS SUPPORT)
+# 2. AUTOSCALING PYVIS NETWORK DIAGRAM
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
     active_h = [h for h in [h1, h2, h3] if h > 0]
@@ -190,7 +181,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
     """
     )
 
-    # Dynamic coordinate layout calculation based on active layers
     layers_list = [in_dim] + active_h + [out_dim]
     num_layer_cols = len(layers_list)
     x_coords = np.linspace(-600, 600, num_layer_cols)
@@ -211,7 +201,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
         spread_height = max(350, total_count * 50)
         return -spread_height / 2 + (index / (total_count - 1)) * spread_height
 
-    # Add Nodes
     for col_idx, nodes in enumerate(layer_node_groups):
         x_pos = x_coords[col_idx]
         for i, nid in enumerate(nodes):
@@ -235,7 +224,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                 shape="circle",
             )
 
-    # Add Connective Edges between consecutive layers
     for col_idx in range(len(layer_node_groups) - 1):
         src_layer = layer_node_groups[col_idx]
         dst_layer = layer_node_groups[col_idx + 1]
@@ -388,7 +376,7 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                             if (node.id.startsWith('L0_')) {
                                 localPhase += 0.5;
                                 beamColor = 'rgba(93, 109, 126, ';
-                            } else if (node.id.startsWith('L_last') || node.id.includes('L3_') || node.id.includes('L2_') && !node.id.startsWith('L2_N')) {
+                            } else if (node.id.includes('L3_') || node.id.includes('L2_') && !node.id.startsWith('L2_N')) {
                                 localPhase += 1.0;
                                 beamColor = 'rgba(243, 156, 18, ';
                             }
@@ -540,7 +528,7 @@ if st.button("Initialize / Reset Model Architecture"):
 
 
 # =====================================================================
-# 4. WORKFLOW TABS (ADAPTATION PHASE REMOVED)
+# 4. WORKFLOW TABS
 # =====================================================================
 st.divider()
 
