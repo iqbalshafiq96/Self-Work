@@ -11,6 +11,7 @@ import streamlit.components.v1 as components
 from pyvis.network import Network
 import requests
 import io
+import plotly.figure_factory as ff
 
 st.set_page_config(page_title="Neural Net Configurator", layout="wide")
 st.title("Process Neural Network Modeling")
@@ -557,55 +558,47 @@ selected_tab = st.radio(
 )
 
 
-# --- TAB 0: CORRELATION MATRIX (FULL MATRIX WITH ROYAL BLUE PALETTE) ---
+# --- TAB 0: CORRELATION MATRIX (LOWER TRIANGLE ONLY) ---
 if selected_tab == "Data Correlation Matrix":
-    st.write("### Feature Correlation Matrix")
-
-    plt.rcParams["font.sans-serif"] = [
-        "Segoe UI",
-        "Aptos",
-        "Arial",
-        "DejaVu Sans",
-    ]
-    plt.rcParams["axes.edgecolor"] = "#CCCCCC"
-    plt.rcParams["axes.linewidth"] = 0.8
+    st.write("### Feature Correlation Matrix (Lower Triangle)")
 
     corr = df_raw.corr()
+    
+    # Mask out upper triangle (keep diagonal)
+    mask = np.triu(np.ones_like(corr, dtype=bool), k=1)
+    corr_masked = corr.copy()
+    corr_masked[mask] = np.nan
 
-    fig, ax = plt.subplots(figsize=(6.4, 4.0), dpi=150)
+    z = corr_masked.values
+    x = list(corr.columns)
+    y = list(corr.index)
+    text = np.round(z, 2)
 
-    # Render heatmap using "Blues" colormap (whitish to royal blue) without upper mask
-    sns.heatmap(
-        corr,
-        annot=True,
-        cmap="Blues",
-        vmin=-1.0,
-        vmax=1.0,
-        fmt=".2f",
-        linewidths=0.5,
-        ax=ax,
-        cbar_kws={"shrink": 0.8},
-        annot_kws={"size": 9, "fontfamily": "sans-serif"},
+    # Custom text color logic: white for deep blue (> 0.6), black otherwise
+    text_colors = np.where(np.nan_to_num(z) > 0.6, "white", "black")
+
+    fig = ff.create_annotated_heatmap(
+        z=z,
+        x=x,
+        y=y,
+        annotation_text=text,
+        colorscale="Blues",
+        zmin=-1,
+        zmax=1,
+        showscale=True,
+        font_colors=text_colors.tolist()
     )
 
-    # Automatically set text color depending on cell correlation value (White for >= 0.6, Black otherwise)
-    for text in ax.texts:
-        try:
-            val = float(text.get_text())
-            if val >= 0.6:
-                text.set_color("white")
-            else:
-                text.set_color("black")
-        except ValueError:
-            pass
-
-    ax.tick_params(labelsize=9, colors="#31333F")
-    plt.xticks(rotation=45, ha="right")
-    plt.yticks(rotation=0)
+    fig.update_layout(
+        width=700,
+        height=500,
+        xaxis=dict(tickangle=-45),
+        margin=dict(l=50, r=50, t=50, b=50)
+    )
 
     c_left, c_mid, c_right = st.columns([0.1, 0.8, 0.1])
     with c_mid:
-        st.pyplot(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
 
 
 # --- TAB 1: BATCH TRAINING ---
