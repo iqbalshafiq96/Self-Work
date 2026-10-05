@@ -38,6 +38,16 @@ available_csvs = fetch_csv_file_list()
 st.sidebar.header("0. Dataset Selection")
 selected_csv_filename = st.sidebar.selectbox("Select CSV File from GitHub", available_csvs)
 
+# Auto-detect if user switched CSV file and reset session states
+if "last_selected_csv" not in st.session_state or st.session_state.last_selected_csv != selected_csv_filename:
+    st.session_state.last_selected_csv = selected_csv_filename
+    st.session_state.net = None
+    st.session_state.loss_history = []
+    if "train_idx" in st.session_state:
+        del st.session_state.train_idx
+    if "test_idx" in st.session_state:
+        del st.session_state.test_idx
+
 encoded_filename = selected_csv_filename.replace(" ", "%20")
 GITHUB_CSV_URL = f"https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Deep%20Learning/{encoded_filename}"
 
@@ -70,7 +80,6 @@ def load_and_preprocess_custom_csv(url_or_path):
     X_raw = data_df[input_names].values
     Y_raw = data_df[output_names].values
 
-    # Fixed: Removed invalid 'finite' keyword argument
     X_raw = np.nan_to_num(X_raw, nan=0.0, posinf=0.0, neginf=0.0)
     Y_raw = np.nan_to_num(Y_raw, nan=0.0, posinf=0.0, neginf=0.0)
 
@@ -496,7 +505,7 @@ def repartition_dataset(total_samples, current_test_ratio):
     indices = torch.randperm(total_samples)
     return indices[:split_idx], indices[split_idx:]
 
-if "train_idx" not in st.session_state or "test_idx" not in st.session_state:
+if "train_idx" not in st.session_state or "test_idx" not in st.session_state or len(st.session_state.train_idx) + len(st.session_state.test_idx) != num_samples:
     st.session_state.train_idx, st.session_state.test_idx = repartition_dataset(
         num_samples, test_ratio
     )
