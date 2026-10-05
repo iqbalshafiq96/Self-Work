@@ -557,9 +557,9 @@ selected_tab = st.radio(
 )
 
 
-# --- TAB 0: CORRELATION MATRIX (LOWER TRIANGLE ONLY) ---
+# --- TAB 0: CORRELATION MATRIX (FULL MATRIX WITH ROYAL BLUE PALETTE) ---
 if selected_tab == "Data Correlation Matrix":
-    st.write("### Feature Correlation Matrix (Lower Triangle)")
+    st.write("### Feature Correlation Matrix")
 
     plt.rcParams["font.sans-serif"] = [
         "Segoe UI",
@@ -571,21 +571,33 @@ if selected_tab == "Data Correlation Matrix":
     plt.rcParams["axes.linewidth"] = 0.8
 
     corr = df_raw.corr()
-    mask = np.triu(np.ones_like(corr, dtype=bool))
 
     fig, ax = plt.subplots(figsize=(6.4, 4.0), dpi=150)
 
+    # Render heatmap using "Blues" colormap (whitish to royal blue) without upper mask
     sns.heatmap(
         corr,
-        mask=mask,
         annot=True,
-        cmap="coolwarm",
+        cmap="Blues",
+        vmin=-1.0,
+        vmax=1.0,
         fmt=".2f",
         linewidths=0.5,
         ax=ax,
         cbar_kws={"shrink": 0.8},
         annot_kws={"size": 9, "fontfamily": "sans-serif"},
     )
+
+    # Automatically set text color depending on cell correlation value (White for >= 0.6, Black otherwise)
+    for text in ax.texts:
+        try:
+            val = float(text.get_text())
+            if val >= 0.6:
+                text.set_color("white")
+            else:
+                text.set_color("black")
+        except ValueError:
+            pass
 
     ax.tick_params(labelsize=9, colors="#31333F")
     plt.xticks(rotation=45, ha="right")
