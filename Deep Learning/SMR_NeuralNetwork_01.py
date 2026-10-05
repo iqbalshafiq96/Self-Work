@@ -579,9 +579,9 @@ if selected_tab == "Data Correlation Matrix":
         [1.0, "#08519C"]
     ]
 
+    # text_auto removed here to prevent duplication with custom text annotations below
     fig = px.imshow(
         corr_masked,
-        text_auto=".2f",
         color_continuous_scale=royal_blue_colorscale,
         zmin=-1,
         zmax=1,
