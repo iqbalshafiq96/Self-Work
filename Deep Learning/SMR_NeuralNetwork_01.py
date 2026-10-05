@@ -9,9 +9,9 @@ from sklearn.preprocessing import StandardScaler
 import streamlit as st
 import streamlit.components.v1 as components
 from pyvis.network import Network
+import plotly.express as px
 import requests
 import io
-import plotly.figure_factory as ff
 
 st.set_page_config(page_title="Neural Net Configurator", layout="wide")
 st.title("Process Neural Network Modeling")
@@ -558,41 +558,59 @@ selected_tab = st.radio(
 )
 
 
-# --- TAB 0: CORRELATION MATRIX (LOWER TRIANGLE ONLY) ---
+# --- TAB 0: CORRELATION MATRIX (LOWER TRIANGLE WITH DIAGONAL, PLOTLY ROYAL BLUE) ---
 if selected_tab == "Data Correlation Matrix":
     st.write("### Feature Correlation Matrix (Lower Triangle)")
 
     corr = df_raw.corr()
     
-    # Mask out upper triangle (keep diagonal)
+    # Mask upper triangle (keeping diagonal intact as requested)
     mask = np.triu(np.ones_like(corr, dtype=bool), k=1)
     corr_masked = corr.copy()
     corr_masked[mask] = np.nan
 
-    z = corr_masked.values
-    x = list(corr.columns)
-    y = list(corr.index)
-    text = np.round(z, 2)
+    # Custom Blues / Royal Blue colormap ranging from whitish to deep royal blue
+    royal_blue_colorscale = [
+        [0.0, "#F7FBFF"],
+        [0.2, "#DEEBF7"],
+        [0.4, "#C6DBEF"],
+        [0.6, "#9ECAE1"],
+        [0.8, "#3182BD"],
+        [1.0, "#08519C"]
+    ]
 
-    # Custom text color logic: white for deep blue (> 0.6), black otherwise
-    text_colors = np.where(np.nan_to_num(z) > 0.6, "white", "black")
-
-    fig = ff.create_annotated_heatmap(
-        z=z,
-        x=x,
-        y=y,
-        annotation_text=text,
-        colorscale="Blues",
+    fig = px.imshow(
+        corr_masked,
+        text_auto=".2f",
+        color_continuous_scale=royal_blue_colorscale,
         zmin=-1,
         zmax=1,
-        showscale=True,
-        font_colors=text_colors.tolist()
+        aspect="auto"
     )
 
+    # Apply smart text coloring based on cell value (white for dark royal blue >= 0.6, black otherwise)
+    annotations = []
+    for i, row_name in enumerate(corr.index):
+        for j, col_name in enumerate(corr.columns):
+            val = corr_masked.iloc[i, j]
+            if not np.isnan(val):
+                font_color = "white" if val >= 0.6 else "black"
+                annotations.append(
+                    dict(
+                        x=col_name,
+                        y=row_name,
+                        text=f"{val:.2f}",
+                        font=dict(color=font_color, size=11),
+                        showarrow=False
+                    )
+                )
+
     fig.update_layout(
-        width=700,
-        height=500,
+        annotations=annotations,
+        xaxis_title="",
+        yaxis_title="",
         xaxis=dict(tickangle=-45),
+        height=500,
         margin=dict(l=50, r=50, t=50, b=50)
     )
 
