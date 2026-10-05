@@ -566,8 +566,17 @@ if selected_tab == "Data Correlation Matrix":
     if numeric_df.empty:
         numeric_df = df_raw.apply(pd.to_numeric, errors="coerce").dropna(axis=1, how="all")
 
+    # Detect zero-variance columns
+    stds = numeric_df.std()
+    zero_var_cols = stds[stds == 0].index.tolist()
+
     corr = numeric_df.corr()
     
+    # Force zero-variance columns/rows to NaN so they show up blank/white in the heatmap
+    for col in zero_var_cols:
+        corr.loc[col, :] = np.nan
+        corr.loc[:, col] = np.nan
+
     # Mask upper triangle (keeping diagonal intact as requested)
     mask = np.triu(np.ones_like(corr, dtype=bool), k=1)
     corr_masked = corr.copy()
@@ -591,22 +600,30 @@ if selected_tab == "Data Correlation Matrix":
         aspect="auto"
     )
 
-    # Apply smart text coloring based on cell value (white for dark royal blue >= 0.6, black otherwise)
+    # Apply smart text coloring and handle NaN / zero-variance labels
     annotations = []
     for i, row_name in enumerate(corr.index):
         for j, col_name in enumerate(corr.columns):
             val = corr_masked.iloc[i, j]
-            if not np.isnan(val):
+            
+            if row_name in zero_var_cols or col_name in zero_var_cols:
+                text_label = "NaN"
+                font_color = "black"
+            elif np.isnan(val):
+                continue
+            else:
+                text_label = f"{val:.2f}"
                 font_color = "white" if val >= 0.6 else "black"
-                annotations.append(
-                    dict(
-                        x=col_name,
-                        y=row_name,
-                        text=f"{val:.2f}",
-                        font=dict(color=font_color, size=11),
-                        showarrow=False
-                    )
+
+            annotations.append(
+                dict(
+                    x=col_name,
+                    y=row_name,
+                    text=text_label,
+                    font=dict(color=font_color, size=11),
+                    showarrow=False
                 )
+            )
 
     fig.update_layout(
         annotations=annotations,
