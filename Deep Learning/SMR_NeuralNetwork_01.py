@@ -40,7 +40,6 @@ available_csvs = fetch_csv_list_from_github()
 st.sidebar.header("0. Dataset Selection")
 selected_csv = st.sidebar.selectbox("Select CSV File from GitHub", available_csvs)
 
-# Properly encode filename for URL (handling spaces)
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Deep%20Learning/"
 selected_csv_url = GITHUB_RAW_BASE + urllib.parse.quote(selected_csv)
 
@@ -51,6 +50,7 @@ def load_and_preprocess_custom_csv(url_or_path):
         df_headers = pd.read_csv(url_or_path, nrows=0).columns.tolist()
         df_labels = pd.read_csv(url_or_path, skiprows=1, nrows=1, header=None).values.flatten().tolist()
         
+        # Skips Row 2 (label row index 1) so data extraction starts cleanly at Row 3 and below
         df_data = pd.read_csv(url_or_path, skiprows=[1])
         df_data.columns = [str(c).strip() for c in df_data.columns]
         
