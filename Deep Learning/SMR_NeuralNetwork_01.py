@@ -1,4 +1,5 @@
 import requests
+import urllib.parse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -32,7 +33,6 @@ def fetch_csv_list_from_github():
             return csv_files
     except Exception:
         pass
-    # Fallback default if API rate-limited or offline
     return ["SMR_Data.csv"]
 
 available_csvs = fetch_csv_list_from_github()
@@ -40,29 +40,23 @@ available_csvs = fetch_csv_list_from_github()
 st.sidebar.header("0. Dataset Selection")
 selected_csv = st.sidebar.selectbox("Select CSV File from GitHub", available_csvs)
 
-# Construct raw file URL
+# Properly encode filename for URL (handling spaces)
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Deep%20Learning/"
-selected_csv_url = GITHUB_RAW_BASE + selected_csv
+selected_csv_url = GITHUB_RAW_BASE + urllib.parse.quote(selected_csv)
 
 
 @st.cache_data
 def load_and_preprocess_custom_csv(url_or_path):
     try:
-        # Read header names (Row 0) and labels (Row 1: Independent/Dependent)
         df_headers = pd.read_csv(url_or_path, nrows=0).columns.tolist()
         df_labels = pd.read_csv(url_or_path, skiprows=1, nrows=1, header=None).values.flatten().tolist()
         
-        # Load actual data starting from row index 2 (skipping header and label rows)
         df_data = pd.read_csv(url_or_path, skiprows=[1])
-        
-        # Clean column names in case of whitespace
         df_data.columns = [str(c).strip() for c in df_data.columns]
         
         input_cols = []
         output_cols = []
         
-        # Map based on Row 2 labels ('Independent' -> Input, 'Dependent' -> Output)
-        # Skip the first column if it's Timestamp
         start_idx = 1 if "time" in df_headers[0].lower() or "date" in df_headers[0].lower() else 0
         
         for idx in range(start_idx, len(df_headers)):
@@ -74,7 +68,6 @@ def load_and_preprocess_custom_csv(url_or_path):
             elif "dependent" in label_val or "output" in label_val:
                 output_cols.append(col_name)
                 
-        # Fallback if labels are missing or unparseable: default to first 3 as inputs, rest as outputs
         if not input_cols or not output_cols:
             all_data_cols = df_data.columns[1:] if start_idx == 1 else df_data.columns
             input_cols = list(all_data_cols[:3])
@@ -137,7 +130,7 @@ activation_descriptions = {
     "ReLU": "Passes positive values directly and zeroes out negative ones. Ideal for deep networks and fast convergence.",
 }
 
-st.sidebar.caption(f"ℹ️️ {activation_descriptions[global_activation]}")
+st.sidebar.caption(f"ℹ {activation_descriptions[global_activation]}")
 
 st.sidebar.header("2. Optimization & Data Options")
 lr = st.sidebar.number_input(
@@ -209,7 +202,6 @@ def render_pyvis_network(in_dim, h_sizes, out_dim):
         spread_height = max(350, total_count * 45)
         return -spread_height / 2 + (index / (total_count - 1)) * spread_height
 
-    # Create Nodes for each layer
     for layer_idx, count in enumerate(layer_counts):
         current_x = x_positions[layer_idx]
         layer_nodes = []
@@ -239,7 +231,6 @@ def render_pyvis_network(in_dim, h_sizes, out_dim):
             )
         all_layer_nodes.append(layer_nodes)
 
-    # Connect adjacent layers sequentially
     for l_idx in range(len(all_layer_nodes) - 1):
         for src in all_layer_nodes[l_idx]:
             for dst in all_layer_nodes[l_idx + 1]:
@@ -380,7 +371,7 @@ if st.button("Initialize / Reset Model Architecture"):
 
 
 # =====================================================================
-# 5. WORKFLOW TABS (WITHOUT ADAPTATION PHASE)
+# 5. WORKFLOW TABS
 # =====================================================================
 st.divider()
 
@@ -408,11 +399,9 @@ if selected_tab == "Data Correlation Matrix":
     plt.rcParams["axes.edgecolor"] = "#CCCCCC"
     plt.rcParams["axes.linewidth"] = 0.8
 
-    # Keep only numeric columns for correlation
     numeric_df = df_raw.select_dtypes(include=[np.number])
     corr = numeric_df.corr()
     
-    # Generate lower triangular mask
     mask = np.triu(np.ones_like(corr, dtype=bool))
 
     fig, ax = plt.subplots(figsize=(6.4, 4.0), dpi=150)
