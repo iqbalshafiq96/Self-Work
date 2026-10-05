@@ -13,7 +13,7 @@ import plotly.express as px
 import requests
 import io
 
-st.set_page_config(page_title="Neural Net Configurator", layout="wide")
+st.set_page_config(page_title="Neural Network Configurator", layout="wide")
 st.title("Process Neural Network Modeling")
 st.caption("Developed by Iqbal SHERPA 20260824. Contact me for further information @iqbalshafiq96@gmail.com")
 
