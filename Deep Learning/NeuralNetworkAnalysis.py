@@ -18,7 +18,7 @@ st.title("Process Neural Network Modeling")
 st.caption("Developed by Iqbal SHERPA 20260824. Contact me for further information @iqbalshafiq96@gmail.com")
 
 # =====================================================================
-# 0. GITHUB DIRECTORY CSV DISCOVERY & PARSING (NOW UNDER CAPTION)
+# 0. GITHUB DIRECTORY CSV DISCOVERY & PARSING
 # =====================================================================
 GITHUB_API_URL = "https://api.github.com/repos/iqbalshafiq96/Self-Work/contents/Deep%20Learning"
 
@@ -113,7 +113,7 @@ num_outputs = len(output_names)
 st.divider()
 
 # =====================================================================
-# 1. NETWORK ARCHITECTURE CONFIGURATION (BELOW INTERACTIVE ARCHITECTURE DIAGRAM HEADER)
+# 1. NETWORK ARCHITECTURE CONFIGURATION
 # =====================================================================
 st.subheader("Interactive Architecture Diagram")
 
@@ -454,7 +454,7 @@ st.divider()
 
 
 # =====================================================================
-# 3. CONFIGURABLE MODEL CLASS & DATA PARTITIONING
+# 3. CONFIGURABLE MODEL CLASS & DATA PARTITIONING WITH ACTIVE RANDOMIZER
 # =====================================================================
 class ConfigurableNet(nn.Module):
 
@@ -494,12 +494,13 @@ num_samples = len(X_norm)
 
 def repartition_dataset(total_samples, current_test_ratio):
     split_idx = int(total_samples * (1 - current_test_ratio))
-    indices = torch.randperm(total_samples)
+    indices = torch.randperm(total_samples)  # Randomly shuffles row indices
     return indices[:split_idx], indices[split_idx:]
 
 # Test set split ratio placed right above the initialization button
 test_ratio = st.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
+# Dynamically repartition whenever slider moves or indices are uninitialized
 if "train_idx" not in st.session_state or "test_idx" not in st.session_state or len(st.session_state.train_idx) + len(st.session_state.test_idx) != num_samples:
     st.session_state.train_idx, st.session_state.test_idx = repartition_dataset(
         num_samples, test_ratio
@@ -520,6 +521,7 @@ mcol2.metric("Training Samples", X_train.shape[0])
 mcol3.metric("Testing Samples", X_test.shape[0])
 
 if st.button("Initialize / Reset Model Architecture"):
+    # Actively re-shuffles and assigns new random train/test data partitions on click
     st.session_state.train_idx, st.session_state.test_idx = repartition_dataset(
         num_samples, test_ratio
     )
@@ -552,7 +554,7 @@ selected_tab = st.radio(
 )
 
 
-# --- TAB 0: CORRELATION MATRIX (LOWER TRIANGLE WITH DIAGONAL, PLOTLY ROYAL BLUE) ---
+# --- TAB 0: CORRELATION MATRIX ---
 if selected_tab == "Data Correlation Matrix":
     st.write("### Feature Correlation Matrix (Lower Triangle)")
 
@@ -635,7 +637,6 @@ if selected_tab == "Data Correlation Matrix":
 elif selected_tab == "Batch Training Phase":
     st.markdown("Train the model parameters using normalized training inputs (`X_train`, `Y_train`).")
     
-    # Learning Rate and Optimizer controls placed below the training description caption
     tcol1, tcol2 = st.columns(2)
     with tcol1:
         lr = st.number_input(
