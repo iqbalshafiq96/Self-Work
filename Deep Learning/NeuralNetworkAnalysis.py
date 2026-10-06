@@ -18,7 +18,7 @@ st.title("Process Neural Network Modeling")
 st.caption("Developed by Iqbal SHERPA 20260824. Contact me for further information @iqbalshafiq96@gmail.com")
 
 # =====================================================================
-# 0. GITHUB DIRECTORY CSV DISCOVERY & PARSING
+# 0. GITHUB DIRECTORY CSV DISCOVERY & PARSING (NOW UNDER CAPTION)
 # =====================================================================
 GITHUB_API_URL = "https://api.github.com/repos/iqbalshafiq96/Self-Work/contents/Deep%20Learning"
 
@@ -36,8 +36,8 @@ def fetch_csv_file_list():
 
 available_csvs = fetch_csv_file_list()
 
-st.sidebar.header("0. Dataset Selection")
-selected_csv_filename = st.sidebar.selectbox("Select CSV File from GitHub", available_csvs)
+st.write("### Dataset Selection")
+selected_csv_filename = st.selectbox("Select CSV File from GitHub", available_csvs, label_visibility="collapsed")
 
 # Auto-detect if user switched CSV file and reset session states
 if "last_selected_csv" not in st.session_state or st.session_state.last_selected_csv != selected_csv_filename:
@@ -102,7 +102,7 @@ try:
         scaler_X,
         scaler_Y,
     ) = load_and_preprocess_custom_csv(GITHUB_CSV_URL)
-    st.sidebar.success(f"Loaded '{selected_csv_filename}' successfully!")
+    st.success(f"Loaded '{selected_csv_filename}' successfully!")
 except Exception as e:
     st.error(f"Failed to load dataset: {e}. Please ensure valid format.")
     st.stop()
@@ -110,41 +110,32 @@ except Exception as e:
 num_inputs = len(input_names)
 num_outputs = len(output_names)
 
+st.divider()
 
 # =====================================================================
-# 1. SIDEBAR CONFIGURATION (UP TO 3 HIDDEN LAYERS)
+# 1. NETWORK ARCHITECTURE CONFIGURATION (BELOW INTERACTIVE ARCHITECTURE DIAGRAM HEADER)
 # =====================================================================
-st.sidebar.header("1. Network Architecture")
-hidden1_size = st.sidebar.slider("Layer 1 Neurons", 0, 50, 12)
-hidden2_size = st.sidebar.slider("Layer 2 Neurons", 0, 50, 6)
-hidden3_size = st.sidebar.slider("Layer 3 Neurons", 0, 50, 0)
+st.subheader("Interactive Architecture Diagram")
 
-global_activation = st.sidebar.selectbox(
-    "Global Transfer Function (All Layers)",
-    ["Tanh (tansig)", "Sigmoid (logsig)", "ReLU"],
-)
+col_arch1, col_arch2, col_arch3, col_arch4 = st.columns(4)
+with col_arch1:
+    hidden1_size = st.slider("Layer 1 Neurons", 0, 50, 12)
+with col_arch2:
+    hidden2_size = st.slider("Layer 2 Neurons", 0, 50, 6)
+with col_arch3:
+    hidden3_size = st.slider("Layer 3 Neurons", 0, 50, 0)
+with col_arch4:
+    global_activation = st.selectbox(
+        "Global Transfer Function",
+        ["Tanh (tansig)", "Sigmoid (logsig)", "ReLU"],
+    )
 
 activation_descriptions = {
     "Tanh (tansig)": "Outputs zero-centered values between -1 and 1. Great for continuous non-linear process dynamics.",
     "Sigmoid (logsig)": "Outputs values scaled between 0 and 1. Useful for smooth non-linear probability transitions.",
     "ReLU": "Passes positive values directly and zeroes out negative ones. Ideal for deep networks and fast convergence.",
 }
-
-st.sidebar.caption(f"ℹ {activation_descriptions[global_activation]}")
-
-st.sidebar.header("2. Optimization & Data Options")
-lr = st.sidebar.number_input(
-    "Learning Rate",
-    min_value=0.0001,
-    max_value=1.0,
-    value=0.01,
-    step=0.001,
-    format="%.4f",
-)
-optimizer_choice = st.sidebar.selectbox("Optimizer", ["Adam", "SGD"])
-test_ratio = st.sidebar.slider(
-    "Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05
-)
+st.caption(f"ℹ {activation_descriptions[global_activation]}")
 
 
 # =====================================================================
@@ -455,15 +446,15 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
     html_content = html_content.replace("</body>", controls_and_animation_script)
     components.html(html_content, height=dynamic_height)
 
-
-st.subheader("Interactive Architecture Diagram")
 render_pyvis_network(
     num_inputs, hidden1_size, hidden2_size, hidden3_size, num_outputs, global_activation
 )
 
+st.divider()
+
 
 # =====================================================================
-# 3. CONFIGURABLE MODEL CLASS (UP TO 3 HIDDEN LAYERS)
+# 3. CONFIGURABLE MODEL CLASS & DATA PARTITIONING
 # =====================================================================
 class ConfigurableNet(nn.Module):
 
@@ -505,6 +496,9 @@ def repartition_dataset(total_samples, current_test_ratio):
     split_idx = int(total_samples * (1 - current_test_ratio))
     indices = torch.randperm(total_samples)
     return indices[:split_idx], indices[split_idx:]
+
+# Test set split ratio placed right above the initialization button
+test_ratio = st.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
 if "train_idx" not in st.session_state or "test_idx" not in st.session_state or len(st.session_state.train_idx) + len(st.session_state.test_idx) != num_samples:
     st.session_state.train_idx, st.session_state.test_idx = repartition_dataset(
@@ -611,7 +605,6 @@ if selected_tab == "Data Correlation Matrix":
                 continue
             else:
                 text_label = f"{val:.2f}"
-                # Values between 0.7 and 1.0 (or -0.7 and -1.0) use white text for contrast, others use black
                 font_color = "white" if abs(val) >= 0.7 else "black"
 
             annotations.append(
@@ -641,6 +634,21 @@ if selected_tab == "Data Correlation Matrix":
 # --- TAB 1: BATCH TRAINING ---
 elif selected_tab == "Batch Training Phase":
     st.markdown("Train the model parameters using normalized training inputs (`X_train`, `Y_train`).")
+    
+    # Learning Rate and Optimizer controls placed below the training description caption
+    tcol1, tcol2 = st.columns(2)
+    with tcol1:
+        lr = st.number_input(
+            "Learning Rate",
+            min_value=0.0001,
+            max_value=1.0,
+            value=0.01,
+            step=0.001,
+            format="%.4f",
+        )
+    with tcol2:
+        optimizer_choice = st.selectbox("Optimizer", ["Adam", "SGD"])
+
     epochs = st.number_input(
         "Number of Epochs", min_value=10, max_value=5000, value=200
     )
