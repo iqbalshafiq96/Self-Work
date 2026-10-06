@@ -565,70 +565,81 @@ if selected_tab == "Data Correlation Matrix":
     numeric_df = df_raw.select_dtypes(include=[np.number])
     if numeric_df.empty:
         numeric_df = df_raw.apply(pd.to_numeric, errors="coerce")
-    
-    numeric_df = numeric_df.dropna(axis=1, how="all")
+
+    # Detect zero-variance columns
     stds = numeric_df.std()
-    valid_cols = stds[stds > 0].index.tolist()
+    zero_var_cols = stds[stds == 0].index.tolist()
+
+    corr = numeric_df.corr()
     
-    if len(valid_cols) < 2:
-        st.warning("Not enough numeric columns with variance to compute a correlation matrix.")
-    else:
-        corr_df = numeric_df[valid_cols].corr()
+    # Force zero-variance rows and columns explicitly to NaN
+    for col in zero_var_cols:
+        corr.loc[col, :] = np.nan
+        corr.loc[:, col] = np.nan
 
-        mask = np.triu(np.ones_like(corr_df, dtype=bool), k=1)
-        corr_masked = corr_df.copy()
-        corr_masked[mask] = np.nan
+    # Mask upper triangle (keeping the diagonal intact)
+    mask = np.triu(np.ones_like(corr, dtype=bool), k=1)
+    corr_masked = corr.copy()
+    corr_masked[mask] = np.nan
 
-        royal_blue_colorscale = [
-            [0.0, "#F7FBFF"],
-            [0.2, "#DEEBF7"],
-            [0.4, "#C6DBEF"],
-            [0.6, "#9ECAE1"],
-            [0.8, "#3182BD"],
-            [1.0, "#08519C"]
-        ]
+    royal_blue_colorscale = [
+        [0.0, "#F7FBFF"],
+        [0.2, "#DEEBF7"],
+        [0.4, "#C6DBEF"],
+        [0.6, "#9ECAE1"],
+        [0.8, "#3182BD"],
+        [1.0, "#08519C"]
+    ]
 
-        fig = px.imshow(
-            corr_masked,
-            color_continuous_scale=royal_blue_colorscale,
-            zmin=-1,
-            zmax=1,
-            aspect="auto"
-        )
+    fig = px.imshow(
+        corr_masked,
+        color_continuous_scale=royal_blue_colorscale,
+        zmin=-1,
+        zmax=1,
+        aspect="auto"
+    )
 
-        annotations = []
-        for i, row_name in enumerate(corr_df.index):
-            for j, col_name in enumerate(corr_df.columns):
-                val = corr_masked.iloc[i, j]
-                
-                if np.isnan(val):
+    annotations = []
+    for i, row_name in enumerate(corr.index):
+        for j, col_name in enumerate(corr.columns):
+            val = corr_masked.iloc[i, j]
+            
+            # Explicit handling for zero-variance cells vs normal cells
+            if row_name in zero_var_cols or col_name in zero_var_cols:
+                # Only annotate valid lower triangle / diagonal positions for zero-var columns
+                if j <= i:
+                    text_label = "NaN"
+                    font_color = "#555555"
+                else:
                     continue
-                
+            elif np.isnan(val):
+                continue
+            else:
                 text_label = f"{val:.2f}"
                 font_color = "white" if abs(val) >= 0.5 else "black"
 
-                annotations.append(
-                    dict(
-                        x=col_name,
-                        y=row_name,
-                        text=text_label,
-                        font=dict(color=font_color, size=11),
-                        showarrow=False
-                    )
+            annotations.append(
+                dict(
+                    x=col_name,
+                    y=row_name,
+                    text=text_label,
+                    font=dict(color=font_color, size=11, family="Segoe UI, sans-serif"),
+                    showarrow=False
                 )
+            )
 
-        fig.update_layout(
-            annotations=annotations,
-            xaxis_title="",
-            yaxis_title="",
-            xaxis=dict(tickangle=-45),
-            height=500,
-            margin=dict(l=50, r=50, t=50, b=50)
-        )
+    fig.update_layout(
+        annotations=annotations,
+        xaxis_title="",
+        yaxis_title="",
+        xaxis=dict(tickangle=-45),
+        height=500,
+        margin=dict(l=50, r=50, t=50, b=50)
+    )
 
-        c_left, c_mid, c_right = st.columns([0.1, 0.8, 0.1])
-        with c_mid:
-            st.plotly_chart(fig, use_container_width=True)
+    c_left, c_mid, c_right = st.columns([0.1, 0.8, 0.1])
+    with c_mid:
+        st.plotly_chart(fig, use_container_width=True)
 
 
 # --- TAB 1: BATCH TRAINING ---
