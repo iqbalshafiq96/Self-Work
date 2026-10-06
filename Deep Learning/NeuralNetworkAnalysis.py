@@ -497,10 +497,8 @@ def repartition_dataset(total_samples, current_test_ratio):
     indices = torch.randperm(total_samples)  # Randomly shuffles row indices
     return indices[:split_idx], indices[split_idx:]
 
-# Test set split ratio placed right above the initialization button
 test_ratio = st.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
-# Dynamically repartition whenever slider moves or indices are uninitialized
 if "train_idx" not in st.session_state or "test_idx" not in st.session_state or len(st.session_state.train_idx) + len(st.session_state.test_idx) != num_samples:
     st.session_state.train_idx, st.session_state.test_idx = repartition_dataset(
         num_samples, test_ratio
@@ -521,7 +519,6 @@ mcol2.metric("Training Samples", X_train.shape[0])
 mcol3.metric("Testing Samples", X_test.shape[0])
 
 if st.button("Initialize / Reset Model Architecture"):
-    # Actively re-shuffles and assigns new random train/test data partitions on click
     st.session_state.train_idx, st.session_state.test_idx = repartition_dataset(
         num_samples, test_ratio
     )
@@ -607,7 +604,8 @@ if selected_tab == "Data Correlation Matrix":
                 continue
             else:
                 text_label = f"{val:.2f}"
-                font_color = "white" if abs(val) >= 0.7 else "black"
+                # Follow regulation: values <= 0.7 down to -1.0 must have black font
+                font_color = "white" if val > 0.7 else "black"
 
             annotations.append(
                 dict(
