@@ -566,18 +566,15 @@ if selected_tab == "Data Correlation Matrix":
     if numeric_df.empty:
         numeric_df = df_raw.apply(pd.to_numeric, errors="coerce")
 
-    # Detect zero-variance columns
     stds = numeric_df.std()
     zero_var_cols = stds[stds == 0].index.tolist()
 
     corr = numeric_df.corr()
     
-    # Force zero-variance rows and columns explicitly to NaN
     for col in zero_var_cols:
         corr.loc[col, :] = np.nan
         corr.loc[:, col] = np.nan
 
-    # Mask upper triangle (keeping the diagonal intact)
     mask = np.triu(np.ones_like(corr, dtype=bool), k=1)
     corr_masked = corr.copy()
     corr_masked[mask] = np.nan
@@ -604,9 +601,7 @@ if selected_tab == "Data Correlation Matrix":
         for j, col_name in enumerate(corr.columns):
             val = corr_masked.iloc[i, j]
             
-            # Explicit handling for zero-variance cells vs normal cells
             if row_name in zero_var_cols or col_name in zero_var_cols:
-                # Only annotate valid lower triangle / diagonal positions for zero-var columns
                 if j <= i:
                     text_label = "NaN"
                     font_color = "#555555"
@@ -616,7 +611,8 @@ if selected_tab == "Data Correlation Matrix":
                 continue
             else:
                 text_label = f"{val:.2f}"
-                font_color = "white" if abs(val) >= 0.5 else "black"
+                # Values between 0.7 and 1.0 (or -0.7 and -1.0) use white text for contrast, others use black
+                font_color = "white" if abs(val) >= 0.7 else "black"
 
             annotations.append(
                 dict(
