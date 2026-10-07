@@ -27,6 +27,53 @@ st.caption(
 )
 
 # =====================================================================
+# TAB-STYLE SELECTOR (persists across reruns, unlike st.tabs)
+# =====================================================================
+TAB_CSS = """
+<style>
+div[class*="st-key-tabbar_"] div[role="radiogroup"] {
+    gap: 0 !important;
+    border-bottom: 1px solid rgba(128,128,128,0.35);
+    width: 100%;
+    flex-wrap: wrap;
+}
+div[class*="st-key-tabbar_"] div[role="radiogroup"] > label {
+    margin: 0 !important;
+    padding: 8px 18px 10px 18px !important;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+div[class*="st-key-tabbar_"] div[role="radiogroup"] > label > div:first-child {
+    display: none !important;   /* hide the radio circle */
+}
+div[class*="st-key-tabbar_"] div[role="radiogroup"] > label:hover {
+    color: #FF4B4B;
+}
+div[class*="st-key-tabbar_"] div[role="radiogroup"] > label:has(input:checked) {
+    border-bottom: 3px solid #FF4B4B;
+    color: #FF4B4B;
+    font-weight: 600;
+}
+</style>
+"""
+st.markdown(TAB_CSS, unsafe_allow_html=True)
+
+
+def tab_bar(options, key):
+    """Radio rendered as a tab strip. Selection is kept in session_state,
+    so button clicks / training reruns do not jump back to the first tab."""
+    with st.container(key=f"tabbar_{key}"):
+        return st.radio(
+            key,
+            options,
+            horizontal=True,
+            label_visibility="collapsed",
+            key=key,
+        )
+
+
+# =====================================================================
 # 0. DATASET SELECTION: GITHUB REPOSITORY OR USER UPLOAD
 # =====================================================================
 GITHUB_API_URL = "https://api.github.com/repos/iqbalshafiq96/Self-Work/contents/Deep%20Learning"
@@ -92,37 +139,13 @@ def load_and_preprocess_custom_csv(csv_bytes):
 
 
 st.write("### Dataset Selection")
-tab_github, tab_upload = st.tabs(["📂 GitHub Repository", "⬆ Upload My Own CSV"])
+source_mode = tab_bar(["📂 GitHub Repository", "⬆ Upload My Own CSV"], key="data_source_tab")
 
-with tab_github:
+if source_mode == "📂 GitHub Repository":
     available_csvs = fetch_csv_file_list()
     selected_csv_filename = st.selectbox(
         "Select CSV File from GitHub", available_csvs, label_visibility="collapsed"
     )
-
-with tab_upload:
-    st.caption(
-        "Required format: **Row 1** = tag names, **Row 2** = `Independent` (input) or `Dependent` (output) "
-        "for each column, **Column 1** = timestamp. Data starts from Row 3. "
-        "An uploaded file takes priority over the GitHub selection; remove it (✕) to switch back."
-    )
-    template_csv = (
-        "Timestamp,Input_A,Input_B,Output_Y\n"
-        ",Independent,Independent,Dependent\n"
-        "2026-01-01 00:00,1.0,2.0,3.0\n"
-    )
-    st.download_button(
-        "⬇ Download CSV Template", template_csv, file_name="NN_Template.csv", mime="text/csv"
-    )
-    uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
-
-# Uploaded file (if any) takes priority; otherwise use the GitHub selection
-if uploaded_file is not None:
-    source_mode = "Upload"
-    csv_bytes = uploaded_file.getvalue()
-    dataset_label = uploaded_file.name
-else:
-    source_mode = "GitHub"
     try:
         csv_bytes = fetch_github_csv_bytes(selected_csv_filename)
     except Exception:
@@ -134,6 +157,28 @@ else:
             st.error("Could not fetch the file from GitHub and no local fallback was found.")
             st.stop()
     dataset_label = selected_csv_filename
+    source_label = "GitHub"
+
+else:
+    st.caption(
+        "Required format: **Row 1** = tag names, **Row 2** = `Independent` (input) or `Dependent` (output) "
+        "for each column, **Column 1** = timestamp. Data starts from Row 3."
+    )
+    template_csv = (
+        "Timestamp,Input_A,Input_B,Output_Y\n"
+        ",Independent,Independent,Dependent\n"
+        "2026-01-01 00:00,1.0,2.0,3.0\n"
+    )
+    st.download_button(
+        "⬇ Download CSV Template", template_csv, file_name="NN_Template.csv", mime="text/csv"
+    )
+    uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"], key="csv_uploader")
+    if uploaded_file is None:
+        st.info("Upload a CSV file to continue.")
+        st.stop()
+    csv_bytes = uploaded_file.getvalue()
+    dataset_label = uploaded_file.name
+    source_label = "Upload"
 
 # Reset the model and split whenever the dataset content changes
 dataset_key = f"{source_mode}::{dataset_label}::{hashlib.md5(csv_bytes).hexdigest()}"
@@ -155,7 +200,7 @@ try:
         scaler_Y,
     ) = load_and_preprocess_custom_csv(csv_bytes)
     st.success(
-        f"Loaded '{dataset_label}' ({source_mode}) successfully! "
+        f"Loaded '{dataset_label}' ({source_label}) successfully! "
         f"{len(df_raw)} rows | {len(input_names)} inputs | {len(output_names)} outputs"
     )
 except Exception as e:
@@ -804,13 +849,15 @@ st.caption(
 # =====================================================================
 st.divider()
 
-tab_corr, tab_train, tab_test = st.tabs(
-    ["📊 Data Correlation Matrix", "🏋 Batch Training Phase", "✅ Model Testing & Verification"]
-)
+TAB_CORR = "📊 Data Correlation Matrix"
+TAB_TRAIN = "🏋 Batch Training Phase"
+TAB_TEST = "✅ Model Testing & Verification"
+
+selected_tab = tab_bar([TAB_CORR, TAB_TRAIN, TAB_TEST], key="workflow_tab")
 
 
 # --- TAB 0: CORRELATION MATRIX ---
-with tab_corr:
+if selected_tab == TAB_CORR:
     st.write("### Feature Correlation Matrix (Lower Triangle)")
     st.caption(
         "The correlation matrix shows how strongly each feature moves in relation to another, on a scale from -1 to +1. "
@@ -897,7 +944,7 @@ with tab_corr:
 
 
 # --- TAB 1: BATCH TRAINING ---
-with tab_train:
+elif selected_tab == TAB_TRAIN:
     st.markdown("Train the model parameters using normalized training inputs (`X_train`, `Y_train`).")
 
     tcol1, tcol2 = st.columns(2)
@@ -955,7 +1002,7 @@ with tab_train:
 
 
 # --- TAB 2: MODEL TESTING & VERIFICATION ---
-with tab_test:
+elif selected_tab == TAB_TEST:
     st.markdown("Evaluate actual vs. predicted performance across output variables (Inverted back to engineering units).")
 
     if st.button("Evaluate Model on Test Set"):
