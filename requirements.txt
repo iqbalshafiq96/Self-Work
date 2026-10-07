@@ -17,3 +17,5 @@ sympy
 langchain-core
 langchain-google-genai
 pydantic
+onnx
+openpyxl
