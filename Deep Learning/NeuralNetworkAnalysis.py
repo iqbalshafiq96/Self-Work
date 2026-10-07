@@ -16,6 +16,13 @@ import io
 st.set_page_config(page_title="Neural Network Configurator", layout="wide")
 st.title("Develop, Train & Deploy Neural Network")
 st.caption("Developed by Iqbal SHERPA 20260824. Contact me for further information @iqbalshafiq96@gmail.com")
+st.caption(
+    "A neural network is a machine-learning algorithm that learns to predict process outputs from input variables. "
+    "Its architecture consists of interconnected nodes (neurons), each holding a weight and bias, arranged in hidden layers "
+    "between the input and output. During training, data flows forward through the network to generate a prediction "
+    "(forward propagation), the prediction error is measured, and that error is sent backward to fine-tune the weights "
+    "and biases (backpropagation). Repeating this cycle over many epochs steadily improves prediction accuracy."
+)
 
 # =====================================================================
 # 0. GITHUB DIRECTORY CSV DISCOVERY & PARSING
@@ -728,6 +735,13 @@ if st.button("Initialize / Reset Model Architecture"):
     st.success("New PyTorch Model initialized with freshly randomized Train/Test sets!")
     st.rerun()
 
+st.caption(
+    "Initialize the model before training. This builds the network from your selected architecture and randomly "
+    "splits the dataset into training and test sets based on the Test Set Split Ratio, so the model learns from one "
+    "portion and is verified on unseen data. Re-initialize whenever you change the hidden layers, transfer function, "
+    "or split ratio."
+)
+
 
 # =====================================================================
 # 4. WORKFLOW TABS
@@ -753,6 +767,13 @@ selected_tab = st.radio(
 # --- TAB 0: CORRELATION MATRIX ---
 if selected_tab == "Data Correlation Matrix":
     st.write("### Feature Correlation Matrix (Lower Triangle)")
+    st.caption(
+        "The correlation matrix shows how strongly each feature moves in relation to another, on a scale from -1 to +1. "
+        "Values near +1 indicate a strong positive correlation (both rise together), values near -1 indicate a strong "
+        "negative correlation (one rises as the other falls), and values near 0 indicate little or no linear relationship. "
+        "Highly correlated inputs may carry overlapping information, while inputs strongly correlated with the outputs "
+        "are good predictors."
+    )
 
     numeric_df = df_raw.select_dtypes(include=[np.number])
     if numeric_df.empty:
