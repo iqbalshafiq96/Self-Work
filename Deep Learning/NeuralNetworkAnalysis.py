@@ -92,18 +92,37 @@ def load_and_preprocess_custom_csv(csv_bytes):
 
 
 st.write("### Dataset Selection")
-source_mode = st.radio(
-    "Data Source",
-    ["GitHub Repository", "Upload My Own CSV"],
-    horizontal=True,
-    label_visibility="collapsed",
-)
+tab_github, tab_upload = st.tabs(["📂 GitHub Repository", "⬆ Upload My Own CSV"])
 
-if source_mode == "GitHub Repository":
+with tab_github:
     available_csvs = fetch_csv_file_list()
     selected_csv_filename = st.selectbox(
         "Select CSV File from GitHub", available_csvs, label_visibility="collapsed"
     )
+
+with tab_upload:
+    st.caption(
+        "Required format: **Row 1** = tag names, **Row 2** = `Independent` (input) or `Dependent` (output) "
+        "for each column, **Column 1** = timestamp. Data starts from Row 3. "
+        "An uploaded file takes priority over the GitHub selection; remove it (✕) to switch back."
+    )
+    template_csv = (
+        "Timestamp,Input_A,Input_B,Output_Y\n"
+        ",Independent,Independent,Dependent\n"
+        "2026-01-01 00:00,1.0,2.0,3.0\n"
+    )
+    st.download_button(
+        "⬇ Download CSV Template", template_csv, file_name="NN_Template.csv", mime="text/csv"
+    )
+    uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
+
+# Uploaded file (if any) takes priority; otherwise use the GitHub selection
+if uploaded_file is not None:
+    source_mode = "Upload"
+    csv_bytes = uploaded_file.getvalue()
+    dataset_label = uploaded_file.name
+else:
+    source_mode = "GitHub"
     try:
         csv_bytes = fetch_github_csv_bytes(selected_csv_filename)
     except Exception:
@@ -115,27 +134,6 @@ if source_mode == "GitHub Repository":
             st.error("Could not fetch the file from GitHub and no local fallback was found.")
             st.stop()
     dataset_label = selected_csv_filename
-
-else:
-    st.caption(
-        "Required format: **Row 1** = tag names, **Row 2** = `Independent` (input) or `Dependent` (output) "
-        "for each column, **Column 1** = timestamp. Data starts from Row 3."
-    )
-    template_csv = (
-        "Timestamp,Input_A,Input_B,Output_Y\n"
-        ",Independent,Independent,Dependent\n"
-        "2026-01-01 00:00,1.0,2.0,3.0\n"
-    )
-    st.download_button(
-        "⬇ Download CSV Template", template_csv, file_name="NN_Template.csv", mime="text/csv"
-    )
-
-    uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
-    if uploaded_file is None:
-        st.info("Upload a CSV file to continue.")
-        st.stop()
-    csv_bytes = uploaded_file.getvalue()
-    dataset_label = uploaded_file.name
 
 # Reset the model and split whenever the dataset content changes
 dataset_key = f"{source_mode}::{dataset_label}::{hashlib.md5(csv_bytes).hexdigest()}"
@@ -157,7 +155,7 @@ try:
         scaler_Y,
     ) = load_and_preprocess_custom_csv(csv_bytes)
     st.success(
-        f"Loaded '{dataset_label}' successfully! "
+        f"Loaded '{dataset_label}' ({source_mode}) successfully! "
         f"{len(df_raw)} rows | {len(input_names)} inputs | {len(output_names)} outputs"
     )
 except Exception as e:
@@ -744,8 +742,6 @@ if "net" not in st.session_state:
     st.session_state.net = None
 if "loss_history" not in st.session_state:
     st.session_state.loss_history = []
-if "active_tab" not in st.session_state:
-    st.session_state.active_tab = "Data Correlation Matrix"
 
 num_samples = len(X_norm)
 
@@ -789,8 +785,11 @@ if st.button("Initialize / Reset Model Architecture"):
         num_inputs, hidden1_size, hidden2_size, hidden3_size, global_activation, num_outputs
     )
     st.session_state.loss_history = []
-    st.success("New PyTorch Model initialized with freshly randomized Train/Test sets!")
+    st.session_state.show_init_msg = True  # survive the rerun below
     st.rerun()
+
+if st.session_state.pop("show_init_msg", False):
+    st.success("New PyTorch Model initialized with freshly randomized Train/Test sets!")
 
 st.caption(
     "Initialize the model before training. This builds the network from your selected architecture and randomly "
@@ -805,23 +804,13 @@ st.caption(
 # =====================================================================
 st.divider()
 
-tab_options = [
-    "Data Correlation Matrix",
-    "Batch Training Phase",
-    "Model Testing & Verification",
-]
-
-selected_tab = st.radio(
-    "Workflow Navigation",
-    options=tab_options,
-    horizontal=True,
-    label_visibility="collapsed",
-    key="active_tab",
+tab_corr, tab_train, tab_test = st.tabs(
+    ["📊 Data Correlation Matrix", "🏋 Batch Training Phase", "✅ Model Testing & Verification"]
 )
 
 
 # --- TAB 0: CORRELATION MATRIX ---
-if selected_tab == "Data Correlation Matrix":
+with tab_corr:
     st.write("### Feature Correlation Matrix (Lower Triangle)")
     st.caption(
         "The correlation matrix shows how strongly each feature moves in relation to another, on a scale from -1 to +1. "
@@ -908,7 +897,7 @@ if selected_tab == "Data Correlation Matrix":
 
 
 # --- TAB 1: BATCH TRAINING ---
-elif selected_tab == "Batch Training Phase":
+with tab_train:
     st.markdown("Train the model parameters using normalized training inputs (`X_train`, `Y_train`).")
 
     tcol1, tcol2 = st.columns(2)
@@ -966,7 +955,7 @@ elif selected_tab == "Batch Training Phase":
 
 
 # --- TAB 2: MODEL TESTING & VERIFICATION ---
-elif selected_tab == "Model Testing & Verification":
+with tab_test:
     st.markdown("Evaluate actual vs. predicted performance across output variables (Inverted back to engineering units).")
 
     if st.button("Evaluate Model on Test Set"):
