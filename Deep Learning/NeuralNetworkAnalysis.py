@@ -14,8 +14,15 @@ import requests
 import io
 
 st.set_page_config(page_title="Neural Network Configurator", layout="wide")
-st.title("Process Neural Network Modeling")
+st.title("Develop, Train & Deploy Neural Network")
 st.caption("Developed by Iqbal SHERPA 20260824. Contact me for further information @iqbalshafiq96@gmail.com")
+st.caption(
+    "A neural network is a machine-learning algorithm that learns to predict process outputs from input variables. "
+    "Its architecture consists of interconnected nodes (neurons), each holding a weight and bias, arranged in hidden layers "
+    "between the input and output. During training, data flows forward through the network to generate a prediction "
+    "(forward propagation), the prediction error is measured, and that error is sent backward to fine-tune the weights "
+    "and biases (backpropagation). Repeating this cycle over many epochs steadily improves prediction accuracy."
+)
 
 # =====================================================================
 # 0. GITHUB DIRECTORY CSV DISCOVERY & PARSING
@@ -119,9 +126,9 @@ st.subheader("Interactive Architecture Diagram")
 
 col_arch1, col_arch2, col_arch3, col_arch4 = st.columns(4)
 with col_arch1:
-    hidden1_size = st.slider("Layer 1 Neurons", 0, 50, 12)
+    hidden1_size = st.slider("Layer 1 Neurons", 0, 50, 6)
 with col_arch2:
-    hidden2_size = st.slider("Layer 2 Neurons", 0, 50, 6)
+    hidden2_size = st.slider("Layer 2 Neurons", 0, 50, 3)
 with col_arch3:
     hidden3_size = st.slider("Layer 3 Neurons", 0, 50, 0)
 with col_arch4:
@@ -139,7 +146,7 @@ st.caption(f"ℹ {activation_descriptions[global_activation]}")
 
 
 # =====================================================================
-# 2. AUTOSCALING PYVIS NETWORK DIAGRAM
+# 2. AUTOSCALING PYVIS NETWORK DIAGRAM  (Synaptic impulse animation)
 # =====================================================================
 def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
     active_h = [h for h in [h1, h2, h3] if h > 0]
@@ -154,26 +161,27 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
         directed=True,
     )
 
+    # NOTE: edges are straight (smooth disabled) so impulses ride exactly on the synapse lines
     net.set_options(
         """
     {
       "nodes": {
         "borderWidth": 2,
         "size": 28,
-        "font": { 
-          "size": 15, 
-          "face": "Segoe UI, Roboto, Helvetica, Arial, sans-serif", 
-          "color": "#FFFFFF", 
-          "bold": true 
+        "font": {
+          "size": 15,
+          "face": "Segoe UI, Roboto, Helvetica, Arial, sans-serif",
+          "color": "#FFFFFF",
+          "bold": true
         }
       },
       "edges": {
-        "color": { "color": "rgba(200, 200, 200, 0.22)", "highlight": "#F1C40F" },
-        "smooth": { "type": "continuous" },
-        "arrows": { "to": { "enabled": true, "scaleFactor": 0.4 } }
+        "color": { "color": "rgba(170, 190, 210, 0.14)", "highlight": "#F1C40F" },
+        "smooth": { "enabled": false },
+        "arrows": { "to": { "enabled": true, "scaleFactor": 0.35 } }
       },
-      "interaction": { 
-        "zoomView": false, 
+      "interaction": {
+        "zoomView": false,
         "dragView": true,
         "hover": true
       },
@@ -306,9 +314,10 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
     <script type="text/javascript">
     document.addEventListener("DOMContentLoaded", function() {
         var checkExist = setInterval(function() {
-            if (typeof network !== 'undefined') {
+            if (typeof network !== 'undefined' && network && typeof nodes !== 'undefined' && typeof edges !== 'undefined') {
                 clearInterval(checkExist);
 
+                // ---------------- Zoom controls (unchanged) ----------------
                 var zoomSlider = document.getElementById("zoomSlider");
                 var zoomValLabel = document.getElementById("zoomValue");
                 var resetBtn = document.getElementById("resetZoomBtn");
@@ -335,100 +344,297 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                 zoomSlider.addEventListener("input", function() {
                     var val = parseFloat(this.value);
                     zoomValLabel.innerText = val + "%";
-                    var scaleFactor = val / 100.0;
-                    network.moveTo({ scale: scaleFactor });
+                    network.moveTo({ scale: val / 100.0 });
                 });
 
                 resetBtn.addEventListener("click", function() {
                     fitDiagramToScreen();
                 });
 
-                var particles = [];
-                var edgeList = edges.get();
-                var nodeList = nodes.get();
+                // =========================================================
+                // SYNAPTIC IMPULSE ENGINE
+                // Input neurons fire -> electric impulses travel along
+                // synapses -> receiving neuron flashes and fires onward
+                // -> ... -> output neurons light up gold.
+                // =========================================================
+                var CFG = {
+                    waveInterval: 2400,  // ms between new volleys from the input layer
+                    inputStagger: 220,   // ms random stagger between input neurons in a volley
+                    travelTime: 700,     // ms for one impulse to cross a synapse
+                    synapseDelay: 90,    // ms delay before a fired neuron releases impulses
+                    maxFanout: 5,        // max synapses a neuron fires along per spike
+                    tailFrac: 0.30,      // length of glowing tail (fraction of synapse)
+                    jitter: 3.0,         // lightning jaggedness (px)
+                    refractory: 450,     // ms a neuron rests before it can fire again
+                    flashDecay: 320,     // ms for the neuron flash to fade
+                    shockwaveTime: 650,  // ms for the expanding ring
+                    maxImpulses: 350     // safety cap for performance
+                };
 
-                var particleCount = Math.min(edgeList.length, 35);
-                for (var i = 0; i < particleCount; i++) {
-                    var edge = edgeList[i % edgeList.length];
-                    particles.push({
-                        from: edge.from,
-                        to: edge.to,
-                        progress: Math.random(),
-                        speed: 0.002 + Math.random() * 0.004,
-                        sparklePhase: Math.random() * Math.PI * 2,
-                        sparkleSpeed: 0.05 + Math.random() * 0.1
+                var COL = {
+                    input:  [140, 200, 255],
+                    hidden: [ 90, 200, 255],
+                    output: [255, 195,  60]
+                };
+
+                // --- Build topology ---
+                var nodeList = nodes.get();
+                var edgeList = edges.get();
+                var nodeLayer = {};
+                var layers = [];
+                var maxLayer = 0;
+
+                nodeList.forEach(function(n) {
+                    var id = String(n.id);
+                    var L = parseInt(id.substring(1, id.indexOf('_')), 10) || 0;
+                    nodeLayer[id] = L;
+                    if (!layers[L]) layers[L] = [];
+                    layers[L].push(id);
+                    if (L > maxLayer) maxLayer = L;
+                });
+
+                var outgoing = {};
+                edgeList.forEach(function(e) {
+                    var f = String(e.from), t = String(e.to);
+                    if (!outgoing[f]) outgoing[f] = [];
+                    outgoing[f].push(t);
+                });
+
+                function colorOf(id) {
+                    var L = nodeLayer[id];
+                    if (L === 0) return COL.input;
+                    if (L === maxLayer) return COL.output;
+                    return COL.hidden;
+                }
+                function rgba(c, a) {
+                    return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + Math.max(0, Math.min(1, a)).toFixed(3) + ')';
+                }
+                function shuffle(arr) {
+                    for (var i = arr.length - 1; i > 0; i--) {
+                        var j = Math.floor(Math.random() * (i + 1));
+                        var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+                    }
+                    return arr;
+                }
+
+                // --- State ---
+                var lastFire = {};     // node id -> time of last spike
+                var scheduled = [];    // {id, t}: neurons queued to fire
+                var impulses = [];     // travelling action potentials
+                var lastWave = -1e9;
+                var lastFrame = performance.now();
+
+                function scheduleFire(id, t) {
+                    scheduled.push({ id: id, t: t });
+                }
+
+                function fireNode(id, now) {
+                    if (lastFire[id] !== undefined && now - lastFire[id] < CFG.refractory) return;
+                    lastFire[id] = now;
+
+                    var targets = outgoing[id];
+                    if (!targets || !targets.length) return;   // output neuron: just flashes
+
+                    var picks = shuffle(targets.slice()).slice(0, Math.min(CFG.maxFanout, targets.length));
+                    picks.forEach(function(to) {
+                        if (impulses.length >= CFG.maxImpulses) return;
+                        impulses.push({
+                            from: id,
+                            to: to,
+                            start: now + CFG.synapseDelay + Math.random() * 120,
+                            dur: CFG.travelTime * (0.85 + Math.random() * 0.3)
+                        });
                     });
                 }
 
-                var globalPhase = 0;
+                function launchWave(now) {
+                    var inputs = layers[0] || [];
+                    inputs.forEach(function(id) {
+                        // ~85% of inputs fire per volley for a natural, irregular look
+                        if (Math.random() < 0.85 || inputs.length <= 2) {
+                            scheduleFire(id, now + Math.random() * CFG.inputStagger);
+                        }
+                    });
+                }
 
+                // --- Per-frame update + render ---
                 network.on("afterDrawing", function(ctx) {
-                    globalPhase += 0.04;
+                    var now = performance.now();
 
-                    nodeList.forEach(function(node) {
-                        var pos = network.getPositions([node.id])[node.id];
-                        var box = network.getBoundingBox(node.id);
+                    // If tab was hidden for a while, restart cleanly instead of bursting
+                    if (now - lastFrame > 1000) {
+                        impulses = [];
+                        scheduled = [];
+                        lastWave = -1e9;
+                    }
+                    lastFrame = now;
 
-                        if (pos && box) {
-                            var actualRadius = (box.right - box.left) / 2;
-                            var beamColor = 'rgba(52, 152, 219, ';
-                            var localPhase = globalPhase;
+                    if (now - lastWave > CFG.waveInterval) {
+                        lastWave = now;
+                        launchWave(now);
+                    }
 
-                            if (node.id.startsWith('L0_')) {
-                                localPhase += 0.5;
-                                beamColor = 'rgba(93, 109, 126, ';
-                            } else if (node.id.includes('L3_') || node.id.includes('L2_') && !node.id.startsWith('L2_N')) {
-                                localPhase += 1.0;
-                                beamColor = 'rgba(243, 156, 18, ';
+                    // Process scheduled neuron firings
+                    var stillScheduled = [];
+                    scheduled.forEach(function(s) {
+                        if (now >= s.t) fireNode(s.id, now);
+                        else stillScheduled.push(s);
+                    });
+                    scheduled = stillScheduled;
+
+                    // Positions + radii (supports user dragging nodes)
+                    var pos = network.getPositions();
+                    var rad = {};
+                    nodeList.forEach(function(n) {
+                        var box = network.getBoundingBox(n.id);
+                        rad[n.id] = box ? (box.right - box.left) / 2 : 28;
+                    });
+
+                    ctx.save();
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+
+                    // ---------- 1. Impulses along synapses ----------
+                    var alive = [];
+                    var arrived = [];
+                    impulses.forEach(function(imp) {
+                        var p = (now - imp.start) / imp.dur;
+                        if (p < 0) { alive.push(imp); return; }
+                        if (p >= 1) {
+                            // Impulse reached the next neuron -> queue it to fire.
+                            // (Queued, not fired directly, so its new impulses are not
+                            //  wiped out when the impulses array is rebuilt below.)
+                            arrived.push(imp.to);
+                            return;
+                        }
+                        alive.push(imp);
+
+                        var a = pos[imp.from], b = pos[imp.to];
+                        if (!a || !b) return;
+
+                        var dx = b.x - a.x, dy = b.y - a.y;
+                        var len = Math.sqrt(dx * dx + dy * dy) || 1;
+                        var ux = dx / len, uy = dy / len;
+                        var nx = -uy, ny = ux;
+                        var rA = rad[imp.from] || 28, rB = rad[imp.to] || 28;
+                        var sx = a.x + ux * rA, sy = a.y + uy * rA;
+                        var span = Math.max(1, len - rA - rB);
+
+                        // slight acceleration as the signal leaves the soma
+                        var head = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+                        var tail = Math.max(0, head - CFG.tailFrac);
+                        var c = colorOf(imp.to);
+
+                        var hx = sx + ux * span * head, hy = sy + uy * span * head;
+                        var tx = sx + ux * span * tail, ty = sy + uy * span * tail;
+
+                        // charged synapse: faint glow from origin to the impulse head
+                        ctx.beginPath();
+                        ctx.moveTo(sx, sy);
+                        ctx.lineTo(hx, hy);
+                        ctx.strokeStyle = rgba(c, 0.10 * (1 - p));
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+
+                        // jagged lightning trail (re-randomised each frame = electric flicker)
+                        var segs = 9;
+                        var pts = [];
+                        for (var i = 0; i <= segs; i++) {
+                            var t = tail + (head - tail) * (i / segs);
+                            var px = sx + ux * span * t, py = sy + uy * span * t;
+                            if (i > 0 && i < segs) {
+                                var off = (Math.random() - 0.5) * 2 * CFG.jitter;
+                                px += nx * off; py += ny * off;
                             }
+                            pts.push([px, py]);
+                        }
 
-                            var pulseIntensity = 0.5 + 0.5 * Math.sin(localPhase);
-                            var strokeWidth = 1.5 + (pulseIntensity * 2.5);
-                            var alpha = 0.5 + (pulseIntensity * 0.5);
+                        var grad = ctx.createLinearGradient(tx, ty, hx, hy);
+                        grad.addColorStop(0, rgba(c, 0));
+                        grad.addColorStop(1, rgba(c, 0.55));
 
+                        // outer glow
+                        ctx.beginPath();
+                        ctx.moveTo(pts[0][0], pts[0][1]);
+                        for (var k = 1; k < pts.length; k++) ctx.lineTo(pts[k][0], pts[k][1]);
+                        ctx.strokeStyle = grad;
+                        ctx.lineWidth = 6;
+                        ctx.stroke();
+
+                        // bright core
+                        var gradCore = ctx.createLinearGradient(tx, ty, hx, hy);
+                        gradCore.addColorStop(0, 'rgba(255,255,255,0)');
+                        gradCore.addColorStop(1, 'rgba(255,255,255,0.95)');
+                        ctx.strokeStyle = gradCore;
+                        ctx.lineWidth = 1.6;
+                        ctx.stroke();
+
+                        // glowing spark at the impulse head
+                        var g = ctx.createRadialGradient(hx, hy, 0, hx, hy, 11);
+                        g.addColorStop(0, 'rgba(255,255,255,1)');
+                        g.addColorStop(0.35, rgba(c, 0.85));
+                        g.addColorStop(1, rgba(c, 0));
+                        ctx.beginPath();
+                        ctx.arc(hx, hy, 11, 0, 2 * Math.PI);
+                        ctx.fillStyle = g;
+                        ctx.fill();
+                    });
+                    impulses = alive;
+
+                    // Neurons hit by an impulse now fire onward to the next layer
+                    // (Layer 1 -> Layer 2 -> Layer 3 -> Output, whichever exist)
+                    arrived.forEach(function(id) { fireNode(id, now); });
+
+                    // ---------- 2. Neuron firing flashes ----------
+                    var tSec = now / 1000;
+                    nodeList.forEach(function(n) {
+                        var id = n.id;
+                        var p = pos[id];
+                        if (!p) return;
+                        var r = rad[id] || 28;
+                        var c = colorOf(id);
+                        var since = (lastFire[id] !== undefined) ? now - lastFire[id] : 1e9;
+
+                        if (since < CFG.shockwaveTime) {
+                            var I = Math.exp(-since / CFG.flashDecay);
+
+                            // soma glow
+                            var g = ctx.createRadialGradient(p.x, p.y, r * 0.2, p.x, p.y, r * 1.9);
+                            g.addColorStop(0, rgba(c, 0.55 * I));
+                            g.addColorStop(0.55, rgba(c, 0.30 * I));
+                            g.addColorStop(1, rgba(c, 0));
                             ctx.beginPath();
-                            ctx.arc(pos.x, pos.y, actualRadius, 0, 2 * Math.PI, false);
-                            ctx.strokeStyle = beamColor + alpha + ')';
-                            ctx.lineWidth = strokeWidth;
-                            ctx.shadowColor = beamColor + '1.0)';
-                            ctx.shadowBlur = 6 * pulseIntensity;
+                            ctx.arc(p.x, p.y, r * 1.9, 0, 2 * Math.PI);
+                            ctx.fillStyle = g;
+                            ctx.fill();
+
+                            // bright membrane ring
+                            ctx.beginPath();
+                            ctx.arc(p.x, p.y, r, 0, 2 * Math.PI);
+                            ctx.strokeStyle = rgba([255, 255, 255], 0.9 * I);
+                            ctx.lineWidth = 1.5 + 3.5 * I;
                             ctx.stroke();
-                            ctx.shadowBlur = 0;
+
+                            // expanding shockwave
+                            var w = since / CFG.shockwaveTime;
+                            ctx.beginPath();
+                            ctx.arc(p.x, p.y, r + w * r * 1.3, 0, 2 * Math.PI);
+                            ctx.strokeStyle = rgba(c, 0.6 * (1 - w));
+                            ctx.lineWidth = 2;
+                            ctx.stroke();
+                        } else {
+                            // resting potential: gentle breathing ring
+                            var breath = 0.5 + 0.5 * Math.sin(tSec * 2 + nodeLayer[id] * 0.8);
+                            ctx.beginPath();
+                            ctx.arc(p.x, p.y, r, 0, 2 * Math.PI);
+                            ctx.strokeStyle = rgba(c, 0.15 + 0.15 * breath);
+                            ctx.lineWidth = 1.5;
+                            ctx.stroke();
                         }
                     });
 
-                    particles.forEach(function(p) {
-                        var fromPos = network.getPositions([p.from])[p.from];
-                        var toPos = network.getPositions([p.to])[p.to];
-
-                        if (fromPos && toPos) {
-                            p.progress += p.speed;
-                            p.sparklePhase += p.sparkleSpeed;
-
-                            if (p.progress >= 0.95) {
-                                p.progress = 0.05;
-                                var randEdge = edgeList[Math.floor(Math.random() * edgeList.length)];
-                                p.from = randEdge.from;
-                                p.to = randEdge.to;
-                            }
-
-                            var currX = fromPos.x + (toPos.x - fromPos.x) * p.progress;
-                            var currY = fromPos.y + (toPos.y - fromPos.y) * p.progress;
-
-                            var sparkle = 0.4 + 0.6 * Math.sin(p.sparklePhase);
-                            var opacity = (0.3 + 0.7 * sparkle).toFixed(2);
-
-                            ctx.beginPath();
-                            ctx.arc(currX, currY, 3, 0, 2 * Math.PI, false);
-                            ctx.fillStyle = 'rgba(255, 215, 0, ' + (opacity * 0.3) + ')';
-                            ctx.fill();
-
-                            ctx.beginPath();
-                            ctx.arc(currX, currY, 1.5, 0, 2 * Math.PI, false);
-                            ctx.fillStyle = 'rgba(255, 223, 0, ' + opacity + ')';
-                            ctx.fill();
-                        }
-                    });
+                    ctx.restore();
                 });
 
                 function animate() {
@@ -529,6 +735,13 @@ if st.button("Initialize / Reset Model Architecture"):
     st.success("New PyTorch Model initialized with freshly randomized Train/Test sets!")
     st.rerun()
 
+st.caption(
+    "Initialize the model before training. This builds the network from your selected architecture and randomly "
+    "splits the dataset into training and test sets based on the Test Set Split Ratio, so the model learns from one "
+    "portion and is verified on unseen data. Re-initialize whenever you change the hidden layers, transfer function, "
+    "or split ratio."
+)
+
 
 # =====================================================================
 # 4. WORKFLOW TABS
@@ -554,6 +767,13 @@ selected_tab = st.radio(
 # --- TAB 0: CORRELATION MATRIX ---
 if selected_tab == "Data Correlation Matrix":
     st.write("### Feature Correlation Matrix (Lower Triangle)")
+    st.caption(
+        "The correlation matrix shows how strongly each feature moves in relation to another, on a scale from -1 to +1. "
+        "Values near +1 indicate a strong positive correlation (both rise together), values near -1 indicate a strong "
+        "negative correlation (one rises as the other falls), and values near 0 indicate little or no linear relationship. "
+        "Highly correlated inputs may carry overlapping information, while inputs strongly correlated with the outputs "
+        "are good predictors."
+    )
 
     numeric_df = df_raw.select_dtypes(include=[np.number])
     if numeric_df.empty:
@@ -563,7 +783,7 @@ if selected_tab == "Data Correlation Matrix":
     zero_var_cols = stds[stds == 0].index.tolist()
 
     corr = numeric_df.corr()
-    
+
     for col in zero_var_cols:
         corr.loc[col, :] = np.nan
         corr.loc[:, col] = np.nan
@@ -593,7 +813,7 @@ if selected_tab == "Data Correlation Matrix":
     for i, row_name in enumerate(corr.index):
         for j, col_name in enumerate(corr.columns):
             val = corr_masked.iloc[i, j]
-            
+
             if row_name in zero_var_cols or col_name in zero_var_cols:
                 if j <= i:
                     text_label = "NaN"
@@ -634,7 +854,7 @@ if selected_tab == "Data Correlation Matrix":
 # --- TAB 1: BATCH TRAINING ---
 elif selected_tab == "Batch Training Phase":
     st.markdown("Train the model parameters using normalized training inputs (`X_train`, `Y_train`).")
-    
+
     tcol1, tcol2 = st.columns(2)
     with tcol1:
         lr = st.number_input(
@@ -672,7 +892,7 @@ elif selected_tab == "Batch Training Phase":
                 optimizer.zero_grad()
                 output = net(X_train)
                 loss = criterion(output, Y_train)
-                
+
                 if torch.isnan(loss):
                     st.error("Training encountered NaN loss. Try reducing learning rate or changing activation.")
                     break
