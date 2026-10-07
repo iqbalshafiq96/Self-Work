@@ -1,3 +1,6 @@
+import hashlib
+import io
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -11,7 +14,6 @@ import streamlit.components.v1 as components
 from pyvis.network import Network
 import plotly.express as px
 import requests
-import io
 
 st.set_page_config(page_title="Neural Network Configurator", layout="wide")
 st.title("Develop, Train & Deploy Neural Network")
@@ -25,58 +27,48 @@ st.caption(
 )
 
 # =====================================================================
-# 0. GITHUB DIRECTORY CSV DISCOVERY & PARSING
+# 0. DATASET SELECTION: GITHUB REPOSITORY OR USER UPLOAD
 # =====================================================================
 GITHUB_API_URL = "https://api.github.com/repos/iqbalshafiq96/Self-Work/contents/Deep%20Learning"
+GITHUB_RAW_BASE = "https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Deep%20Learning"
+
 
 @st.cache_data(ttl=600)
 def fetch_csv_file_list():
     try:
-        response = requests.get(GITHUB_API_URL)
+        response = requests.get(GITHUB_API_URL, timeout=15)
         if response.status_code == 200:
             files = response.json()
             csv_files = [f["name"] for f in files if f["name"].lower().endswith(".csv")]
-            return csv_files
+            if csv_files:
+                return csv_files
     except Exception:
         pass
     return ["SMR_Data.csv"]
 
-available_csvs = fetch_csv_file_list()
 
-st.write("### Dataset Selection")
-selected_csv_filename = st.selectbox("Select CSV File from GitHub", available_csvs, label_visibility="collapsed")
+@st.cache_data(ttl=600)
+def fetch_github_csv_bytes(filename):
+    url = f"{GITHUB_RAW_BASE}/{filename.replace(' ', '%20')}"
+    r = requests.get(url, timeout=15)
+    r.raise_for_status()
+    return r.content
 
-# Auto-detect if user switched CSV file and reset session states
-if "last_selected_csv" not in st.session_state or st.session_state.last_selected_csv != selected_csv_filename:
-    st.session_state.last_selected_csv = selected_csv_filename
-    st.session_state.net = None
-    st.session_state.loss_history = []
-    if "train_idx" in st.session_state:
-        del st.session_state.train_idx
-    if "test_idx" in st.session_state:
-        del st.session_state.test_idx
-
-encoded_filename = selected_csv_filename.replace(" ", "%20")
-GITHUB_CSV_URL = f"https://raw.githubusercontent.com/iqbalshafiq96/Self-Work/main/Deep%20Learning/{encoded_filename}"
 
 @st.cache_data
-def load_and_preprocess_custom_csv(url_or_path):
-    try:
-        preview_df = pd.read_csv(url_or_path, nrows=3, header=None)
-    except Exception:
-        preview_df = pd.read_csv("SMR_Data.csv", nrows=3, header=None)
+def load_and_preprocess_custom_csv(csv_bytes):
+    # Row 1 = tag names, Row 2 = Independent/Dependent, Column 0 = timestamp
+    preview_df = pd.read_csv(io.BytesIO(csv_bytes), nrows=2, header=None)
+    col_names = [str(c).strip() for c in preview_df.iloc[0].values[1:]]
+    col_types = preview_df.iloc[1].values[1:]
 
-    col_names = preview_df.iloc[0].values[1:]  # Skip timestamp column (index 0)
-    col_types = preview_df.iloc[1].values[1:]  # 'Independent' or 'Dependent'
-
-    try:
-        full_df = pd.read_csv(url_or_path, header=None, skiprows=2)
-    except Exception:
-        full_df = pd.read_csv("SMR_Data.csv", header=None, skiprows=2)
-
+    full_df = pd.read_csv(io.BytesIO(csv_bytes), header=None, skiprows=2)
     data_df = full_df.iloc[:, 1:].copy()
     data_df.columns = col_names
     data_df = data_df.apply(pd.to_numeric, errors="coerce").dropna()
+
+    if data_df.empty:
+        raise ValueError("No valid numeric rows found below the two header rows.")
 
     input_names = [col_names[i] for i, t in enumerate(col_types) if str(t).strip().lower() == "independent"]
     output_names = [col_names[i] for i, t in enumerate(col_types) if str(t).strip().lower() == "dependent"]
@@ -85,19 +77,74 @@ def load_and_preprocess_custom_csv(url_or_path):
         input_names = list(data_df.columns[:3])
         output_names = list(data_df.columns[3:7])
 
-    X_raw = data_df[input_names].values
-    Y_raw = data_df[output_names].values
+    if not input_names or not output_names:
+        raise ValueError("Could not identify Independent (input) and Dependent (output) columns.")
 
-    X_raw = np.nan_to_num(X_raw, nan=0.0, posinf=0.0, neginf=0.0)
-    Y_raw = np.nan_to_num(Y_raw, nan=0.0, posinf=0.0, neginf=0.0)
+    X_raw = np.nan_to_num(data_df[input_names].values, nan=0.0, posinf=0.0, neginf=0.0)
+    Y_raw = np.nan_to_num(data_df[output_names].values, nan=0.0, posinf=0.0, neginf=0.0)
 
     scaler_X = StandardScaler()
     X_scaled = scaler_X.fit_transform(X_raw)
-
     scaler_Y = StandardScaler()
     Y_scaled = scaler_Y.fit_transform(Y_raw)
 
     return data_df, input_names, output_names, X_scaled, Y_scaled, scaler_X, scaler_Y
+
+
+st.write("### Dataset Selection")
+source_mode = st.radio(
+    "Data Source",
+    ["GitHub Repository", "Upload My Own CSV"],
+    horizontal=True,
+    label_visibility="collapsed",
+)
+
+if source_mode == "GitHub Repository":
+    available_csvs = fetch_csv_file_list()
+    selected_csv_filename = st.selectbox(
+        "Select CSV File from GitHub", available_csvs, label_visibility="collapsed"
+    )
+    try:
+        csv_bytes = fetch_github_csv_bytes(selected_csv_filename)
+    except Exception:
+        try:
+            with open("SMR_Data.csv", "rb") as f:
+                csv_bytes = f.read()
+            st.warning("GitHub unreachable. Loaded local fallback 'SMR_Data.csv'.")
+        except FileNotFoundError:
+            st.error("Could not fetch the file from GitHub and no local fallback was found.")
+            st.stop()
+    dataset_label = selected_csv_filename
+
+else:
+    st.caption(
+        "Required format: **Row 1** = tag names, **Row 2** = `Independent` (input) or `Dependent` (output) "
+        "for each column, **Column 1** = timestamp. Data starts from Row 3."
+    )
+    template_csv = (
+        "Timestamp,Input_A,Input_B,Output_Y\n"
+        ",Independent,Independent,Dependent\n"
+        "2026-01-01 00:00,1.0,2.0,3.0\n"
+    )
+    st.download_button(
+        "⬇ Download CSV Template", template_csv, file_name="NN_Template.csv", mime="text/csv"
+    )
+
+    uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
+    if uploaded_file is None:
+        st.info("Upload a CSV file to continue.")
+        st.stop()
+    csv_bytes = uploaded_file.getvalue()
+    dataset_label = uploaded_file.name
+
+# Reset the model and split whenever the dataset content changes
+dataset_key = f"{source_mode}::{dataset_label}::{hashlib.md5(csv_bytes).hexdigest()}"
+if st.session_state.get("dataset_key") != dataset_key:
+    st.session_state.dataset_key = dataset_key
+    st.session_state.net = None
+    st.session_state.loss_history = []
+    st.session_state.pop("train_idx", None)
+    st.session_state.pop("test_idx", None)
 
 try:
     (
@@ -108,10 +155,13 @@ try:
         Y_norm,
         scaler_X,
         scaler_Y,
-    ) = load_and_preprocess_custom_csv(GITHUB_CSV_URL)
-    st.success(f"Loaded '{selected_csv_filename}' successfully!")
+    ) = load_and_preprocess_custom_csv(csv_bytes)
+    st.success(
+        f"Loaded '{dataset_label}' successfully! "
+        f"{len(df_raw)} rows | {len(input_names)} inputs | {len(output_names)} outputs"
+    )
 except Exception as e:
-    st.error(f"Failed to load dataset: {e}. Please ensure valid format.")
+    st.error(f"Failed to load dataset: {e}. Please check the CSV format.")
     st.stop()
 
 num_inputs = len(input_names)
@@ -227,8 +277,8 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
             net.add_node(
                 nid,
                 label=label_text,
-                x=x_pos,
-                y=y_pos,
+                x=float(x_pos),
+                y=float(y_pos),
                 color={"background": bg, "border": border},
                 shape="circle",
             )
@@ -317,7 +367,7 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
             if (typeof network !== 'undefined' && network && typeof nodes !== 'undefined' && typeof edges !== 'undefined') {
                 clearInterval(checkExist);
 
-                // ---------------- Zoom controls (unchanged) ----------------
+                // ---------------- Zoom controls ----------------
                 var zoomSlider = document.getElementById("zoomSlider");
                 var zoomValLabel = document.getElementById("zoomValue");
                 var resetBtn = document.getElementById("resetZoomBtn");
@@ -652,6 +702,7 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
     html_content = html_content.replace("</body>", controls_and_animation_script)
     components.html(html_content, height=dynamic_height)
 
+
 render_pyvis_network(
     num_inputs, hidden1_size, hidden2_size, hidden3_size, num_outputs, global_activation
 )
@@ -698,14 +749,20 @@ if "active_tab" not in st.session_state:
 
 num_samples = len(X_norm)
 
+
 def repartition_dataset(total_samples, current_test_ratio):
     split_idx = int(total_samples * (1 - current_test_ratio))
     indices = torch.randperm(total_samples)  # Randomly shuffles row indices
     return indices[:split_idx], indices[split_idx:]
 
+
 test_ratio = st.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
 
-if "train_idx" not in st.session_state or "test_idx" not in st.session_state or len(st.session_state.train_idx) + len(st.session_state.test_idx) != num_samples:
+if (
+    "train_idx" not in st.session_state
+    or "test_idx" not in st.session_state
+    or len(st.session_state.train_idx) + len(st.session_state.test_idx) != num_samples
+):
     st.session_state.train_idx, st.session_state.test_idx = repartition_dataset(
         num_samples, test_ratio
     )
@@ -757,7 +814,6 @@ tab_options = [
 selected_tab = st.radio(
     "Workflow Navigation",
     options=tab_options,
-    index=tab_options.index(st.session_state.active_tab) if st.session_state.active_tab in tab_options else 0,
     horizontal=True,
     label_visibility="collapsed",
     key="active_tab",
@@ -798,7 +854,7 @@ if selected_tab == "Data Correlation Matrix":
         [0.4, "#C6DBEF"],
         [0.6, "#9ECAE1"],
         [0.8, "#3182BD"],
-        [1.0, "#08519C"]
+        [1.0, "#08519C"],
     ]
 
     fig = px.imshow(
@@ -806,7 +862,7 @@ if selected_tab == "Data Correlation Matrix":
         color_continuous_scale=royal_blue_colorscale,
         zmin=-1,
         zmax=1,
-        aspect="auto"
+        aspect="auto",
     )
 
     annotations = []
@@ -824,7 +880,7 @@ if selected_tab == "Data Correlation Matrix":
                 continue
             else:
                 text_label = f"{val:.2f}"
-                # Follow regulation: values <= 0.7 down to -1.0 must have black font
+                # Values <= 0.7 down to -1.0 use black font
                 font_color = "white" if val > 0.7 else "black"
 
             annotations.append(
@@ -833,7 +889,7 @@ if selected_tab == "Data Correlation Matrix":
                     y=row_name,
                     text=text_label,
                     font=dict(color=font_color, size=11, family="Segoe UI, sans-serif"),
-                    showarrow=False
+                    showarrow=False,
                 )
             )
 
@@ -843,7 +899,7 @@ if selected_tab == "Data Correlation Matrix":
         yaxis_title="",
         xaxis=dict(tickangle=-45),
         height=500,
-        margin=dict(l=50, r=50, t=50, b=50)
+        margin=dict(l=50, r=50, t=50, b=50),
     )
 
     c_left, c_mid, c_right = st.columns([0.1, 0.8, 0.1])
