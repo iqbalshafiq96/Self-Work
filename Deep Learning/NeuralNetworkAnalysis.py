@@ -14,7 +14,7 @@ import requests
 import io
 
 st.set_page_config(page_title="Neural Network Configurator", layout="wide")
-st.title("Develop, Train & Deploy Neural Network")
+st.title("Process Neural Network Modeling")
 st.caption("Developed by Iqbal SHERPA 20260824. Contact me for further information @iqbalshafiq96@gmail.com")
 
 # =====================================================================
@@ -119,9 +119,9 @@ st.subheader("Interactive Architecture Diagram")
 
 col_arch1, col_arch2, col_arch3, col_arch4 = st.columns(4)
 with col_arch1:
-    hidden1_size = st.slider("Layer 1 Neurons", 0, 50, 6)
+    hidden1_size = st.slider("Layer 1 Neurons", 0, 50, 12)
 with col_arch2:
-    hidden2_size = st.slider("Layer 2 Neurons", 0, 50, 3)
+    hidden2_size = st.slider("Layer 2 Neurons", 0, 50, 6)
 with col_arch3:
     hidden3_size = st.slider("Layer 3 Neurons", 0, 50, 0)
 with col_arch4:
