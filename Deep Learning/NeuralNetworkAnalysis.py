@@ -1,5 +1,8 @@
 import hashlib
 import io
+import json
+import zipfile
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -780,6 +783,7 @@ mcol3.metric("Testing Samples", X_test.shape[0])
 TAB_CORR = "📊 Data Correlation Matrix"
 TAB_TRAIN = "🏋 Batch Training Phase"
 TAB_TEST = "✅ Model Testing & Verification"
+TAB_EXPORT = "💾 Export Model"
 
 init_btn_col, init_msg_col = st.columns([0.3, 0.7])
 with init_btn_col:
@@ -796,6 +800,12 @@ if init_clicked:
         num_inputs, hidden1_size, hidden2_size, hidden3_size, global_activation, num_outputs
     )
     st.session_state.loss_history = []
+    st.session_state.net_config = {
+        "num_inputs": num_inputs,
+        "hidden_layers": [h for h in [hidden1_size, hidden2_size, hidden3_size] if h > 0],
+        "num_outputs": num_outputs,
+        "activation": global_activation,
+    }
     st.session_state.show_init_msg = True  # survive the rerun below
     # Reopen workflow on the Data Correlation Matrix tab
     st.session_state.workflow_tab = TAB_CORR
@@ -812,6 +822,196 @@ st.caption(
     "or split ratio."
 )
 
+
+
+
+# =====================================================================
+# 5. MODEL EXPORT HELPERS
+# =====================================================================
+ACT_KEY = {"Tanh (tansig)": "tanh", "Sigmoid (logsig)": "sigmoid", "ReLU": "relu"}
+
+
+def build_model_package(net, cfg):
+    """Collects architecture, weights, biases and scaler parameters in plain Python types."""
+    linear_layers = [m for m in net.network if isinstance(m, nn.Linear)]
+    layers = []
+    for i, lin in enumerate(linear_layers):
+        is_output = i == len(linear_layers) - 1
+        layers.append({
+            "name": "Output" if is_output else f"Hidden_{i+1}",
+            "in_features": lin.in_features,
+            "out_features": lin.out_features,
+            "activation": "linear" if is_output else ACT_KEY[cfg["activation"]],
+            "weights": lin.weight.detach().cpu().numpy().tolist(),
+            "bias": lin.bias.detach().cpu().numpy().tolist(),
+        })
+    return {
+        "model_name": "Neural Network Configurator Model",
+        "exported_on": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "dataset": dataset_label,
+        "architecture": {
+            "num_inputs": cfg["num_inputs"],
+            "hidden_layers": cfg["hidden_layers"],
+            "num_outputs": cfg["num_outputs"],
+            "activation": cfg["activation"],
+        },
+        "input_names": list(input_names),
+        "output_names": list(output_names),
+        "scaler_X": {"mean": scaler_X.mean_.tolist(), "scale": scaler_X.scale_.tolist()},
+        "scaler_Y": {"mean": scaler_Y.mean_.tolist(), "scale": scaler_Y.scale_.tolist()},
+        "final_training_loss": st.session_state.loss_history[-1] if st.session_state.loss_history else None,
+        "epochs_trained": len(st.session_state.loss_history),
+        "layers": layers,
+    }
+
+
+def export_pytorch_checkpoint(net, pkg):
+    buf = io.BytesIO()
+    torch.save(
+        {
+            "state_dict": net.state_dict(),
+            "architecture": pkg["architecture"],
+            "input_names": pkg["input_names"],
+            "output_names": pkg["output_names"],
+            "scaler_X": pkg["scaler_X"],
+            "scaler_Y": pkg["scaler_Y"],
+        },
+        buf,
+    )
+    return buf.getvalue()
+
+
+def export_torchscript(net, n_in):
+    net.eval()
+    traced = torch.jit.trace(net, torch.zeros(1, n_in, dtype=torch.float32))
+    buf = io.BytesIO()
+    torch.jit.save(traced, buf)
+    return buf.getvalue()
+
+
+def export_onnx(net, n_in, in_names, out_names):
+    net.eval()
+    buf = io.BytesIO()
+    dummy = torch.zeros(1, n_in, dtype=torch.float32)
+    kwargs = dict(
+        input_names=["inputs_scaled"],
+        output_names=["outputs_scaled"],
+        dynamic_axes={"inputs_scaled": {0: "batch"}, "outputs_scaled": {0: "batch"}},
+        opset_version=17,
+    )
+    try:
+        torch.onnx.export(net, dummy, buf, dynamo=False, **kwargs)  # newer PyTorch
+    except TypeError:
+        torch.onnx.export(net, dummy, buf, **kwargs)  # older PyTorch
+    return buf.getvalue()
+
+
+def export_excel(pkg):
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        arch = pkg["architecture"]
+        summary = pd.DataFrame(
+            {
+                "Item": ["Dataset", "Exported On", "Inputs", "Hidden Layers", "Outputs",
+                         "Activation", "Epochs Trained", "Final Training Loss (MSE)"],
+                "Value": [pkg["dataset"], pkg["exported_on"], arch["num_inputs"],
+                          str(arch["hidden_layers"]), arch["num_outputs"], arch["activation"],
+                          pkg["epochs_trained"], pkg["final_training_loss"]],
+            }
+        )
+        summary.to_excel(writer, sheet_name="Summary", index=False)
+
+        pd.DataFrame(
+            {"Input": pkg["input_names"], "Mean": pkg["scaler_X"]["mean"], "Std": pkg["scaler_X"]["scale"]}
+        ).to_excel(writer, sheet_name="Input_Scaler", index=False)
+        pd.DataFrame(
+            {"Output": pkg["output_names"], "Mean": pkg["scaler_Y"]["mean"], "Std": pkg["scaler_Y"]["scale"]}
+        ).to_excel(writer, sheet_name="Output_Scaler", index=False)
+
+        for li, layer in enumerate(pkg["layers"]):
+            if li == 0:
+                col_labels = pkg["input_names"]
+            else:
+                col_labels = [f"{pkg['layers'][li-1]['name']}_N{j+1}" for j in range(layer["in_features"])]
+            if layer["name"] == "Output":
+                row_labels = pkg["output_names"]
+            else:
+                row_labels = [f"{layer['name']}_N{j+1}" for j in range(layer["out_features"])]
+            df_w = pd.DataFrame(layer["weights"], index=row_labels, columns=col_labels)
+            df_w["Bias"] = layer["bias"]
+            df_w.to_excel(writer, sheet_name=f"{layer['name']}_W"[:31])
+    return buf.getvalue()
+
+
+def export_numpy_script(pkg):
+    header = (
+        '"""\n'
+        "Standalone inference script exported from the Neural Network Configurator.\n"
+        "Needs only NumPy. No PyTorch required.\n\n"
+        "Usage:\n"
+        "    from nn_inference import predict\n"
+        "    y = predict([[x1, x2, ...]])   # raw engineering units in, engineering units out\n"
+        '"""\n'
+        "import json\n"
+        "import numpy as np\n\n"
+    )
+    model_line = "MODEL = json.loads(" + repr(json.dumps(pkg)) + ")\n"
+    body = """
+_ACT = {
+    "tanh": np.tanh,
+    "sigmoid": lambda z: 1.0 / (1.0 + np.exp(-z)),
+    "relu": lambda z: np.maximum(z, 0.0),
+    "linear": lambda z: z,
+}
+
+INPUT_NAMES = MODEL["input_names"]
+OUTPUT_NAMES = MODEL["output_names"]
+
+
+def predict(X):
+    X = np.atleast_2d(np.asarray(X, dtype=float))
+    x_mean = np.array(MODEL["scaler_X"]["mean"]); x_std = np.array(MODEL["scaler_X"]["scale"])
+    y_mean = np.array(MODEL["scaler_Y"]["mean"]); y_std = np.array(MODEL["scaler_Y"]["scale"])
+
+    a = (X - x_mean) / x_std
+    for layer in MODEL["layers"]:
+        W = np.array(layer["weights"]); b = np.array(layer["bias"])
+        a = _ACT[layer["activation"]](a @ W.T + b)
+    return a * y_std + y_mean
+
+
+if __name__ == "__main__":
+    sample = np.array([MODEL["scaler_X"]["mean"]])
+    print("Inputs :", dict(zip(INPUT_NAMES, sample[0].round(4))))
+    print("Outputs:", dict(zip(OUTPUT_NAMES, predict(sample)[0].round(4))))
+"""
+    return header + model_line + body
+
+
+def export_zip_bundle(files: dict):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, data in files.items():
+            zf.writestr(name, data)
+    return buf.getvalue()
+
+
+EXPORT_README = """NEURAL NETWORK MODEL EXPORT
+===========================
+All models expect STANDARDIZED inputs and return STANDARDIZED outputs, except the
+NumPy script, which handles scaling for you.
+    x_scaled = (x - mean_X) / std_X
+    y        = y_scaled * std_Y + mean_Y
+Scaler values are in model.json and in the Excel workbook.
+
+model_checkpoint.pth : PyTorch checkpoint (state_dict + architecture + scalers).
+                       Rebuild ConfigurableNet with the saved architecture, then load_state_dict.
+model_torchscript.pt : torch.jit.load("model_torchscript.pt"). No class definition needed.
+model.onnx           : ONNX Runtime, MATLAB, C#, C++, and other ONNX-compatible tools.
+model.json           : Portable weights, biases and scalers for any language.
+model_weights.xlsx   : Readable weight/bias matrices per layer plus scalers.
+nn_inference.py      : NumPy-only predict() function. Raw units in and out.
+"""
 
 # =====================================================================
 # 4. WORKFLOW TABS
@@ -832,8 +1032,8 @@ def remember_tab(tab_name):
 # The container key only changes when Initialize is clicked. That forces the tabs
 # to rebuild and open on the default tab (Data Correlation Matrix).
 with st.container(key=f"workflow_tabs_{st.session_state.tabs_version}"):
-    tab_corr, tab_train, tab_test = st.tabs(
-        [TAB_CORR, TAB_TRAIN, TAB_TEST],
+    tab_corr, tab_train, tab_test, tab_export = st.tabs(
+        [TAB_CORR, TAB_TRAIN, TAB_TEST, TAB_EXPORT],
         default=st.session_state.workflow_tab,
     )
 
@@ -1022,3 +1222,112 @@ with tab_test:
                         / (np.sum((y_t - np.mean(y_t)) ** 2) + 1e-8)
                     )
                     st.caption(f"Variable R² Accuracy: {r2:.4f}")
+
+
+# --- TAB 3: EXPORT MODEL ---
+with tab_export:
+    st.write("### Export Trained Neural Network")
+    st.caption(
+        "Download the trained model in the format that suits where it will be used. "
+        "The PyTorch, TorchScript and ONNX models work on standardized values. Their scaler parameters "
+        "(mean and standard deviation) are included in the JSON, Excel and checkpoint files. "
+        "The NumPy script handles scaling for you, so it takes and returns engineering units."
+    )
+
+    if st.session_state.net is None or "net_config" not in st.session_state:
+        st.warning("Please initialize and train the model first!")
+    else:
+        if not st.session_state.loss_history:
+            st.info("The model is initialized but not trained yet. Exports will contain random starting weights.")
+
+        net_exp = st.session_state.net
+        cfg = st.session_state.net_config
+        pkg = build_model_package(net_exp, cfg)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M")
+        base = f"NN_{dataset_label.rsplit('.', 1)[0].replace(' ', '_')}_{stamp}"
+
+        arch_str = " → ".join(
+            [str(cfg["num_inputs"])] + [str(h) for h in cfg["hidden_layers"]] + [str(cfg["num_outputs"])]
+        )
+        ecol1, ecol2, ecol3 = st.columns(3)
+        ecol1.metric("Architecture", arch_str)
+        ecol2.metric("Activation", cfg["activation"])
+        ecol3.metric(
+            "Final Training Loss",
+            f"{pkg['final_training_loss']:.6f}" if pkg["final_training_loss"] is not None else "N/A",
+        )
+
+        exports = {}
+        errors = {}
+        builders = {
+            "pth": lambda: export_pytorch_checkpoint(net_exp, pkg),
+            "torchscript": lambda: export_torchscript(net_exp, cfg["num_inputs"]),
+            "onnx": lambda: export_onnx(net_exp, cfg["num_inputs"], input_names, output_names),
+            "json": lambda: json.dumps(pkg, indent=2).encode("utf-8"),
+            "xlsx": lambda: export_excel(pkg),
+            "py": lambda: export_numpy_script(pkg).encode("utf-8"),
+        }
+        for k, fn in builders.items():
+            try:
+                exports[k] = fn()
+            except Exception as ex:
+                errors[k] = str(ex)
+
+        formats = [
+            ("pth", "🔥 PyTorch Checkpoint", f"{base}.pth", "application/octet-stream",
+             "Weights + architecture + scalers. Best for continuing training in Python."),
+            ("torchscript", "⚙ TorchScript", f"{base}_torchscript.pt", "application/octet-stream",
+             "Self-contained model. Load with torch.jit.load(). No class code needed."),
+            ("onnx", "🌐 ONNX", f"{base}.onnx", "application/octet-stream",
+             "Open standard for ONNX Runtime, MATLAB, C#, C++ and other platforms."),
+            ("json", "📄 JSON", f"{base}.json", "application/json",
+             "Plain-text weights, biases and scalers. Readable from any language."),
+            ("xlsx", "📊 Excel Weights", f"{base}_weights.xlsx",
+             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+             "One sheet per layer plus scalers and summary. Good for review or reports."),
+            ("py", "🐍 NumPy Inference Script", f"{base}_inference.py", "text/x-python",
+             "Standalone predict() function. Needs only NumPy. Engineering units in and out."),
+        ]
+
+        grid = st.columns(3)
+        for i, (k, label, fname, mime, desc) in enumerate(formats):
+            with grid[i % 3]:
+                with st.container(border=True):
+                    st.markdown(f"**{label}**")
+                    st.caption(desc)
+                    if k in exports:
+                        st.download_button(
+                            f"⬇ Download {fname.rsplit('.', 1)[-1].upper()}",
+                            data=exports[k],
+                            file_name=fname,
+                            mime=mime,
+                            on_click="ignore",  # no rerun, so the tab stays open
+                            key=f"dl_{k}",
+                            use_container_width=True,
+                        )
+                    else:
+                        st.error(f"Not available: {errors.get(k, 'unknown error')}")
+                        if k == "onnx":
+                            st.caption("Add `onnx` to requirements.txt to enable ONNX export.")
+
+        st.divider()
+        bundle_files = {"README.txt": EXPORT_README.encode("utf-8")}
+        name_map = {
+            "pth": "model_checkpoint.pth",
+            "torchscript": "model_torchscript.pt",
+            "onnx": "model.onnx",
+            "json": "model.json",
+            "xlsx": "model_weights.xlsx",
+            "py": "nn_inference.py",
+        }
+        for k, data in exports.items():
+            bundle_files[name_map[k]] = data
+        st.download_button(
+            "📦 Download All Formats (ZIP)",
+            data=export_zip_bundle(bundle_files),
+            file_name=f"{base}_bundle.zip",
+            mime="application/zip",
+            on_click="ignore",
+            type="primary",
+            key="dl_zip",
+        )
