@@ -777,7 +777,14 @@ mcol1.metric("Total Dataset Rows", num_samples)
 mcol2.metric("Training Samples", X_train.shape[0])
 mcol3.metric("Testing Samples", X_test.shape[0])
 
-if st.button("Initialize / Reset Model Architecture"):
+init_btn_col, init_msg_col = st.columns([0.3, 0.7])
+with init_btn_col:
+    init_clicked = st.button("Initialize / Reset Model Architecture")
+# Fixed slot: the message appears/disappears here without shifting the tabs below,
+# so Streamlit does not rebuild the tabs and jump back to the first one.
+init_msg_slot = init_msg_col.empty()
+
+if init_clicked:
     st.session_state.train_idx, st.session_state.test_idx = repartition_dataset(
         num_samples, test_ratio
     )
@@ -789,7 +796,7 @@ if st.button("Initialize / Reset Model Architecture"):
     st.rerun()
 
 if st.session_state.pop("show_init_msg", False):
-    st.success("New PyTorch Model initialized with freshly randomized Train/Test sets!")
+    init_msg_slot.success("New PyTorch Model initialized with freshly randomized Train/Test sets!")
 
 st.caption(
     "Initialize the model before training. This builds the network from your selected architecture and randomly "
@@ -804,8 +811,22 @@ st.caption(
 # =====================================================================
 st.divider()
 
+TAB_CORR = "📊 Data Correlation Matrix"
+TAB_TRAIN = "🏋 Batch Training Phase"
+TAB_TEST = "✅ Model Testing & Verification"
+
+if "workflow_tab" not in st.session_state:
+    st.session_state.workflow_tab = TAB_CORR
+
+
+def remember_tab(tab_name):
+    # Called by buttons inside a tab, before the rerun, so the same tab reopens
+    st.session_state.workflow_tab = tab_name
+
+
 tab_corr, tab_train, tab_test = st.tabs(
-    ["📊 Data Correlation Matrix", "🏋 Batch Training Phase", "✅ Model Testing & Verification"]
+    [TAB_CORR, TAB_TRAIN, TAB_TEST],
+    default=st.session_state.workflow_tab,
 )
 
 
@@ -917,7 +938,7 @@ with tab_train:
         "Number of Epochs", min_value=10, max_value=5000, value=200
     )
 
-    if st.button("Run Batch Training"):
+    if st.button("Run Batch Training", on_click=remember_tab, args=(TAB_TRAIN,)):
         if st.session_state.net is None:
             st.warning("Please initialize the model first!")
         else:
@@ -958,7 +979,7 @@ with tab_train:
 with tab_test:
     st.markdown("Evaluate actual vs. predicted performance across output variables (Inverted back to engineering units).")
 
-    if st.button("Evaluate Model on Test Set"):
+    if st.button("Evaluate Model on Test Set", on_click=remember_tab, args=(TAB_TEST,)):
         if st.session_state.net is None:
             st.warning("Please initialize and train the model first!")
         else:
