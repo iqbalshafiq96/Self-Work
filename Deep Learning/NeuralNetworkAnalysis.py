@@ -490,12 +490,15 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
 
                     // ---------- 1. Impulses along synapses ----------
                     var alive = [];
+                    var arrived = [];
                     impulses.forEach(function(imp) {
                         var p = (now - imp.start) / imp.dur;
                         if (p < 0) { alive.push(imp); return; }
                         if (p >= 1) {
-                            // Impulse reached the next neuron -> it fires
-                            fireNode(imp.to, now);
+                            // Impulse reached the next neuron -> queue it to fire.
+                            // (Queued, not fired directly, so its new impulses are not
+                            //  wiped out when the impulses array is rebuilt below.)
+                            arrived.push(imp.to);
                             return;
                         }
                         alive.push(imp);
@@ -571,6 +574,10 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                         ctx.fill();
                     });
                     impulses = alive;
+
+                    // Neurons hit by an impulse now fire onward to the next layer
+                    // (Layer 1 -> Layer 2 -> Layer 3 -> Output, whichever exist)
+                    arrived.forEach(function(id) { fireNode(id, now); });
 
                     // ---------- 2. Neuron firing flashes ----------
                     var tSec = now / 1000;
