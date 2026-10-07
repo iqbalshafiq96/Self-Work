@@ -777,6 +777,10 @@ mcol1.metric("Total Dataset Rows", num_samples)
 mcol2.metric("Training Samples", X_train.shape[0])
 mcol3.metric("Testing Samples", X_test.shape[0])
 
+TAB_CORR = "📊 Data Correlation Matrix"
+TAB_TRAIN = "🏋 Batch Training Phase"
+TAB_TEST = "✅ Model Testing & Verification"
+
 init_btn_col, init_msg_col = st.columns([0.3, 0.7])
 with init_btn_col:
     init_clicked = st.button("Initialize / Reset Model Architecture")
@@ -793,6 +797,9 @@ if init_clicked:
     )
     st.session_state.loss_history = []
     st.session_state.show_init_msg = True  # survive the rerun below
+    # Reopen workflow on the Data Correlation Matrix tab
+    st.session_state.workflow_tab = TAB_CORR
+    st.session_state.tabs_version = st.session_state.get("tabs_version", 0) + 1
     st.rerun()
 
 if st.session_state.pop("show_init_msg", False):
@@ -811,12 +818,10 @@ st.caption(
 # =====================================================================
 st.divider()
 
-TAB_CORR = "📊 Data Correlation Matrix"
-TAB_TRAIN = "🏋 Batch Training Phase"
-TAB_TEST = "✅ Model Testing & Verification"
-
 if "workflow_tab" not in st.session_state:
     st.session_state.workflow_tab = TAB_CORR
+if "tabs_version" not in st.session_state:
+    st.session_state.tabs_version = 0
 
 
 def remember_tab(tab_name):
@@ -824,10 +829,13 @@ def remember_tab(tab_name):
     st.session_state.workflow_tab = tab_name
 
 
-tab_corr, tab_train, tab_test = st.tabs(
-    [TAB_CORR, TAB_TRAIN, TAB_TEST],
-    default=st.session_state.workflow_tab,
-)
+# The container key only changes when Initialize is clicked. That forces the tabs
+# to rebuild and open on the default tab (Data Correlation Matrix).
+with st.container(key=f"workflow_tabs_{st.session_state.tabs_version}"):
+    tab_corr, tab_train, tab_test = st.tabs(
+        [TAB_CORR, TAB_TRAIN, TAB_TEST],
+        default=st.session_state.workflow_tab,
+    )
 
 
 # --- TAB 0: CORRELATION MATRIX ---
