@@ -1155,7 +1155,7 @@ with st.container(key=f"workflow_tabs_{st.session_state.tabs_version}"):
 
 # --- TAB 0: CORRELATION MATRIX ---
 with tab_corr:
-    st.write("### Feature Correlation Matrix (Lower Triangle)")
+    st.write("### Feature Correlation Matrix")
     st.caption(
         "The correlation matrix shows how strongly each feature moves in relation to another, on a scale from -1 to +1. "
         "Values near +1 indicate a strong positive correlation (both rise together), values near -1 indicate a strong "
