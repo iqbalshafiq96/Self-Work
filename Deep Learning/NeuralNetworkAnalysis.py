@@ -84,16 +84,11 @@ def rcols(spec):
 
 st.title("Develop, Train & Deploy Neural Network")
 
-# Display Mode ?  [ PC ] [ Smartphone ]
-dm_label, dm_ctrl = st.columns(
-    [0.38, 0.62] if IS_MOBILE else [0.12, 0.88], vertical_alignment="center"
-)
-with dm_label:
-    st.markdown(
-        "**Display Mode**",
-        help="PC uses the wide multi-column layout. Smartphone stacks everything into one narrow column.",
-    )
-with dm_ctrl:
+# Display Mode ?  [ PC ] [ Smartphone ]  -> label and buttons side by side
+DM_HELP = "PC uses the wide multi-column layout. Smartphone stacks everything into one narrow column."
+
+
+def _draw_display_mode_buttons():
     st.segmented_control(
         "Display Mode",
         [DEVICE_PC, DEVICE_MOBILE],
@@ -101,6 +96,25 @@ with dm_ctrl:
         on_change=_keep_device_selected,
         label_visibility="collapsed",
     )
+
+
+try:
+    # Streamlit 1.48+: horizontal container, each item only as wide as its content
+    dm_row = st.container(horizontal=True, vertical_alignment="center", gap="small")
+    with dm_row:
+        st.markdown("**Display Mode**", help=DM_HELP, width="content")
+        _draw_display_mode_buttons()
+except TypeError:
+    # Older Streamlit: tight columns with a narrow label column
+    dm_label, dm_ctrl = st.columns(
+        [0.30, 0.70] if IS_MOBILE else [0.09, 0.91],
+        gap="small",
+        vertical_alignment="center",
+    )
+    with dm_label:
+        st.markdown("**Display Mode**", help=DM_HELP)
+    with dm_ctrl:
+        _draw_display_mode_buttons()
 st.caption("Developed by Iqbal SHERPA 20260824. Contact me for further information @iqbalshafiq96@gmail.com")
 st.caption(
     "A neural network is a machine-learning algorithm that learns to predict process outputs from input variables. "
