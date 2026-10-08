@@ -68,6 +68,10 @@ if IS_MOBILE:
             width: 100% !important;
             min-height: 2.75rem !important;
         }
+        /* Bigger + / - stepper buttons on number boxes for touch */
+        [data-testid="stNumberInputStepDown"], [data-testid="stNumberInputStepUp"] {
+            min-width: 2.75rem !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -272,13 +276,25 @@ st.divider()
 # =====================================================================
 st.subheader("Interactive Architecture Diagram")
 
+NEURON_MIN, NEURON_MAX = 0, 50
+NEURON_HELP = f"Type a value or use − / + to adjust ({NEURON_MIN} to {NEURON_MAX}). Set 0 to skip this layer."
+
 col_arch1, col_arch2, col_arch3, col_arch4 = rcols(4)
 with col_arch1:
-    hidden1_size = st.slider("Layer 1 Neurons", 0, 50, 6)
+    hidden1_size = int(st.number_input(
+        "Layer 1 Neurons", min_value=NEURON_MIN, max_value=NEURON_MAX, value=6, step=1,
+        help=NEURON_HELP, key="h1_neurons",
+    ))
 with col_arch2:
-    hidden2_size = st.slider("Layer 2 Neurons", 0, 50, 3)
+    hidden2_size = int(st.number_input(
+        "Layer 2 Neurons", min_value=NEURON_MIN, max_value=NEURON_MAX, value=3, step=1,
+        help=NEURON_HELP, key="h2_neurons",
+    ))
 with col_arch3:
-    hidden3_size = st.slider("Layer 3 Neurons", 0, 50, 0)
+    hidden3_size = int(st.number_input(
+        "Layer 3 Neurons", min_value=NEURON_MIN, max_value=NEURON_MAX, value=0, step=1,
+        help=NEURON_HELP, key="h3_neurons",
+    ))
 with col_arch4:
     global_activation = st.selectbox(
         "Global Transfer Function",
