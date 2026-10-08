@@ -146,6 +146,8 @@ if st.session_state.get("dataset_key") != dataset_key:
     st.session_state.loss_history = []
     st.session_state.pop("train_idx", None)
     st.session_state.pop("test_idx", None)
+    st.session_state.pop("eval_results", None)   # NEW: clear stale test results
+    st.session_state.pop("manual_pred", None)    # NEW: clear stale manual prediction
 
 try:
     (
@@ -806,6 +808,8 @@ if init_clicked:
         "num_outputs": num_outputs,
         "activation": global_activation,
     }
+    st.session_state.pop("eval_results", None)   # NEW: old test results no longer valid
+    st.session_state.pop("manual_pred", None)    # NEW: old manual prediction no longer valid
     st.session_state.show_init_msg = True  # survive the rerun below
     # Reopen workflow on the Data Correlation Matrix tab
     st.session_state.workflow_tab = TAB_CORR
@@ -821,8 +825,6 @@ st.caption(
     "portion and is verified on unseen data. Re-initialize whenever you change the hidden layers, transfer function, "
     "or split ratio."
 )
-
-
 
 
 # =====================================================================
@@ -1180,6 +1182,10 @@ with tab_train:
                     st.session_state.loss_history, y_label="MSE Training Loss"
                 )
 
+            # NEW: weights changed, so earlier test results / manual prediction are stale
+            st.session_state.pop("eval_results", None)
+            st.session_state.pop("manual_pred", None)
+
             st.success(f"Training Complete! Final Loss: {loss.item():.6f}")
 
 
@@ -1198,30 +1204,129 @@ with tab_test:
                 test_preds_norm = net(X_test).numpy()
                 Y_test_norm = Y_test.numpy()
 
-                Y_test_actual = scaler_Y.inverse_transform(Y_test_norm)
-                Y_test_pred = scaler_Y.inverse_transform(test_preds_norm)
+            # Stored in session_state so the charts stay visible when the
+            # manual prediction form below triggers a rerun
+            st.session_state.eval_results = {
+                "actual": scaler_Y.inverse_transform(Y_test_norm),
+                "pred": scaler_Y.inverse_transform(test_preds_norm),
+            }
 
-            st.write("### Output Verification Trends (Actual vs. Predicted)")
+    eval_res = st.session_state.get("eval_results")
+    if eval_res is not None:
+        Y_test_actual = eval_res["actual"]
+        Y_test_pred = eval_res["pred"]
 
-            cols = st.columns(2)
-            for idx, col_name in enumerate(output_names):
-                with cols[idx % 2]:
-                    st.markdown(f"**Output {idx+1}: {col_name}**")
-                    chart_data = pd.DataFrame(
+        st.write("### Output Verification Trends (Actual vs. Predicted)")
+
+        cols = st.columns(2)
+        for idx, col_name in enumerate(output_names):
+            with cols[idx % 2]:
+                st.markdown(f"**Output {idx+1}: {col_name}**")
+                chart_data = pd.DataFrame(
+                    {
+                        "Actual": Y_test_actual[:, idx],
+                        "Predicted": Y_test_pred[:, idx],
+                    }
+                )
+                st.line_chart(chart_data)
+
+                y_t = Y_test_actual[:, idx]
+                y_p = Y_test_pred[:, idx]
+                r2 = 1 - (
+                    np.sum((y_t - y_p) ** 2)
+                    / (np.sum((y_t - np.mean(y_t)) ** 2) + 1e-8)
+                )
+                st.caption(f"Variable R² Accuracy: {r2:.4f}")
+
+    # -----------------------------------------------------------------
+    # NEW: MANUAL INPUT PREDICTION
+    # -----------------------------------------------------------------
+    st.divider()
+    st.write("### Manual Input Prediction")
+    st.caption(
+        "Enter your own input values in engineering units and the trained model will predict the outputs. "
+        "Default values are the training-data averages. Hover over the ⓘ icon to see the range the model was "
+        "trained on. Predictions outside that range are extrapolations and less reliable."
+    )
+
+    if st.session_state.net is None:
+        st.info("Please initialize and train the model first to use manual prediction.")
+    else:
+        # Training-set range for each input (what the model has actually seen)
+        train_rows = df_raw.iloc[st.session_state.train_idx.numpy()]
+        in_min = train_rows[input_names].min()
+        in_max = train_rows[input_names].max()
+        in_mean = train_rows[input_names].mean()
+
+        # A form means editing the boxes does not rerun the app until "Predict" is pressed
+        with st.form("manual_input_form"):
+            n_cols = min(3, num_inputs)
+            in_cols = st.columns(n_cols)
+            manual_vals = []
+            for i, name in enumerate(input_names):
+                with in_cols[i % n_cols]:
+                    v = st.number_input(
+                        name,
+                        value=float(in_mean[name]),
+                        format="%.4f",
+                        help=f"Training range: {in_min[name]:.4g} to {in_max[name]:.4g}",
+                        key=f"manual_in_{st.session_state.dataset_key}_{i}",
+                    )
+                    manual_vals.append(v)
+
+            predict_clicked = st.form_submit_button(
+                "🔮 Predict Output",
+                type="primary",
+                on_click=remember_tab,
+                args=(TAB_TEST,),
+            )
+
+        if predict_clicked:
+            net = st.session_state.net
+            net.eval()
+            x_raw = np.array([manual_vals], dtype=float)
+            x_scaled = scaler_X.transform(x_raw)                      # same scaling as training
+            with torch.no_grad():
+                y_scaled = net(torch.tensor(x_scaled, dtype=torch.float32)).numpy()
+            y_pred = scaler_Y.inverse_transform(y_scaled)[0]          # back to engineering units
+
+            out_of_range = [
+                name for name, v in zip(input_names, manual_vals)
+                if v < in_min[name] or v > in_max[name]
+            ]
+            st.session_state.manual_pred = {
+                "inputs": manual_vals,
+                "outputs": y_pred.tolist(),
+                "out_of_range": out_of_range,
+            }
+
+        mp = st.session_state.get("manual_pred")
+        if mp is not None:
+            st.write("#### Predicted Outputs")
+            if not st.session_state.loss_history:
+                st.info("The model is not trained yet, so these predictions come from random starting weights.")
+            if mp["out_of_range"]:
+                st.warning(
+                    "Outside the training range (extrapolation): " + ", ".join(mp["out_of_range"])
+                )
+
+            n_out_cols = min(4, num_outputs)
+            out_cols = st.columns(n_out_cols)
+            for i, (name, val) in enumerate(zip(output_names, mp["outputs"])):
+                out_cols[i % n_out_cols].metric(name, f"{val:.4f}")
+
+            with st.expander("View input/output table"):
+                st.dataframe(
+                    pd.DataFrame(
                         {
-                            "Actual": Y_test_actual[:, idx],
-                            "Predicted": Y_test_pred[:, idx],
+                            "Variable": list(input_names) + list(output_names),
+                            "Type": ["Input"] * num_inputs + ["Predicted Output"] * num_outputs,
+                            "Value": list(mp["inputs"]) + list(mp["outputs"]),
                         }
-                    )
-                    st.line_chart(chart_data)
-
-                    y_t = Y_test_actual[:, idx]
-                    y_p = Y_test_pred[:, idx]
-                    r2 = 1 - (
-                        np.sum((y_t - y_p) ** 2)
-                        / (np.sum((y_t - np.mean(y_t)) ** 2) + 1e-8)
-                    )
-                    st.caption(f"Variable R² Accuracy: {r2:.4f}")
+                    ),
+                    hide_index=True,
+                    use_container_width=True,
+                )
 
 
 # --- TAB 3: EXPORT MODEL ---
