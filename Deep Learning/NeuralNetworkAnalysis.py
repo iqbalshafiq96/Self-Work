@@ -23,8 +23,8 @@ st.set_page_config(page_title="Neural Network Configurator", layout="wide")
 # =====================================================================
 # DEVICE MODE: PC OR SMARTPHONE
 # =====================================================================
-DEVICE_PC = "🖥️ PC"
-DEVICE_MOBILE = "📱 Smartphone"
+DEVICE_PC = "PC"
+DEVICE_MOBILE = "Smartphone"
 
 if "device_mode" not in st.session_state:
     st.session_state.device_mode = DEVICE_PC
@@ -38,19 +38,6 @@ def _keep_device_selected():
 
 # Read the mode before drawing the toggle so the whole page uses the same layout
 IS_MOBILE = st.session_state.device_mode == DEVICE_MOBILE
-
-if IS_MOBILE:
-    device_slot = st.container()
-else:
-    _, device_slot = st.columns([0.65, 0.35])
-with device_slot:
-    st.segmented_control(
-        "Display Mode",
-        [DEVICE_PC, DEVICE_MOBILE],
-        key="device_mode",
-        on_change=_keep_device_selected,
-        help="PC uses the wide multi-column layout. Smartphone stacks everything into one narrow column.",
-    )
 
 # Layout constants per device
 CHART_H = 220 if IS_MOBILE else 300
@@ -96,6 +83,24 @@ def rcols(spec):
 
 
 st.title("Develop, Train & Deploy Neural Network")
+
+# Display Mode ?  [ PC ] [ Smartphone ]
+dm_label, dm_ctrl = st.columns(
+    [0.38, 0.62] if IS_MOBILE else [0.12, 0.88], vertical_alignment="center"
+)
+with dm_label:
+    st.markdown(
+        "**Display Mode**",
+        help="PC uses the wide multi-column layout. Smartphone stacks everything into one narrow column.",
+    )
+with dm_ctrl:
+    st.segmented_control(
+        "Display Mode",
+        [DEVICE_PC, DEVICE_MOBILE],
+        key="device_mode",
+        on_change=_keep_device_selected,
+        label_visibility="collapsed",
+    )
 st.caption("Developed by Iqbal SHERPA 20260824. Contact me for further information @iqbalshafiq96@gmail.com")
 st.caption(
     "A neural network is a machine-learning algorithm that learns to predict process outputs from input variables. "
