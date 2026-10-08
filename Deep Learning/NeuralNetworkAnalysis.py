@@ -19,6 +19,82 @@ import plotly.express as px
 import requests
 
 st.set_page_config(page_title="Neural Network Configurator", layout="wide")
+
+# =====================================================================
+# DEVICE MODE: PC OR SMARTPHONE
+# =====================================================================
+DEVICE_PC = "🖥️ PC"
+DEVICE_MOBILE = "📱 Smartphone"
+
+if "device_mode" not in st.session_state:
+    st.session_state.device_mode = DEVICE_PC
+
+
+def _keep_device_selected():
+    # Clicking the selected option again clears it, so fall back to PC
+    if st.session_state.device_mode is None:
+        st.session_state.device_mode = DEVICE_PC
+
+
+# Read the mode before drawing the toggle so the whole page uses the same layout
+IS_MOBILE = st.session_state.device_mode == DEVICE_MOBILE
+
+if IS_MOBILE:
+    device_slot = st.container()
+else:
+    _, device_slot = st.columns([0.65, 0.35])
+with device_slot:
+    st.segmented_control(
+        "Display Mode",
+        [DEVICE_PC, DEVICE_MOBILE],
+        key="device_mode",
+        on_change=_keep_device_selected,
+        help="PC uses the wide multi-column layout. Smartphone stacks everything into one narrow column.",
+    )
+
+# Layout constants per device
+CHART_H = 220 if IS_MOBILE else 300
+PLOTLY_CFG = {"displayModeBar": False} if IS_MOBILE else {}
+
+if IS_MOBILE:
+    st.markdown(
+        """
+        <style>
+        /* Phone-width page, centred. On a real phone this simply fills the screen. */
+        .block-container, [data-testid="stMainBlockContainer"] {
+            max-width: 480px !important;
+            padding: 1rem 0.75rem 3rem 0.75rem !important;
+            margin: 0 auto !important;
+        }
+        h1 { font-size: 1.45rem !important; line-height: 1.25 !important; }
+        h2 { font-size: 1.2rem !important; }
+        h3 { font-size: 1.05rem !important; }
+        [data-testid="stCaptionContainer"], .stCaption { font-size: 0.78rem !important; }
+        [data-testid="stMetricValue"] { font-size: 1.25rem !important; }
+        [data-testid="stMetricLabel"] { font-size: 0.8rem !important; }
+        /* Tabs scroll sideways instead of squeezing */
+        [data-baseweb="tab-list"] { overflow-x: auto !important; flex-wrap: nowrap !important; }
+        [data-baseweb="tab"] { white-space: nowrap !important; font-size: 0.85rem !important; }
+        /* Full-width, finger-friendly buttons */
+        .stButton button, .stDownloadButton button,
+        [data-testid="stFormSubmitButton"] button {
+            width: 100% !important;
+            min-height: 2.75rem !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def rcols(spec):
+    """st.columns on PC; stacked full-width containers on Smartphone."""
+    n = spec if isinstance(spec, int) else len(spec)
+    if IS_MOBILE:
+        return [st.container() for _ in range(n)]
+    return st.columns(spec)
+
+
 st.title("Develop, Train & Deploy Neural Network")
 st.caption("Developed by Iqbal SHERPA 20260824. Contact me for further information @iqbalshafiq96@gmail.com")
 st.caption(
@@ -146,8 +222,8 @@ if st.session_state.get("dataset_key") != dataset_key:
     st.session_state.loss_history = []
     st.session_state.pop("train_idx", None)
     st.session_state.pop("test_idx", None)
-    st.session_state.pop("eval_results", None)   # NEW: clear stale test results
-    st.session_state.pop("manual_pred", None)    # NEW: clear stale manual prediction
+    st.session_state.pop("eval_results", None)
+    st.session_state.pop("manual_pred", None)
 
 try:
     (
@@ -177,7 +253,7 @@ st.divider()
 # =====================================================================
 st.subheader("Interactive Architecture Diagram")
 
-col_arch1, col_arch2, col_arch3, col_arch4 = st.columns(4)
+col_arch1, col_arch2, col_arch3, col_arch4 = rcols(4)
 with col_arch1:
     hidden1_size = st.slider("Layer 1 Neurons", 0, 50, 6)
 with col_arch2:
@@ -201,10 +277,25 @@ st.caption(f"ℹ {activation_descriptions[global_activation]}")
 # =====================================================================
 # 2. AUTOSCALING PYVIS NETWORK DIAGRAM  (Synaptic impulse animation)
 # =====================================================================
-def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
+def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn, mobile=False):
     active_h = [h for h in [h1, h2, h3] if h > 0]
     max_neurons = max([in_dim, out_dim] + active_h if active_h else [in_dim, out_dim])
-    dynamic_height = max(550, min(max_neurons * 65, 900))
+
+    # Device-dependent sizing
+    if mobile:
+        dynamic_height = max(380, min(max_neurons * 45, 600))
+        x_half = 300          # narrower spread fits a portrait screen
+        y_per_node, y_min = 42, 300
+        node_font = 11
+        slider_w, ctrl_font, ctrl_pad = "60px", "11px", "4px 8px"
+        max_impulses, max_fanout = 150, 3   # lighter animation for phones
+    else:
+        dynamic_height = max(550, min(max_neurons * 65, 900))
+        x_half = 600
+        y_per_node, y_min = 50, 350
+        node_font = 15
+        slider_w, ctrl_font, ctrl_pad = "100px", "13px", "6px 14px"
+        max_impulses, max_fanout = 350, 5
 
     net = Network(
         height="100%",
@@ -222,7 +313,7 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
         "borderWidth": 2,
         "size": 28,
         "font": {
-          "size": 15,
+          "size": __NODE_FONT__,
           "face": "Segoe UI, Roboto, Helvetica, Arial, sans-serif",
           "color": "#FFFFFF",
           "bold": true
@@ -240,12 +331,12 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
       },
       "physics": { "enabled": false }
     }
-    """
+    """.replace("__NODE_FONT__", str(node_font))
     )
 
     layers_list = [in_dim] + active_h + [out_dim]
     num_layer_cols = len(layers_list)
-    x_coords = np.linspace(-600, 600, num_layer_cols)
+    x_coords = np.linspace(-x_half, x_half, num_layer_cols)
 
     input_nodes = [f"L0_N{i}" for i in range(in_dim)]
     layer_node_groups = [input_nodes]
@@ -260,7 +351,7 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
     def get_equal_y(index, total_count):
         if total_count == 1:
             return 0
-        spread_height = max(350, total_count * 50)
+        spread_height = max(y_min, total_count * y_per_node)
         return -spread_height / 2 + (index / (total_count - 1)) * spread_height
 
     for col_idx, nodes in enumerate(layer_node_groups):
@@ -314,25 +405,25 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
       }
       .diagram-controls {
         position: absolute;
-        top: 15px;
-        right: 20px;
+        top: 10px;
+        right: 10px;
         z-index: 9999;
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 8px;
         background: rgba(255, 255, 255, 0.25);
-        padding: 6px 14px;
+        padding: __CTRL_PAD__;
         border-radius: 8px;
         border: 1px solid rgba(0, 0, 0, 0.15);
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
         font-family: Segoe UI, -apple-system, Roboto, sans-serif;
         color: #000000;
-        font-size: 13px;
+        font-size: __CTRL_FONT__;
         font-weight: 600;
       }
       .diagram-controls input[type=range] {
-        width: 100px;
+        width: __SLIDER_W__;
         height: 4px;
         cursor: pointer;
         accent-color: #3498DB;
@@ -345,7 +436,7 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
         border: 1px solid rgba(0, 0, 0, 0.25);
         border-radius: 5px;
         padding: 4px 10px;
-        font-size: 12px;
+        font-size: __CTRL_FONT__;
         font-family: inherit;
         font-weight: 700;
         cursor: pointer;
@@ -360,7 +451,7 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
     <div class="diagram-controls">
       <span style="color: #000000;">Zoom</span>
       <input type="range" id="zoomSlider" min="10" max="200" value="100">
-      <span id="zoomValue" style="min-width: 40px; font-weight: 700; color: #000000;">100%</span>
+      <span id="zoomValue" style="min-width: 36px; font-weight: 700; color: #000000;">100%</span>
       <button class="diagram-btn" id="resetZoomBtn" title="Reset view and fit to screen">🏠 Auto-Fit</button>
     </div>
 
@@ -415,13 +506,13 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                     inputStagger: 220,   // ms random stagger between input neurons in a volley
                     travelTime: 700,     // ms for one impulse to cross a synapse
                     synapseDelay: 90,    // ms delay before a fired neuron releases impulses
-                    maxFanout: 5,        // max synapses a neuron fires along per spike
+                    maxFanout: __MAX_FANOUT__,     // max synapses a neuron fires along per spike
                     tailFrac: 0.30,      // length of glowing tail (fraction of synapse)
                     jitter: 3.0,         // lightning jaggedness (px)
                     refractory: 450,     // ms a neuron rests before it can fire again
                     flashDecay: 320,     // ms for the neuron flash to fade
                     shockwaveTime: 650,  // ms for the expanding ring
-                    maxImpulses: 350     // safety cap for performance
+                    maxImpulses: __MAX_IMPULSES__  // safety cap for performance
                 };
 
                 var COL = {
@@ -471,9 +562,9 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                 }
 
                 // --- State ---
-                var lastFire = {};     // node id -> time of last spike
-                var scheduled = [];    // {id, t}: neurons queued to fire
-                var impulses = [];     // travelling action potentials
+                var lastFire = {};
+                var scheduled = [];
+                var impulses = [];
                 var lastWave = -1e9;
                 var lastFrame = performance.now();
 
@@ -503,7 +594,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                 function launchWave(now) {
                     var inputs = layers[0] || [];
                     inputs.forEach(function(id) {
-                        // ~85% of inputs fire per volley for a natural, irregular look
                         if (Math.random() < 0.85 || inputs.length <= 2) {
                             scheduleFire(id, now + Math.random() * CFG.inputStagger);
                         }
@@ -514,7 +604,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                 network.on("afterDrawing", function(ctx) {
                     var now = performance.now();
 
-                    // If tab was hidden for a while, restart cleanly instead of bursting
                     if (now - lastFrame > 1000) {
                         impulses = [];
                         scheduled = [];
@@ -527,7 +616,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                         launchWave(now);
                     }
 
-                    // Process scheduled neuron firings
                     var stillScheduled = [];
                     scheduled.forEach(function(s) {
                         if (now >= s.t) fireNode(s.id, now);
@@ -535,7 +623,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                     });
                     scheduled = stillScheduled;
 
-                    // Positions + radii (supports user dragging nodes)
                     var pos = network.getPositions();
                     var rad = {};
                     nodeList.forEach(function(n) {
@@ -555,9 +642,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                         var p = (now - imp.start) / imp.dur;
                         if (p < 0) { alive.push(imp); return; }
                         if (p >= 1) {
-                            // Impulse reached the next neuron -> queue it to fire.
-                            // (Queued, not fired directly, so its new impulses are not
-                            //  wiped out when the impulses array is rebuilt below.)
                             arrived.push(imp.to);
                             return;
                         }
@@ -574,7 +658,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                         var sx = a.x + ux * rA, sy = a.y + uy * rA;
                         var span = Math.max(1, len - rA - rB);
 
-                        // slight acceleration as the signal leaves the soma
                         var head = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
                         var tail = Math.max(0, head - CFG.tailFrac);
                         var c = colorOf(imp.to);
@@ -582,7 +665,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                         var hx = sx + ux * span * head, hy = sy + uy * span * head;
                         var tx = sx + ux * span * tail, ty = sy + uy * span * tail;
 
-                        // charged synapse: faint glow from origin to the impulse head
                         ctx.beginPath();
                         ctx.moveTo(sx, sy);
                         ctx.lineTo(hx, hy);
@@ -590,7 +672,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                         ctx.lineWidth = 2;
                         ctx.stroke();
 
-                        // jagged lightning trail (re-randomised each frame = electric flicker)
                         var segs = 9;
                         var pts = [];
                         for (var i = 0; i <= segs; i++) {
@@ -607,7 +688,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                         grad.addColorStop(0, rgba(c, 0));
                         grad.addColorStop(1, rgba(c, 0.55));
 
-                        // outer glow
                         ctx.beginPath();
                         ctx.moveTo(pts[0][0], pts[0][1]);
                         for (var k = 1; k < pts.length; k++) ctx.lineTo(pts[k][0], pts[k][1]);
@@ -615,7 +695,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                         ctx.lineWidth = 6;
                         ctx.stroke();
 
-                        // bright core
                         var gradCore = ctx.createLinearGradient(tx, ty, hx, hy);
                         gradCore.addColorStop(0, 'rgba(255,255,255,0)');
                         gradCore.addColorStop(1, 'rgba(255,255,255,0.95)');
@@ -623,7 +702,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                         ctx.lineWidth = 1.6;
                         ctx.stroke();
 
-                        // glowing spark at the impulse head
                         var g = ctx.createRadialGradient(hx, hy, 0, hx, hy, 11);
                         g.addColorStop(0, 'rgba(255,255,255,1)');
                         g.addColorStop(0.35, rgba(c, 0.85));
@@ -635,8 +713,7 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                     });
                     impulses = alive;
 
-                    // Neurons hit by an impulse now fire onward to the next layer
-                    // (Layer 1 -> Layer 2 -> Layer 3 -> Output, whichever exist)
+                    // Layer 1 -> Layer 2 -> Layer 3 -> Output, whichever exist
                     arrived.forEach(function(id) { fireNode(id, now); });
 
                     // ---------- 2. Neuron firing flashes ----------
@@ -652,7 +729,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                         if (since < CFG.shockwaveTime) {
                             var I = Math.exp(-since / CFG.flashDecay);
 
-                            // soma glow
                             var g = ctx.createRadialGradient(p.x, p.y, r * 0.2, p.x, p.y, r * 1.9);
                             g.addColorStop(0, rgba(c, 0.55 * I));
                             g.addColorStop(0.55, rgba(c, 0.30 * I));
@@ -662,14 +738,12 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                             ctx.fillStyle = g;
                             ctx.fill();
 
-                            // bright membrane ring
                             ctx.beginPath();
                             ctx.arc(p.x, p.y, r, 0, 2 * Math.PI);
                             ctx.strokeStyle = rgba([255, 255, 255], 0.9 * I);
                             ctx.lineWidth = 1.5 + 3.5 * I;
                             ctx.stroke();
 
-                            // expanding shockwave
                             var w = since / CFG.shockwaveTime;
                             ctx.beginPath();
                             ctx.arc(p.x, p.y, r + w * r * 1.3, 0, 2 * Math.PI);
@@ -677,7 +751,6 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
                             ctx.lineWidth = 2;
                             ctx.stroke();
                         } else {
-                            // resting potential: gentle breathing ring
                             var breath = 0.5 + 0.5 * Math.sin(tSec * 2 + nodeLayer[id] * 0.8);
                             ctx.beginPath();
                             ctx.arc(p.x, p.y, r, 0, 2 * Math.PI);
@@ -702,12 +775,22 @@ def render_pyvis_network(in_dim, h1, h2, h3, out_dim, act_fn):
     </body>
     """
 
+    controls_and_animation_script = (
+        controls_and_animation_script
+        .replace("__CTRL_PAD__", ctrl_pad)
+        .replace("__CTRL_FONT__", ctrl_font)
+        .replace("__SLIDER_W__", slider_w)
+        .replace("__MAX_FANOUT__", str(max_fanout))
+        .replace("__MAX_IMPULSES__", str(max_impulses))
+    )
+
     html_content = html_content.replace("</body>", controls_and_animation_script)
     components.html(html_content, height=dynamic_height)
 
 
 render_pyvis_network(
-    num_inputs, hidden1_size, hidden2_size, hidden3_size, num_outputs, global_activation
+    num_inputs, hidden1_size, hidden2_size, hidden3_size, num_outputs, global_activation,
+    mobile=IS_MOBILE,
 )
 
 st.divider()
@@ -753,7 +836,7 @@ num_samples = len(X_norm)
 
 def repartition_dataset(total_samples, current_test_ratio):
     split_idx = int(total_samples * (1 - current_test_ratio))
-    indices = torch.randperm(total_samples)  # Randomly shuffles row indices
+    indices = torch.randperm(total_samples)
     return indices[:split_idx], indices[split_idx:]
 
 
@@ -777,7 +860,7 @@ X_test = X_tensor[st.session_state.test_idx]
 Y_test = Y_tensor[st.session_state.test_idx]
 
 st.subheader("Dataset Summary & Partitioning")
-mcol1, mcol2, mcol3 = st.columns(3)
+mcol1, mcol2, mcol3 = rcols(3)
 mcol1.metric("Total Dataset Rows", num_samples)
 mcol2.metric("Training Samples", X_train.shape[0])
 mcol3.metric("Testing Samples", X_test.shape[0])
@@ -787,11 +870,10 @@ TAB_TRAIN = "🏋 Batch Training Phase"
 TAB_TEST = "✅ Model Testing & Verification"
 TAB_EXPORT = "💾 Export Model"
 
-init_btn_col, init_msg_col = st.columns([0.3, 0.7])
+init_btn_col, init_msg_col = rcols([0.3, 0.7])
 with init_btn_col:
     init_clicked = st.button("Initialize / Reset Model Architecture")
-# Fixed slot: the message appears/disappears here without shifting the tabs below,
-# so Streamlit does not rebuild the tabs and jump back to the first one.
+# Fixed slot: the message appears/disappears here without shifting the tabs below
 init_msg_slot = init_msg_col.empty()
 
 if init_clicked:
@@ -808,10 +890,9 @@ if init_clicked:
         "num_outputs": num_outputs,
         "activation": global_activation,
     }
-    st.session_state.pop("eval_results", None)   # NEW: old test results no longer valid
-    st.session_state.pop("manual_pred", None)    # NEW: old manual prediction no longer valid
-    st.session_state.show_init_msg = True  # survive the rerun below
-    # Reopen workflow on the Data Correlation Matrix tab
+    st.session_state.pop("eval_results", None)
+    st.session_state.pop("manual_pred", None)
+    st.session_state.show_init_msg = True
     st.session_state.workflow_tab = TAB_CORR
     st.session_state.tabs_version = st.session_state.get("tabs_version", 0) + 1
     st.rerun()
@@ -1027,12 +1108,9 @@ if "tabs_version" not in st.session_state:
 
 
 def remember_tab(tab_name):
-    # Called by buttons inside a tab, before the rerun, so the same tab reopens
     st.session_state.workflow_tab = tab_name
 
 
-# The container key only changes when Initialize is clicked. That forces the tabs
-# to rebuild and open on the default tab (Data Correlation Matrix).
 with st.container(key=f"workflow_tabs_{st.session_state.tabs_version}"):
     tab_corr, tab_train, tab_test, tab_export = st.tabs(
         [TAB_CORR, TAB_TRAIN, TAB_TEST, TAB_EXPORT],
@@ -1085,6 +1163,7 @@ with tab_corr:
         aspect="auto",
     )
 
+    annot_size = 8 if IS_MOBILE else 11
     annotations = []
     for i, row_name in enumerate(corr.index):
         for j, col_name in enumerate(corr.columns):
@@ -1100,7 +1179,6 @@ with tab_corr:
                 continue
             else:
                 text_label = f"{val:.2f}"
-                # Values <= 0.7 down to -1.0 use black font
                 font_color = "white" if val > 0.7 else "black"
 
             annotations.append(
@@ -1108,7 +1186,7 @@ with tab_corr:
                     x=col_name,
                     y=row_name,
                     text=text_label,
-                    font=dict(color=font_color, size=11, family="Segoe UI, sans-serif"),
+                    font=dict(color=font_color, size=annot_size, family="Segoe UI, sans-serif"),
                     showarrow=False,
                 )
             )
@@ -1117,21 +1195,26 @@ with tab_corr:
         annotations=annotations,
         xaxis_title="",
         yaxis_title="",
-        xaxis=dict(tickangle=-45),
-        height=500,
-        margin=dict(l=50, r=50, t=50, b=50),
+        xaxis=dict(tickangle=-90 if IS_MOBILE else -45, tickfont=dict(size=9 if IS_MOBILE else 12)),
+        yaxis=dict(tickfont=dict(size=9 if IS_MOBILE else 12)),
+        height=380 if IS_MOBILE else 500,
+        margin=dict(l=10, r=10, t=20, b=10) if IS_MOBILE else dict(l=50, r=50, t=50, b=50),
+        coloraxis_colorbar=dict(thickness=10 if IS_MOBILE else 25),
     )
 
-    c_left, c_mid, c_right = st.columns([0.1, 0.8, 0.1])
-    with c_mid:
-        st.plotly_chart(fig, use_container_width=True)
+    if IS_MOBILE:
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CFG)
+    else:
+        c_left, c_mid, c_right = st.columns([0.1, 0.8, 0.1])
+        with c_mid:
+            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CFG)
 
 
 # --- TAB 1: BATCH TRAINING ---
 with tab_train:
     st.markdown("Train the model parameters using normalized training inputs (`X_train`, `Y_train`).")
 
-    tcol1, tcol2 = st.columns(2)
+    tcol1, tcol2 = rcols(2)
     with tcol1:
         lr = st.number_input(
             "Learning Rate",
@@ -1179,10 +1262,9 @@ with tab_train:
                 st.session_state.loss_history.append(loss.item())
                 progress_bar.progress((epoch + 1) / int(epochs))
                 chart_place.line_chart(
-                    st.session_state.loss_history, y_label="MSE Training Loss"
+                    st.session_state.loss_history, y_label="MSE Training Loss", height=CHART_H
                 )
 
-            # NEW: weights changed, so earlier test results / manual prediction are stale
             st.session_state.pop("eval_results", None)
             st.session_state.pop("manual_pred", None)
 
@@ -1204,8 +1286,6 @@ with tab_test:
                 test_preds_norm = net(X_test).numpy()
                 Y_test_norm = Y_test.numpy()
 
-            # Stored in session_state so the charts stay visible when the
-            # manual prediction form below triggers a rerun
             st.session_state.eval_results = {
                 "actual": scaler_Y.inverse_transform(Y_test_norm),
                 "pred": scaler_Y.inverse_transform(test_preds_norm),
@@ -1218,9 +1298,11 @@ with tab_test:
 
         st.write("### Output Verification Trends (Actual vs. Predicted)")
 
-        cols = st.columns(2)
+        # 2 charts per row on PC, 1 per row on Smartphone (keeps output order)
+        n_chart_cols = 1 if IS_MOBILE else 2
+        cols = st.columns(n_chart_cols)
         for idx, col_name in enumerate(output_names):
-            with cols[idx % 2]:
+            with cols[idx % n_chart_cols]:
                 st.markdown(f"**Output {idx+1}: {col_name}**")
                 chart_data = pd.DataFrame(
                     {
@@ -1228,7 +1310,7 @@ with tab_test:
                         "Predicted": Y_test_pred[:, idx],
                     }
                 )
-                st.line_chart(chart_data)
+                st.line_chart(chart_data, height=CHART_H)
 
                 y_t = Y_test_actual[:, idx]
                 y_p = Y_test_pred[:, idx]
@@ -1239,7 +1321,7 @@ with tab_test:
                 st.caption(f"Variable R² Accuracy: {r2:.4f}")
 
     # -----------------------------------------------------------------
-    # NEW: MANUAL INPUT PREDICTION
+    # MANUAL INPUT PREDICTION
     # -----------------------------------------------------------------
     st.divider()
     st.write("### Manual Input Prediction")
@@ -1252,15 +1334,13 @@ with tab_test:
     if st.session_state.net is None:
         st.info("Please initialize and train the model first to use manual prediction.")
     else:
-        # Training-set range for each input (what the model has actually seen)
         train_rows = df_raw.iloc[st.session_state.train_idx.numpy()]
         in_min = train_rows[input_names].min()
         in_max = train_rows[input_names].max()
         in_mean = train_rows[input_names].mean()
 
-        # A form means editing the boxes does not rerun the app until "Predict" is pressed
         with st.form("manual_input_form"):
-            n_cols = min(3, num_inputs)
+            n_cols = 1 if IS_MOBILE else min(3, num_inputs)
             in_cols = st.columns(n_cols)
             manual_vals = []
             for i, name in enumerate(input_names):
@@ -1285,10 +1365,10 @@ with tab_test:
             net = st.session_state.net
             net.eval()
             x_raw = np.array([manual_vals], dtype=float)
-            x_scaled = scaler_X.transform(x_raw)                      # same scaling as training
+            x_scaled = scaler_X.transform(x_raw)
             with torch.no_grad():
                 y_scaled = net(torch.tensor(x_scaled, dtype=torch.float32)).numpy()
-            y_pred = scaler_Y.inverse_transform(y_scaled)[0]          # back to engineering units
+            y_pred = scaler_Y.inverse_transform(y_scaled)[0]
 
             out_of_range = [
                 name for name, v in zip(input_names, manual_vals)
@@ -1310,7 +1390,7 @@ with tab_test:
                     "Outside the training range (extrapolation): " + ", ".join(mp["out_of_range"])
                 )
 
-            n_out_cols = min(4, num_outputs)
+            n_out_cols = min(2 if IS_MOBILE else 4, num_outputs)
             out_cols = st.columns(n_out_cols)
             for i, (name, val) in enumerate(zip(output_names, mp["outputs"])):
                 out_cols[i % n_out_cols].metric(name, f"{val:.4f}")
@@ -1354,7 +1434,7 @@ with tab_export:
         arch_str = " → ".join(
             [str(cfg["num_inputs"])] + [str(h) for h in cfg["hidden_layers"]] + [str(cfg["num_outputs"])]
         )
-        ecol1, ecol2, ecol3 = st.columns(3)
+        ecol1, ecol2, ecol3 = rcols(3)
         ecol1.metric("Architecture", arch_str)
         ecol2.metric("Activation", cfg["activation"])
         ecol3.metric(
@@ -1394,9 +1474,10 @@ with tab_export:
              "Standalone predict() function. Needs only NumPy. Engineering units in and out."),
         ]
 
-        grid = st.columns(3)
+        n_grid = 1 if IS_MOBILE else 3
+        grid = st.columns(n_grid)
         for i, (k, label, fname, mime, desc) in enumerate(formats):
-            with grid[i % 3]:
+            with grid[i % n_grid]:
                 with st.container(border=True):
                     st.markdown(f"**{label}**")
                     st.caption(desc)
@@ -1406,7 +1487,7 @@ with tab_export:
                             data=exports[k],
                             file_name=fname,
                             mime=mime,
-                            on_click="ignore",  # no rerun, so the tab stays open
+                            on_click="ignore",
                             key=f"dl_{k}",
                             use_container_width=True,
                         )
@@ -1435,4 +1516,5 @@ with tab_export:
             on_click="ignore",
             type="primary",
             key="dl_zip",
+            use_container_width=IS_MOBILE,
         )
