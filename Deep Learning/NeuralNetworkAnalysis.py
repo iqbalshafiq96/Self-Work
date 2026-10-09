@@ -43,6 +43,16 @@ IS_MOBILE = st.session_state.device_mode == DEVICE_MOBILE
 CHART_H = 220 if IS_MOBILE else 300
 PLOTLY_CFG = {"displayModeBar": False} if IS_MOBILE else {}
 
+# Shared colour scale (correlation matrix + feature importance heatmap)
+royal_blue_colorscale = [
+    [0.0, "#F7FBFF"],
+    [0.2, "#DEEBF7"],
+    [0.4, "#C6DBEF"],
+    [0.6, "#9ECAE1"],
+    [0.8, "#3182BD"],
+    [1.0, "#08519C"],
+]
+
 if IS_MOBILE:
     st.markdown(
         """
@@ -84,6 +94,12 @@ def rcols(spec):
     if IS_MOBILE:
         return [st.container() for _ in range(n)]
     return st.columns(spec)
+
+
+def clear_results():
+    """Drop any results that belong to an older model, split or dataset."""
+    for k in ("eval_results", "manual_pred", "perm_importance"):
+        st.session_state.pop(k, None)
 
 
 st.title("Develop, Train & Deploy Neural Network")
@@ -245,8 +261,7 @@ if st.session_state.get("dataset_key") != dataset_key:
     st.session_state.loss_history = []
     st.session_state.pop("train_idx", None)
     st.session_state.pop("test_idx", None)
-    st.session_state.pop("eval_results", None)
-    st.session_state.pop("manual_pred", None)
+    clear_results()
 
 try:
     (
@@ -909,8 +924,7 @@ if split_missing or size_mismatch or ratio_changed:
     st.session_state.split_ratio = test_ratio
     if ratio_changed:
         # Old test results belong to the previous split
-        st.session_state.pop("eval_results", None)
-        st.session_state.pop("manual_pred", None)
+        clear_results()
         if st.session_state.get("net") is not None and st.session_state.get("loss_history"):
             st.warning(
                 "Split ratio changed after training. Some new test rows were used in training, "
@@ -954,8 +968,7 @@ if init_clicked:
         "num_outputs": num_outputs,
         "activation": global_activation,
     }
-    st.session_state.pop("eval_results", None)
-    st.session_state.pop("manual_pred", None)
+    clear_results()
     st.session_state.show_init_msg = True
     st.session_state.workflow_tab = TAB_CORR
     st.session_state.tabs_version = st.session_state.get("tabs_version", 0) + 1
@@ -1210,15 +1223,6 @@ with tab_corr:
     corr_masked = corr.copy()
     corr_masked[mask] = np.nan
 
-    royal_blue_colorscale = [
-        [0.0, "#F7FBFF"],
-        [0.2, "#DEEBF7"],
-        [0.4, "#C6DBEF"],
-        [0.6, "#9ECAE1"],
-        [0.8, "#3182BD"],
-        [1.0, "#08519C"],
-    ]
-
     fig = px.imshow(
         corr_masked,
         color_continuous_scale=royal_blue_colorscale,
@@ -1329,8 +1333,7 @@ with tab_train:
                     st.session_state.loss_history, y_label="MSE Training Loss", height=CHART_H
                 )
 
-            st.session_state.pop("eval_results", None)
-            st.session_state.pop("manual_pred", None)
+            clear_results()
 
             st.success(f"Training Complete! Final Loss: {loss.item():.6f}")
 
@@ -1383,6 +1386,94 @@ with tab_test:
                     / (np.sum((y_t - np.mean(y_t)) ** 2) + 1e-8)
                 )
                 st.caption(f"Variable R² Accuracy: {r2:.4f}")
+
+    # -----------------------------------------------------------------
+    # FEATURE IMPORTANCE (PERMUTATION)
+    # -----------------------------------------------------------------
+    st.divider()
+    st.write("### Feature Importance (Permutation)")
+    st.caption(
+        "Shows how much the trained model relies on each input. One input at a time is randomly shuffled "
+        "in the test set, which breaks its link to the outputs, and the increase in prediction error (MSE) "
+        "is measured. A large increase means the model depends on that input. A near-zero value means the "
+        "input adds little and could be removed, then the model retrained and R² compared."
+    )
+
+    if st.session_state.net is None or not st.session_state.loss_history:
+        st.info("Please initialize and train the model first to see feature importance.")
+    elif X_test.shape[0] < 2:
+        st.info("The test set is too small to compute feature importance.")
+    else:
+        n_repeats = st.number_input(
+            "Shuffle Repeats", min_value=1, max_value=50, value=10, step=1,
+            help="Each input is shuffled this many times and the results averaged. More repeats give a steadier result.",
+            key="perm_repeats",
+        )
+
+        if st.button("Compute Feature Importance", on_click=remember_tab, args=(TAB_TEST,)):
+            net = st.session_state.net
+            net.eval()
+            gen = torch.Generator().manual_seed(42)
+            imp = np.zeros((num_inputs, num_outputs))
+
+            with torch.no_grad():
+                base_mse = ((net(X_test) - Y_test) ** 2).mean(dim=0)  # per output
+                for j in range(num_inputs):
+                    deltas = []
+                    for _ in range(int(n_repeats)):
+                        X_perm = X_test.clone()
+                        perm = torch.randperm(X_perm.shape[0], generator=gen)
+                        X_perm[:, j] = X_perm[perm, j]
+                        mse = ((net(X_perm) - Y_test) ** 2).mean(dim=0)
+                        deltas.append((mse - base_mse).numpy())
+                    imp[j] = np.mean(deltas, axis=0)
+
+            st.session_state.perm_importance = imp
+
+        imp = st.session_state.get("perm_importance")
+        if imp is not None:
+            # Overall ranking: average over outputs, negatives treated as zero
+            overall = np.clip(imp.mean(axis=1), 0, None)
+            total = overall.sum()
+            pct = overall / total * 100 if total > 0 else overall
+
+            imp_df = (
+                pd.DataFrame({"Input": input_names, "Importance (%)": pct})
+                .sort_values("Importance (%)")
+            )
+            fig_imp = px.bar(
+                imp_df, x="Importance (%)", y="Input", orientation="h",
+                text=imp_df["Importance (%)"].map(lambda v: f"{v:.1f}%"),
+                color_discrete_sequence=["#3182BD"],
+            )
+            fig_imp.update_layout(
+                height=max(250, 40 * num_inputs),
+                yaxis_title="",
+                margin=dict(l=10, r=10, t=20, b=10),
+            )
+            st.plotly_chart(fig_imp, use_container_width=True, config=PLOTLY_CFG)
+
+            # Per-output breakdown (only useful with more than one output)
+            if num_outputs > 1:
+                st.write("#### Importance per Output (MSE increase, scaled units)")
+                imp_matrix = pd.DataFrame(np.clip(imp, 0, None), index=input_names, columns=output_names)
+                fig_hm = px.imshow(
+                    imp_matrix, color_continuous_scale=royal_blue_colorscale,
+                    text_auto=".3f", aspect="auto",
+                )
+                fig_hm.update_layout(
+                    height=max(300, 45 * num_inputs),
+                    margin=dict(l=10, r=10, t=20, b=10),
+                    xaxis=dict(tickangle=-90 if IS_MOBILE else -45),
+                )
+                st.plotly_chart(fig_hm, use_container_width=True, config=PLOTLY_CFG)
+
+            weak = imp_df.loc[imp_df["Importance (%)"] < 5, "Input"].tolist()
+            if weak:
+                st.caption(
+                    "Low contribution (< 5%): " + ", ".join(weak) +
+                    ". Consider removing these, retraining, and checking whether R² holds."
+                )
 
     # -----------------------------------------------------------------
     # MANUAL INPUT PREDICTION
