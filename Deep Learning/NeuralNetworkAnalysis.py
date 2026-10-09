@@ -875,16 +875,47 @@ def repartition_dataset(total_samples, current_test_ratio):
     return indices[:split_idx], indices[split_idx:]
 
 
-test_ratio = st.slider("Test Set Split Ratio", 0.1, 0.4, 0.2, step=0.05)
+st.subheader("Dataset Summary & Partitioning")
+mcol1, mcol2, mcol3 = rcols(3)
 
-if (
-    "train_idx" not in st.session_state
-    or "test_idx" not in st.session_state
-    or len(st.session_state.train_idx) + len(st.session_state.test_idx) != num_samples
-):
+# Total rows + split ratio box underneath it
+with mcol1:
+    st.metric("Total Dataset Rows", num_samples)
+    test_ratio = st.number_input(
+        "Test Set Split Ratio",
+        min_value=0.10,
+        max_value=0.40,
+        value=0.20,
+        step=0.05,
+        format="%.2f",
+        help="Fraction of rows held back for testing (0.10 to 0.40). Type a value or use − / +.",
+        key="test_ratio_input",
+    )
+    test_ratio = round(float(test_ratio), 2)
+
+# Re-split whenever the ratio changes, the split is missing, or the dataset size changed
+prev_ratio = st.session_state.get("split_ratio")
+ratio_changed = prev_ratio is not None and prev_ratio != test_ratio
+split_missing = "train_idx" not in st.session_state or "test_idx" not in st.session_state
+size_mismatch = (
+    not split_missing
+    and len(st.session_state.train_idx) + len(st.session_state.test_idx) != num_samples
+)
+
+if split_missing or size_mismatch or ratio_changed:
     st.session_state.train_idx, st.session_state.test_idx = repartition_dataset(
         num_samples, test_ratio
     )
+    st.session_state.split_ratio = test_ratio
+    if ratio_changed:
+        # Old test results belong to the previous split
+        st.session_state.pop("eval_results", None)
+        st.session_state.pop("manual_pred", None)
+        if st.session_state.get("net") is not None and st.session_state.get("loss_history"):
+            st.warning(
+                "Split ratio changed after training. Some new test rows were used in training, "
+                "so re-initialize the model for a fair evaluation."
+            )
 
 X_tensor = torch.tensor(X_norm, dtype=torch.float32)
 Y_tensor = torch.tensor(Y_norm, dtype=torch.float32)
@@ -894,9 +925,6 @@ Y_train = Y_tensor[st.session_state.train_idx]
 X_test = X_tensor[st.session_state.test_idx]
 Y_test = Y_tensor[st.session_state.test_idx]
 
-st.subheader("Dataset Summary & Partitioning")
-mcol1, mcol2, mcol3 = rcols(3)
-mcol1.metric("Total Dataset Rows", num_samples)
 mcol2.metric("Training Samples", X_train.shape[0])
 mcol3.metric("Testing Samples", X_test.shape[0])
 
@@ -915,6 +943,7 @@ if init_clicked:
     st.session_state.train_idx, st.session_state.test_idx = repartition_dataset(
         num_samples, test_ratio
     )
+    st.session_state.split_ratio = test_ratio
     st.session_state.net = ConfigurableNet(
         num_inputs, hidden1_size, hidden2_size, hidden3_size, global_activation, num_outputs
     )
