@@ -259,6 +259,7 @@ if st.session_state.get("dataset_key") != dataset_key:
     st.session_state.dataset_key = dataset_key
     st.session_state.net = None
     st.session_state.loss_history = []
+    st.session_state.val_loss_history = []
     st.session_state.pop("train_idx", None)
     st.session_state.pop("test_idx", None)
     clear_results()
@@ -880,6 +881,34 @@ if "net" not in st.session_state:
     st.session_state.net = None
 if "loss_history" not in st.session_state:
     st.session_state.loss_history = []
+if "val_loss_history" not in st.session_state:
+    st.session_state.val_loss_history = []
+
+
+def build_loss_df():
+    """Training + validation MSE per epoch for one combined chart."""
+    tr = st.session_state.loss_history
+    va = st.session_state.get("val_loss_history", [])
+    n = len(tr)
+    va = ([np.nan] * (n - len(va)) + va[-n:]) if n else []  # align if lengths differ
+    return pd.DataFrame({
+        "Epoch": np.arange(1, n + 1),
+        "Training Loss": tr,
+        "Validation Loss": va,
+    })
+
+
+def draw_loss_chart(placeholder):
+    placeholder.line_chart(
+        build_loss_df(),
+        x="Epoch",
+        y=["Training Loss", "Validation Loss"],
+        color=["#1F77B4", "#FF7F0E"],   # blue = training, orange = validation
+        x_label="Epochs",
+        y_label="MSE",
+        height=CHART_H,
+    )
+
 
 num_samples = len(X_norm)
 
@@ -962,6 +991,7 @@ if init_clicked:
         num_inputs, hidden1_size, hidden2_size, hidden3_size, global_activation, num_outputs
     )
     st.session_state.loss_history = []
+    st.session_state.val_loss_history = []
     st.session_state.net_config = {
         "num_inputs": num_inputs,
         "hidden_layers": [h for h in [hidden1_size, hidden2_size, hidden3_size] if h > 0],
@@ -1281,6 +1311,11 @@ with tab_corr:
 # --- TAB 1: BATCH TRAINING ---
 with tab_train:
     st.markdown("Train the model parameters using normalized training inputs (`X_train`, `Y_train`).")
+    st.caption(
+        "Training Loss is the MSE on the data the model learns from. Validation Loss is the MSE on unseen "
+        "test data, checked after every epoch but never used to update weights. If validation loss starts "
+        "rising while training loss keeps falling, the model is overfitting."
+    )
 
     tcol1, tcol2 = rcols(2)
     with tcol1:
@@ -1299,7 +1334,11 @@ with tab_train:
         "Number of Epochs", min_value=10, max_value=5000, value=200
     )
 
-    if st.button("Run Batch Training", on_click=remember_tab, args=(TAB_TRAIN,)):
+    train_clicked = st.button("Run Batch Training", on_click=remember_tab, args=(TAB_TRAIN,))
+    progress_slot = st.empty()
+    chart_place = st.empty()
+
+    if train_clicked:
         if st.session_state.net is None:
             st.warning("Please initialize the model first!")
         else:
@@ -1310,12 +1349,11 @@ with tab_train:
                 else optim.SGD(net.parameters(), lr=lr)
             )
             criterion = nn.MSELoss()
+            progress_bar = progress_slot.progress(0)
 
-            progress_bar = st.progress(0)
-            chart_place = st.empty()
-
-            net.train()
             for epoch in range(int(epochs)):
+                # ---- Training step ----
+                net.train()
                 optimizer.zero_grad()
                 output = net(X_train)
                 loss = criterion(output, Y_train)
@@ -1327,15 +1365,27 @@ with tab_train:
                 loss.backward()
                 optimizer.step()
 
+                # ---- Validation check (no weight update) ----
+                net.eval()
+                with torch.no_grad():
+                    val_loss = criterion(net(X_test), Y_test)
+
                 st.session_state.loss_history.append(loss.item())
+                st.session_state.val_loss_history.append(val_loss.item())
                 progress_bar.progress((epoch + 1) / int(epochs))
-                chart_place.line_chart(
-                    st.session_state.loss_history, y_label="MSE Training Loss", height=CHART_H
-                )
+                draw_loss_chart(chart_place)
 
             clear_results()
 
-            st.success(f"Training Complete! Final Loss: {loss.item():.6f}")
+            if st.session_state.loss_history:
+                st.success(
+                    f"Training Complete! Final Training Loss: {st.session_state.loss_history[-1]:.6f} | "
+                    f"Final Validation Loss: {st.session_state.val_loss_history[-1]:.6f}"
+                )
+
+    # Keep the loss curve visible after reruns (e.g., switching tabs)
+    if st.session_state.loss_history and not train_clicked:
+        draw_loss_chart(chart_place)
 
 
 # --- TAB 2: MODEL TESTING & VERIFICATION ---
