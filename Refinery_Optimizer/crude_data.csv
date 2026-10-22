@@ -1,5 +1,0 @@
-crude_id,crude_name,tank_id,price_usd_bbl,y_lpg,y_naph,y_kero,y_go,y_ar,y_loss,ar_sulfur_wt,x_min_kbd,x_max_kbd
-AL,Arab Light,TK-101,76.0,0.02,0.18,0.14,0.2,0.45,0.01,3.0,0,60
-MUR,Murban,TK-102,80.5,0.03,0.24,0.16,0.22,0.34,0.01,1.3,0,50
-TAP,Tapis,TK-103,84.0,0.03,0.22,0.17,0.3,0.27,0.01,0.15,0,50
-KIM,Kimanis,TK-104,82.5,0.02,0.2,0.15,0.32,0.3,0.01,0.2,0,40
