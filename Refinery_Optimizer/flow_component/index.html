@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Refinery planning flow</title>
+<style>
+:root{
+  --bg:#070d1a; --bg2:#0c1528; --panel:#0f1a30; --panel2:#13213d; --line:#22355c; --text:#e6edf8; --muted:#8ea2c4;
+  --input:#38bdf8; --calc:#a78bfa; --core:#fb923c; --output:#34d399; --bad:#f87171; --warn:#fbbf24; --ok:#34d399;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:transparent;color:var(--text);font-family:Inter,"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+#app{position:relative;border-radius:14px;overflow:hidden;background:var(--bg);border:1px solid #16233f}
+/* toolbar */
+.toolbar{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;padding:10px 14px;background:linear-gradient(180deg,#0d1730,#0a1224);border-bottom:1px solid #18264a}
+.brand{font-weight:700;font-size:14px;letter-spacing:.2px;display:flex;align-items:center;gap:8px}
+.brand .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok)}
+.chip{font-size:12px;padding:4px 9px;border-radius:999px;background:#12203c;border:1px solid #20335a;color:var(--muted);white-space:nowrap}
+.chip b{color:var(--text);font-weight:600}
+.chip.good b{color:var(--ok)} .chip.bad b{color:var(--bad)} .chip.warn b{color:var(--warn)}
+.spacer{flex:1}
+.btn{font:600 12px inherit;font-family:inherit;padding:7px 12px;border-radius:9px;border:1px solid #2a4170;background:#132449;color:var(--text);cursor:pointer;transition:.15s}
+.btn:hover{background:#1a2f5c;border-color:#3b5a96}
+.btn:focus-visible{outline:2px solid var(--input);outline-offset:2px}
+.btn.primary{background:linear-gradient(135deg,#f97316,#fb923c);border-color:#fb923c;color:#1a0e02}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent}
+.btn.danger{border-color:#7f1d1d;background:#2a1215;color:#fecaca}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+/* canvas */
+#viewport{position:relative;overflow-x:auto;overflow-y:hidden}
+#stage{position:relative;width:1400px;height:730px;transform-origin:0 0;
+  background-color:var(--bg);
+  background-image:radial-gradient(circle at 1px 1px,#1a2a4b 1px,transparent 1.4px);
+  background-size:22px 22px}
+#edges,#particles{position:absolute;left:0;top:0;width:1400px;height:730px;pointer-events:none}
+.colhead{position:absolute;top:6px;font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:#5e739b;font-weight:700}
+.node{position:absolute;border-radius:14px;background:linear-gradient(180deg,rgba(21,33,60,.97),rgba(14,23,43,.97));
+  border:1px solid #233a66;cursor:pointer;padding:10px 12px 10px 12px;transition:transform .15s,box-shadow .2s,border-color .2s;user-select:none}
+.node:hover,.node:focus-visible{transform:translateY(-2px);outline:none}
+.node .hd{display:flex;align-items:center;gap:9px}
+.node .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:16px;flex:none}
+.node .tt{font-weight:650;font-size:13.5px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node .hd>div:last-child{min-width:0;flex:1}
+.node .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node .sub{font-size:10.5px;color:var(--muted);margin-top:1px}
+.node .st{font-size:11.5px;color:#c9d6ee;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node .sd{position:absolute;top:10px;right:10px;width:8px;height:8px;border-radius:50%}
+.node .badge{position:absolute;top:-8px;right:12px;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--warn);color:#271a00;letter-spacing:.4px}
+.node .port{position:absolute;width:10px;height:10px;border-radius:50%;top:50%;margin-top:-5px;background:var(--bg);border:2px solid}
+.node .port.in{left:-6px} .node .port.out{right:-6px}
+.node.k-input .ic{background:rgba(56,189,248,.14)} .node.k-input:hover{box-shadow:0 0 0 1px var(--input),0 8px 30px rgba(56,189,248,.25)}
+.node.k-calc .ic{background:rgba(167,139,250,.16)} .node.k-calc:hover{box-shadow:0 0 0 1px var(--calc),0 8px 30px rgba(167,139,250,.25)}
+.node.k-core{border-color:#7c3f12;background:linear-gradient(180deg,#24180f,#160f0b)}
+.node.k-core .ic{background:rgba(251,146,60,.18)} .node.k-core:hover{box-shadow:0 0 0 1px var(--core),0 10px 40px rgba(251,146,60,.3)}
+.node.k-output .ic{background:rgba(52,211,153,.14)} .node.k-output:hover{box-shadow:0 0 0 1px var(--output),0 8px 30px rgba(52,211,153,.25)}
+.node.err{border-color:#7f1d1d;box-shadow:0 0 0 1px rgba(248,113,113,.5)}
+.node.dim{opacity:.55}
+.core-eq{font-family:"Cambria Math","STIX Two Math",Georgia,serif;font-size:14px;margin-top:9px;color:#fde7d3;line-height:1.35}
+.core-eq small{font-family:inherit;color:#d5b496;font-size:11.5px}
+.core-z{font-size:22px;font-weight:750;margin-top:6px;color:#fff}
+.core-z .d{font-size:12px;font-weight:600;color:var(--ok);margin-left:6px}
+.core-row{display:flex;gap:6px;margin-top:8px;align-items:center}
+.pill{font-size:10.5px;padding:2px 8px;border-radius:999px;font-weight:700;letter-spacing:.3px}
+.pill.ok{background:rgba(52,211,153,.15);color:var(--ok);border:1px solid rgba(52,211,153,.4)}
+.pill.bad{background:rgba(248,113,113,.15);color:var(--bad);border:1px solid rgba(248,113,113,.4)}
+.pill.busy{background:rgba(251,146,60,.15);color:var(--core);border:1px solid rgba(251,146,60,.4)}
+.runbtn{margin-left:auto;font:700 11px inherit;font-family:inherit;padding:5px 10px;border-radius:8px;background:var(--core);color:#1a0e02;border:none;cursor:pointer}
+.runbtn:hover{filter:brightness(1.1)}
+.spark{display:block;margin-top:6px}
+.busy-ring{position:absolute;inset:-4px;border-radius:17px;border:2px solid transparent;border-top-color:var(--core);border-right-color:var(--core);animation:spin 1s linear infinite;pointer-events:none;display:none}
+.node.busy .busy-ring{display:block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hint{position:absolute;left:14px;bottom:10px;font-size:11px;color:#5e739b}
+.legend{position:absolute;right:14px;bottom:10px;display:flex;gap:12px;font-size:11px;color:#7c90b6}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+/* modal */
+#modal{position:absolute;inset:0;background:rgba(3,7,16,.66);backdrop-filter:blur(3px);display:none;align-items:flex-start;justify-content:center;padding:18px 12px;z-index:50}
+#modal.open{display:flex}
+.panel{width:min(1120px,100%);max-height:100%;display:flex;flex-direction:column;background:var(--panel);border:1px solid #2a4170;border-radius:16px;box-shadow:0 30px 80px rgba(0,0,0,.55);overflow:hidden}
+.panel header{display:flex;gap:12px;align-items:center;padding:14px 18px;border-bottom:1px solid #1f3157;background:var(--panel2)}
+.panel header .ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font-size:19px}
+.panel header h2{margin:0;font-size:16px}
+.panel header p{margin:2px 0 0;font-size:12px;color:var(--muted)}
+.panel header .x{margin-left:auto;font-size:20px;background:none;border:none;color:var(--muted);cursor:pointer;padding:4px 8px;border-radius:8px}
+.panel header .x:hover{background:#1c2c4f;color:#fff}
+.panel .body{padding:16px 18px;overflow:auto;flex:1;min-height:120px}
+.panel footer{display:flex;gap:8px;align-items:center;padding:12px 18px;border-top:1px solid #1f3157;background:var(--panel2);flex-wrap:wrap}
+.panel footer .msg{font-size:12px;color:var(--muted);margin-right:auto}
+.tblwrap{overflow:auto;border:1px solid #1f3157;border-radius:10px;max-height:52vh}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th,td{padding:5px 8px;border-bottom:1px solid #1a2a4b;text-align:left;white-space:nowrap}
+th{position:sticky;top:0;background:#132344;color:#b7c6e3;font-weight:650;z-index:1}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr:hover td{background:rgba(56,189,248,.05)}
+td.ro{color:#8ea2c4}
+td input,td select{width:100%;min-width:64px;background:transparent;border:1px solid transparent;color:var(--text);font:inherit;padding:3px 5px;border-radius:6px}
+td input:hover,td select:hover{border-color:#2a4170}
+td input:focus,td select:focus{outline:none;border-color:var(--input);background:#0b1426}
+td select option{background:#0f1a30}
+td.num input{text-align:right}
+td.changed input,td.changed select{background:rgba(251,191,36,.14);border-color:rgba(251,191,36,.5)}
+td.badcell input{border-color:var(--bad);background:rgba(248,113,113,.12)}
+tr.actual td{color:#8ea2c4}
+tr.plan td.v{color:#a7f3d0}
+.del{background:none;border:none;color:#f87171;cursor:pointer;font-size:14px;padding:2px 6px;border-radius:6px}
+.del:hover{background:rgba(248,113,113,.15)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.grid-tanks{display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));gap:12px}
+.card{background:#0c1629;border:1px solid #1f3157;border-radius:12px;padding:12px}
+.card h3{margin:0 0 8px;font-size:13px;color:#cfe0ff}
+.card h4{margin:0 0 4px;font-size:12px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:#0c1629;border:1px solid #1f3157;border-radius:12px;padding:10px 12px}
+.kpi .l{font-size:11px;color:var(--muted)} .kpi .v{font-size:20px;font-weight:750;margin-top:2px} .kpi .s{font-size:11px;margin-top:2px}
+.eq{font-family:"Cambria Math","STIX Two Math",Georgia,serif;font-size:15.5px;line-height:1.7;background:#0b1426;border:1px solid #1f3157;border-radius:10px;padding:10px 14px;overflow-x:auto}
+.eq sub{font-size:.72em} .eq sup{font-size:.72em}
+.eq .hl{color:#fdba74}
+.issue{padding:8px 10px;border-radius:9px;margin-bottom:6px;font-size:12.5px}
+.issue.error{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.4)}
+.issue.warning{background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.35)}
+.issue.ok{background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.35)}
+.why li{margin-bottom:7px;font-size:13px;line-height:1.45}
+.muted{color:var(--muted);font-size:12px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.field input[type=number]{width:120px;background:#0b1426;border:1px solid #2a4170;color:var(--text);border-radius:8px;padding:6px 8px;font:inherit}
+.field input[type=range]{width:260px}
+.switch{display:flex;gap:8px;align-items:center;font-size:12.5px;cursor:pointer}
+.tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.tab{font:600 12px inherit;font-family:inherit;padding:6px 11px;border-radius:8px;border:1px solid #23395f;background:#0c1629;color:var(--muted);cursor:pointer}
+.tab.on{background:#16305a;color:#fff;border-color:#3b5a96}
+.st-ok{color:var(--ok)} .st-bad{color:var(--bad)} .st-warn{color:var(--warn)}
+svg text{font-family:inherit}
+.legend2{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin:4px 0 10px}
+.legend2 span{display:inline-flex;align-items:center;gap:6px}
+.legend2 i{display:inline-block;width:16px;height:3px;border-radius:2px}
+@media (prefers-reduced-motion:reduce){.busy-ring{animation:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="toolbar" id="toolbar"></div>
+  <div id="viewport"><div id="stage">
+    <svg id="edges" viewBox="0 0 1400 730" aria-hidden="true"></svg>
+    <canvas id="particles" aria-hidden="true"></canvas>
+    <div id="nodes"></div>
+    <div class="hint">Click any block to open it · input blocks are editable · every change re-solves the LP</div>
+    <div class="legend"><span><i style="background:var(--input)"></i>Input</span><span><i style="background:var(--calc)"></i>Calculation</span><span><i style="background:var(--core)"></i>Optimizer</span><span><i style="background:var(--output)"></i>Output</span></div>
+  </div></div>
+  <div id="modal" role="dialog" aria-modal="true"><div class="panel" id="panel"></div></div>
+</div>
+
+<script>
+(function(){
+"use strict";
+/* ============================================================ Streamlit bridge */
+const inStreamlit = window.parent !== window;
+function send(type, data){ if(inStreamlit) window.parent.postMessage(Object.assign({isStreamlitMessage:true, type}, data||{}), "*"); }
+function setValue(v){ send("streamlit:setComponentValue", {value:v, dataType:"json"}); }
+function setHeight(h){ send("streamlit:setFrameHeight", {height:Math.ceil(h)}); }
+
+/* ============================================================ layout */
+const W = 1400, H = 730;
+const COL = {input:"#38bdf8", calc:"#a78bfa", core:"#fb923c", output:"#34d399", bad:"#f87171"};
+const ICON = {
+  crude:'<ellipse cx="12" cy="5" rx="7" ry="2.5"/><path d="M5 5v14c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V5"/><path d="M5 10c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5M5 15c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/>',
+  unit:'<path d="M3 21V10l5 3V10l5 3V5h4v16"/><path d="M3 21h18"/><path d="M17 9h4v12"/><path d="M7 17h2M12 17h2"/>',
+  product:'<path d="M4 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16"/><path d="M3 21h12"/><path d="M7 7h4v4H7z"/><path d="M14 9h2a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V8l-3-3"/>',
+  tank:'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 13h16"/><path d="M8 17h2"/><path d="M12 4v3"/>',
+  ship:'<path d="M3 17l1.5 3h15L21 17l-9-3-9 3z"/><path d="M6 15V9h12v6"/><path d="M12 9V4"/><path d="M9 6h6"/>',
+  truck:'<path d="M2 6h12v10H2z"/><path d="M14 10h4l3 3v3h-7"/><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',
+  cal:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M8 14h2v2H8z"/>',
+  check:'<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+  flask:'<path d="M9 3h6"/><path d="M10 3v6l-5.5 9.5A2 2 0 0 0 6.2 21h11.6a2 2 0 0 0 1.7-2.5L14 9V3"/><path d="M7.5 15h9"/>',
+  cpu:'<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M10 10h4v4h-4z"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>',
+  sliders:'<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+  money:'<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.8"/><path d="M6 9v.01M18 15v.01"/>',
+  bars:'<path d="M3 21h18"/><path d="M6 17V9M11 17V5M16 17v-6M20 17v-3"/>',
+  curve:'<path d="M3 3v18h18"/><path d="M6 15l4-5 3 3 6-7"/><path d="M6 19h0"/>',
+  bulb:'<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
+};
+const svgIcon = (k,size=18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]||""}</svg>`;
+const NODES = [
+  {id:"crude_data",      kind:"input", title:"Crude data",          icon:"crude", sub:"crude_data.csv",       x:28,  y:30},
+  {id:"unit_data",       kind:"input", title:"Unit data",           icon:"unit", sub:"unit_data.csv",        x:28,  y:128},
+  {id:"product_data",    kind:"input", title:"Product data",        icon:"product", sub:"product_data.csv",     x:28,  y:226},
+  {id:"tank_master",     kind:"input", title:"Tanks & opening stock",icon:"tank", sub:"tank_master.csv",     x:28,  y:324},
+  {id:"crude_receipts",  kind:"input", title:"Crude receipts",      icon:"ship", sub:"crude_receipts.csv",   x:28,  y:422},
+  {id:"product_liftings",kind:"input", title:"Product liftings",    icon:"truck", sub:"product_liftings.csv", x:28,  y:520},
+  {id:"daily_decisions", kind:"input", title:"Actuals & horizon",   icon:"cal", sub:"daily_decisions.csv",  x:28,  y:618},
+  {id:"validate",        kind:"calc",  title:"Validate & build",    icon:"check", sub:"checks · align by day",x:345, y:318},
+  {id:"model",           kind:"calc",  title:"Process model",       icon:"flask", sub:"linear yields · margin coeffs", x:600, y:318},
+  {id:"optimizer",       kind:"core",  title:"LP optimizer",        icon:"cpu", sub:"SciPy HiGHS · click for objective", x:858, y:262, w:250, h:196},
+  {id:"decisions",       kind:"output",title:"Decision variables",  icon:"sliders", sub:"x[c,t] · r[t] · f[t]",  x:1172, y:40},
+  {id:"economics",       kind:"output",title:"Plan economics",icon:"money", sub:"margin · revenue · cost", x:1172, y:172},
+  {id:"tank_balance",    kind:"output",title:"Tank balance",        icon:"bars", sub:"open + in − out = close", x:1172, y:304},
+  {id:"tank_curves",     kind:"output",title:"Tank level curves",   icon:"curve", sub:"closing vs heel / capacity", x:1172, y:436, h:118},
+  {id:"why",             kind:"output",title:"Why? Explanation",  icon:"bulb", sub:"binding limits · shadow prices", x:1172, y:590},
+];
+NODES.forEach(n=>{ n.w = n.w || (n.kind==="input"?222:(n.kind==="output"?206:212)); n.h = n.h || (n.kind==="input"?80:96); });
+const byId = Object.fromEntries(NODES.map(n=>[n.id,n]));
+const EDGES = [];
+NODES.filter(n=>n.kind==="input").forEach(n=>EDGES.push({from:n.id, to:"validate"}));
+EDGES.push({from:"validate", to:"model"}, {from:"model", to:"optimizer"});
+NODES.filter(n=>n.kind==="output").forEach(n=>EDGES.push({from:"optimizer", to:n.id}));
+
+/* ============================================================ state */
+let P = null;              // payload from Python
+let busyNonce = null;      // waiting for Python to acknowledge an action
+let openId = null;         // node whose modal is open
+let draft = null;          // table being edited
+let modalTab = {};         // remembered tab per modal
+let hoverId = null;
+const $ = s => document.querySelector(s);
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = (v,d=0) => (v==null||!isFinite(v)) ? "—" : Number(v).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
+const sgn = (v,d=0) => (v>0?"+":"") + fmt(v,d);
+const md = s => esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>");
+
+function act(obj){
+  if(busyNonce) return;
+  const nonce = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+  busyNonce = nonce;
+  setValue(Object.assign({nonce}, obj));
+  renderBusy();
+  if(!inStreamlit) setTimeout(()=>{ busyNonce=null; renderBusy(); }, 600);
+  setTimeout(()=>{ if(busyNonce===nonce){ busyNonce=null; renderBusy(); } }, 30000); // safety
+}
+
+/* ============================================================ scaling */
+let scale = 1;
+function fit(){
+  const vw = document.body.clientWidth || W;
+  scale = Math.max(0.55, Math.min(vw / W, 1.25));
+  const st = $("#stage");
+  st.style.transform = `scale(${scale})`;
+  $("#viewport").style.height = (H*scale) + "px";
+  st.parentElement.style.width = "100%";
+  sizeCanvas();
+  const base = $("#toolbar").offsetHeight + H*scale;
+  const need = $("#modal").classList.contains("open") ? Math.max(base, 780) : base;
+  $("#app").style.minHeight = need + "px";
+  setHeight(need + 2);
+}
+
+/* ============================================================ toolbar */
+function renderToolbar(){
+  const r = P && P.result, s = P && P.source;
+  const ok = P && P.status==="optimal";
+  let chips = "";
+  if(s) chips += `<span class="chip">Data: <b>${s.github_files}/${s.total_files} from GitHub</b></span>`;
+  if(P && P.edited.length) chips += `<span class="chip warn">Edited: <b>${P.edited.length} table(s)</b></span>`;
+  if(r){
+    chips += `<span class="chip">Current plan: <b>${fmt(r.kpi_base.plan_margin_kusd)} $k</b></span>`;
+    if(r.kpi_opt){
+      const d = r.kpi_opt.plan_margin_kusd - r.kpi_base.plan_margin_kusd;
+      chips += `<span class="chip good">Optimised: <b>${fmt(r.kpi_opt.plan_margin_kusd)} $k</b></span>`;
+      chips += `<span class="chip ${d>=0?"good":"bad"}">Uplift: <b>${sgn(d)} $k</b></span>`;
+      chips += `<span class="chip ${r.kpi_opt.violations?"bad":"good"}">Violations: <b>${r.kpi_opt.violations}</b></span>`;
+    }
+  }
+  const status = !P ? "Loading…" : P.status==="invalid" ? "Input errors" : P.status==="infeasible" ? "Infeasible" : "Optimal";
+  const dotc = !P ? COL.calc : P.status==="optimal" ? COL.output : COL.bad;
+  $("#toolbar").innerHTML = `
+    <div class="brand"><span class="dot" style="background:${dotc};box-shadow:0 0 10px ${dotc}"></span>Refinery planning flow · <span style="color:${dotc}">${status}</span></div>
+    ${chips}<span class="spacer"></span>
+    <button class="btn ghost" type="button" id="tbReset" ${P&&P.edited.length?"":"disabled"}>↺ Reset all edits</button>
+    <button class="btn primary" type="button" id="tbRun">▶ Run optimizer</button>`;
+  $("#tbRun").addEventListener("click", ()=>act({action:"run"}));
+  $("#tbReset").addEventListener("click", ()=>{ if(confirm("Discard all edits and return to the GitHub data?")) act({action:"reset_all"}); });
+  if(busyNonce) $("#tbRun").disabled = true;
+}
+
+/* ============================================================ nodes */
+function nodeState(n){
+  if(!P) return "idle";
+  if(n.kind==="input"){
+    if(P.issues.some(i=>i.level==="error" && matchIssue(i.msg, n.id))) return "err";
+    return P.edited.includes(n.id) ? "edited" : "ok";
+  }
+  if(n.id==="validate") return P.issues.some(i=>i.level==="error") ? "err" : (P.issues.length?"warn":"ok");
+  if(P.status==="invalid") return "dim";
+  if(n.kind==="output" || n.id==="optimizer") return P.status==="optimal" ? "ok" : "err";
+  return "ok";
+}
+function matchIssue(msg, id){
+  const map = {crude_data:"Crude data", unit_data:"Unit data", product_data:"Product data", tank_master:"Tank master",
+               crude_receipts:"Crude receipts", product_liftings:"Product liftings", daily_decisions:"Actuals"};
+  return msg.startsWith(map[id]) || msg.startsWith(id);
+}
+
+function sparkline(){
+  const r = P && P.result; if(!r) return "";
+  const w=176, h=44, n=r.days.length;
+  let out = `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`;
+  const fpX = (r.first_plan_day-1.5)/(n-1)*w;
+  out += `<line x1="${fpX}" x2="${fpX}" y1="0" y2="${h}" stroke="#334a78" stroke-dasharray="2 2"/>`;
+  r.tanks.forEach(t=>{
+    const pts = t.closing.map((c,i)=>`${(i/(n-1)*w).toFixed(1)},${(h-2-(c/t.cap)*(h-4)).toFixed(1)}`).join(" ");
+    out += `<polyline points="${pts}" fill="none" stroke="${t.type==="Crude"?"#38bdf8":"#34d399"}" stroke-opacity=".75" stroke-width="1.2"/>`;
+  });
+  return out + "</svg>";
+}
+
+function renderNodes(){
+  const box = $("#nodes");
+  const r = P && P.result;
+  box.innerHTML = `
+    <div class="colhead" style="left:30px">① Inputs (CSV · GitHub)</div>
+    <div class="colhead" style="left:345px">② Integration</div>
+    <div class="colhead" style="left:600px">③ Model</div>
+    <div class="colhead" style="left:858px">④ Optimization</div>
+    <div class="colhead" style="left:1172px">⑤ Outputs</div>`;
+  NODES.forEach(n=>{
+    const s = nodeState(n);
+    const c = COL[n.kind];
+    const el = document.createElement("div");
+    el.className = `node k-${n.kind} ${s==="err"?"err":""} ${s==="dim"?"dim":""} ${(n.id==="optimizer"&&busyNonce)?"busy":""}`;
+    el.style.cssText = `left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px`;
+    el.tabIndex = 0; el.setAttribute("role","button"); el.setAttribute("aria-label", n.title);
+    el.dataset.id = n.id;
+    const dot = s==="err"?COL.bad : s==="warn"||s==="edited" ? "#fbbf24" : s==="dim" ? "#475569" : COL.output;
+    let stat = esc((P && P.summary && P.summary[n.id]) || "");
+    let inner = `<div class="busy-ring"></div>
+      ${n.kind!=="input"?`<span class="port in" style="border-color:${c}"></span>`:""}
+      ${n.kind!=="output"?`<span class="port out" style="border-color:${c}"></span>`:""}
+      ${s==="edited"?`<span class="badge">EDITED</span>`:""}
+      <span class="sd" style="background:${dot};box-shadow:0 0 8px ${dot}"></span>
+      <div class="hd"><div class="ic" style="color:${c}">${svgIcon(n.icon)}</div><div><div class="tt">${esc(n.title)}</div><div class="sub">${esc(n.sub)}</div></div></div>`;
+    if(n.id==="optimizer"){
+      const z = r && r.kpi_opt ? r.kpi_opt.plan_margin_kusd : null;
+      const d = z!=null ? z - r.kpi_base.plan_margin_kusd : null;
+      const pill = busyNonce ? `<span class="pill busy">SOLVING…</span>` : P && P.status==="optimal" ? `<span class="pill ok">OPTIMAL</span>` : `<span class="pill bad">${P&&P.status==="invalid"?"INPUT ERROR":"INFEASIBLE"}</span>`;
+      inner += `<div class="core-eq">max Z = Σ<sub>t</sub> [ Σ<sub>p</sub> Price·Prod − Σ<sub>c</sub> Crude·x − Opex ]<br><small>s.t. C1–C16 · ${P&&P.model?P.model.n_vars:"—"} vars · ${P&&P.model?P.model.n_rows:"—"} rows</small></div>
+        <div class="core-z">${z!=null?fmt(z)+" $k":"—"}${d!=null?`<span class="d">${sgn(d)} $k</span>`:""}</div>
+        <div class="core-row">${pill}<button class="runbtn" type="button" data-run="1">▶ Run</button></div>`;
+    } else if(n.id==="tank_curves"){
+      inner += sparkline();
+    } else {
+      inner += `<div class="st">${stat}</div>`;
+    }
+    el.innerHTML = inner;
+    el.addEventListener("click", e=>{ if(e.target.dataset.run){ e.stopPropagation(); act({action:"run"}); return; } openModal(n.id); });
+    el.addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); openModal(n.id); } });
+    el.addEventListener("mouseenter", ()=>{ hoverId=n.id; highlightEdges(); });
+    el.addEventListener("mouseleave", ()=>{ hoverId=null; highlightEdges(); });
+    box.appendChild(el);
+  });
+}
+function renderBusy(){
+  renderToolbar();
+  const o = document.querySelector('.node[data-id="optimizer"]');
+  if(o){ o.classList.toggle("busy", !!busyNonce); const pill=o.querySelector(".pill"); if(pill && busyNonce){ pill.className="pill busy"; pill.textContent="SOLVING…"; } }
+}
+
+/* ============================================================ edges + particles */
+let edgeGeo = [];
+function edgeColor(e){
+  const a = byId[e.from], b = byId[e.to];
+  if(!P) return COL[a.kind];
+  if(a.kind==="input" && nodeState(a)==="err") return COL.bad;
+  if((b.kind==="output"||b.id==="optimizer"||b.id==="model") && P.status!=="optimal") return COL.bad;
+  return COL[a.kind];
+}
+function edgeActive(e){
+  if(!P) return true;
+  const b = byId[e.to];
+  if(P.status==="invalid" && b.id!=="validate") return false;
+  if(P.status==="infeasible" && b.kind==="output") return false;
+  return true;
+}
+function renderEdges(){
+  const svg = $("#edges");
+  let defs = "<defs>", paths = "";
+  edgeGeo = [];
+  EDGES.forEach((e,i)=>{
+    const a = byId[e.from], b = byId[e.to];
+    const x1=a.x+a.w, y1=a.y+a.h/2, x2=b.x, y2=b.y+b.h/2, dx=Math.max(40,(x2-x1)*0.5);
+    const d = `M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}`;
+    const c1 = edgeColor(e), c2 = COL[b.kind];
+    const active = edgeActive(e);
+    defs += `<linearGradient id="g${i}" gradientUnits="userSpaceOnUse" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${active?c2:c1}"/></linearGradient>`;
+    paths += `<path id="e${i}" d="${d}" fill="none" stroke="url(#g${i})" stroke-width="${active?2:1.5}" stroke-opacity="${active?0.38:0.25}" ${active?"":'stroke-dasharray="5 6"'} data-from="${e.from}" data-to="${e.to}"/>`;
+    edgeGeo.push({e, d, color:c1, color2:c2, active, pts:null, parts:[]});
+  });
+  svg.innerHTML = defs + "</defs>" + paths;
+  edgeGeo.forEach((g,i)=>{
+    const p = svg.querySelector("#e"+i);
+    let L = 0; try{ L = p.getTotalLength(); }catch(_){}
+    const pts = [];
+    const N = 80;
+    for(let k=0;k<=N;k++){ try{ const q=p.getPointAtLength(L*k/N); pts.push([q.x,q.y]); }catch(_){ } }
+    g.pts = pts.length>1 ? pts : null;
+    g.len = L;
+    const count = Math.max(2, Math.round(L/70));
+    g.parts = Array.from({length:count}, (_,k)=>({t:k/count + Math.random()*0.05, s:0.75+Math.random()*0.5}));
+  });
+  highlightEdges();
+}
+function highlightEdges(){
+  document.querySelectorAll("#edges path").forEach(p=>{
+    const on = hoverId && (p.dataset.from===hoverId || p.dataset.to===hoverId);
+    p.style.strokeOpacity = on ? 0.95 : "";
+    p.style.strokeWidth = on ? 3 : "";
+  });
+}
+const cv = $("#particles"), ctx = cv.getContext("2d");
+function sizeCanvas(){
+  const dpr = Math.min(window.devicePixelRatio||1, 2) * scale;
+  cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr);
+  cv.style.width = W+"px"; cv.style.height = H+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let last = performance.now();
+function hexA(hex,a){ const n=parseInt(hex.slice(1),16); return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`; }
+function tick(now){
+  const dt = Math.min(0.05,(now-last)/1000); last = now;
+  ctx.clearRect(0,0,W,H);
+  const speed = busyNonce ? 2.8 : 1;
+  edgeGeo.forEach(g=>{
+    if(!g.pts || !g.active) return;
+    const hot = hoverId && (g.e.from===hoverId || g.e.to===hoverId);
+    const v = (95/Math.max(g.len,1)) * speed;
+    g.parts.forEach(p=>{
+      if(!reduce) p.t += dt*v*p.s;
+      if(p.t>1) p.t -= 1;
+      const f = p.t*(g.pts.length-1), i = Math.floor(f), r = f-i;
+      const a = g.pts[i], b = g.pts[Math.min(i+1,g.pts.length-1)];
+      const x = a[0]+(b[0]-a[0])*r, y = a[1]+(b[1]-a[1])*r;
+      const col = p.t<0.5 ? g.color : g.color2;
+      const R = hot ? 3.4 : 2.4;
+      const grd = ctx.createRadialGradient(x,y,0,x,y,R*3.2);
+      grd.addColorStop(0, hexA(col, hot?0.95:0.8)); grd.addColorStop(0.35, hexA(col,0.35)); grd.addColorStop(1, hexA(col,0));
+      ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(x,y,R*3.2,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = "#fff"; ctx.globalAlpha = hot?0.95:0.7; ctx.beginPath(); ctx.arc(x,y,R*0.45,0,Math.PI*2); ctx.fill(); ctx.globalAlpha = 1;
+    });
+  });
+  requestAnimationFrame(tick);
+}
+
+/* ============================================================ charts (SVG) */
+function scaleLin(d0,d1,r0,r1){ const k=(r1-r0)/((d1-d0)||1); return v=>r0+(v-d0)*k; }
+function niceTicks(lo,hi,n=4){
+  const span = hi-lo || 1, step0 = span/n, mag = Math.pow(10,Math.floor(Math.log10(step0)));
+  const step = [1,2,2.5,5,10].map(m=>m*mag).find(s=>span/s<=n) || mag*10;
+  const out=[]; for(let v=Math.ceil(lo/step)*step; v<=hi+1e-9; v+=step) out.push(+v.toFixed(10)); return out;
+}
+function lineChart(o){
+  const w=o.w||520, h=o.h||220, L=44, R=10, T=o.title?22:10, B=24;
+  let all=[]; o.series.forEach(s=>all=all.concat(s.ys.filter(v=>v!=null)));
+  (o.hlines||[]).forEach(l=>all.push(l.y)); (o.points||[]).forEach(p=>all.push(p.y));
+  let lo = o.ymin!=null?o.ymin:Math.min(...all), hi = o.ymax!=null?o.ymax:Math.max(...all);
+  if(o.ymin==null){ const pad=(hi-lo)*0.08||1; lo-=pad; hi+=pad; }
+  const xs=o.xs, X=scaleLin(xs[0],xs[xs.length-1],L,w-R), Y=scaleLin(lo,hi,h-B,T);
+  let s=`<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px;display:block" role="img" aria-label="${esc(o.title||"chart")}">`;
+  if(o.title) s+=`<text x="${L}" y="14" fill="#cfe0ff" font-size="12" font-weight="650">${esc(o.title)}</text>`;
+  if(o.vline!=null) s+=`<rect x="${X(o.vline)}" y="${T}" width="${w-R-X(o.vline)}" height="${h-B-T}" fill="rgba(52,211,153,.05)"/><line x1="${X(o.vline)}" x2="${X(o.vline)}" y1="${T}" y2="${h-B}" stroke="#3b5a96" stroke-dasharray="3 3"/><text x="${X(o.vline)+4}" y="${T+10}" fill="#6ee7b7" font-size="9.5">PLAN →</text>`;
+  niceTicks(lo,hi,4).forEach(v=>{ s+=`<line x1="${L}" x2="${w-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="#1a2a4b"/><text x="${L-6}" y="${Y(v)+3}" fill="#7c90b6" font-size="9.5" text-anchor="end">${fmt(v, Math.abs(hi-lo)<5?1:0)}</text>`; });
+  xs.forEach((x,i)=>{ if(i%5===0||i===xs.length-1) s+=`<text x="${X(x)}" y="${h-8}" fill="#7c90b6" font-size="9.5" text-anchor="middle">${x}</text>`; });
+  (o.hlines||[]).forEach(l=>{ s+=`<line x1="${L}" x2="${w-R}" y1="${Y(l.y)}" y2="${Y(l.y)}" stroke="${l.color}" stroke-width="1.2" stroke-dasharray="${l.dash||"5 4"}"/>${l.label?`<text x="${w-R-2}" y="${Y(l.y)-3}" fill="${l.color}" font-size="9" text-anchor="end">${esc(l.label)}</text>`:""}`; });
+  o.series.forEach(se=>{
+    const pts = se.ys.map((v,i)=>v==null?null:`${X(xs[i]).toFixed(1)},${Y(v).toFixed(1)}`).filter(Boolean).join(" ");
+    s+=`<polyline points="${pts}" fill="none" stroke="${se.color}" stroke-width="${se.width||2}" ${se.dash?`stroke-dasharray="${se.dash}"`:""} stroke-linejoin="round"/>`;
+  });
+  (o.points||[]).forEach(p=>{ const x=X(p.x), y=Y(p.y); s+=`<path d="M${x},${y-6} L${x+5},${y+3} L${x-5},${y+3} Z" fill="${p.color}"/>`; });
+  return s+"</svg>";
+}
+function barChart(o){
+  const w=o.w||1040, h=o.h||220, L=50, R=10, T=o.title?24:10, B=24;
+  const n=o.xs.length, k=o.series.length;
+  let all=[0]; o.series.forEach(s=>all=all.concat(s.ys)); if(o.stacked){ all=[0]; o.xs.forEach((_,i)=>all.push(o.series.reduce((a,s)=>a+(s.ys[i]||0),0))); }
+  let lo=Math.min(...all), hi=Math.max(...all); hi+= (hi-lo)*0.06;
+  const Y=scaleLin(lo,hi,h-B,T), bw=(w-L-R)/n;
+  let s=`<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block" role="img" aria-label="${esc(o.title||"chart")}">`;
+  if(o.title) s+=`<text x="${L}" y="15" fill="#cfe0ff" font-size="12" font-weight="650">${esc(o.title)}</text>`;
+  niceTicks(lo,hi,4).forEach(v=>{ s+=`<line x1="${L}" x2="${w-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="#1a2a4b"/><text x="${L-6}" y="${Y(v)+3}" fill="#7c90b6" font-size="9.5" text-anchor="end">${fmt(v)}</text>`; });
+  if(o.vline!=null){ const x=L+(o.vline-1)*bw; s+=`<line x1="${x}" x2="${x}" y1="${T}" y2="${h-B}" stroke="#3b5a96" stroke-dasharray="3 3"/><text x="${x+4}" y="${T+10}" fill="#6ee7b7" font-size="9.5">PLAN →</text>`; }
+  o.xs.forEach((x,i)=>{
+    if(o.stacked){ let acc=0; o.series.forEach(se=>{ const v=se.ys[i]||0; s+=`<rect x="${L+i*bw+bw*0.14}" y="${Y(acc+v)}" width="${bw*0.72}" height="${Math.max(0,Y(acc)-Y(acc+v))}" fill="${se.color}" opacity="${(o.dimBefore&&x<o.dimBefore)?0.45:0.9}"><title>Day ${x} · ${esc(se.label)}: ${fmt(v,1)}</title></rect>`; acc+=v; }); }
+    else { const gw=bw*0.8/k; o.series.forEach((se,j)=>{ const v=se.ys[i]; if(v==null) return; const y0=Y(Math.max(0,v)), y1=Y(Math.min(0,v)); s+=`<rect x="${L+i*bw+bw*0.1+j*gw}" y="${y0}" width="${gw*0.92}" height="${Math.max(0.5,y1-y0)}" fill="${se.color}" opacity=".9"><title>Day ${x} · ${esc(se.label)}: ${fmt(v,1)}</title></rect>`; }); }
+    if(i%5===0||i===n-1) s+=`<text x="${L+i*bw+bw/2}" y="${h-8}" fill="#7c90b6" font-size="9.5" text-anchor="middle">${x}</text>`;
+  });
+  return s+"</svg>";
+}
+const legend = items => `<div class="legend2">${items.map(([c,l,dash])=>`<span><i style="background:${dash?`repeating-linear-gradient(90deg,${c} 0 4px,transparent 4px 7px)`:c}"></i>${esc(l)}</span>`).join("")}</div>`;
+const CRUDE_COLORS = ["#38bdf8","#818cf8","#f472b6","#facc15","#34d399","#fb923c"];
+
+/* ============================================================ modal framework */
+function openModal(id){ openId=id; draft=null; renderModal(); $("#modal").classList.add("open"); fit(); setTimeout(()=>{ const x=$("#panel .x"); x&&x.focus(); },30); }
+function closeModal(){ openId=null; draft=null; $("#modal").classList.remove("open"); fit(); }
+$("#modal").addEventListener("click", e=>{ if(e.target.id==="modal") closeModal(); });
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && openId) closeModal(); });
+
+function frame(n, bodyHtml, footHtml){
+  const c = COL[n.kind];
+  $("#panel").innerHTML = `<header><div class="ic" style="background:${hexA(c,0.16)};color:${c}">${svgIcon(n.icon,20)}</div>
+    <div><h2>${esc(n.title)}</h2><p>${esc(n.sub)}</p></div><button class="x" type="button" aria-label="Close">✕</button></header>
+    <div class="body">${bodyHtml}</div>${footHtml?`<footer>${footHtml}</footer>`:""}`;
+  $("#panel .x").addEventListener("click", closeModal);
+}
+function renderModal(){
+  if(!openId || !P) return;
+  const n = byId[openId];
+  if(n.kind==="input") return modalTable(n);
+  ({validate:modalValidate, model:modalModel, optimizer:modalOptimizer, decisions:modalDecisions,
+    economics:modalEconomics, tank_balance:modalTankBalance, tank_curves:modalTankCurves, why:modalWhy})[n.id](n);
+}
+function needResult(n){
+  if(P.result) return false;
+  frame(n, `<div class="issue error">Results are not available – fix the input errors shown in <b>Validate &amp; build</b> first.</div>`);
+  return true;
+}
+
+/* ---------------- input table editor */
+function modalTable(n){
+  const t = P.tables[n.id];
+  if(!draft || draft.id!==n.id) draft = {id:n.id, rows:t.rows.map(r=>r.slice()), orig:t.rows.map(r=>r.slice())};
+  const cols = t.columns, ro = new Set(t.readonly), num = new Set(t.numeric);
+  const isDyn = t.dynamic;
+  const changedCount = () => draft.rows.reduce((a,r,i)=>a + r.reduce((b,v,j)=>b + ((draft.orig[i]===undefined || String(draft.orig[i][j])!==String(v))?1:0),0),0) + Math.max(0,draft.orig.length-draft.rows.length);
+  let h = `<p class="muted" style="margin:0 0 10px">${esc(t.desc)}</p>`;
+  if(openId==="daily_decisions") h += `<div class="issue warning" style="margin-bottom:10px">Rows with status <b>Actual</b> are locked history (C15). The first plan day is set in the <b>LP optimizer</b> block.</div>`;
+  h += `<div class="tblwrap"><table><thead><tr>${isDyn?"<th></th>":""}${cols.map(c=>`<th class="${num.has(c)?"num":""}">${esc(c)}</th>`).join("")}</tr></thead><tbody>`;
+  draft.rows.forEach((r,i)=>{
+    const rowCls = openId==="daily_decisions" ? (r[cols.indexOf("status")]==="Actual"?"actual":"plan") : "";
+    h += `<tr class="${rowCls}">${isDyn?`<td><button class="del" type="button" data-del="${i}" aria-label="Delete row">✕</button></td>`:""}`;
+    cols.forEach((c,j)=>{
+      const v = r[j], o = draft.orig[i] ? draft.orig[i][j] : undefined;
+      const changed = o===undefined || String(o)!==String(v);
+      if(ro.has(c)){ h += `<td class="ro ${num.has(c)?"num":""}">${esc(v)}</td>`; return; }
+      if(t.selects[c]){
+        h += `<td class="${changed?"changed":""}"><select data-r="${i}" data-c="${j}">${t.selects[c].map(o2=>`<option ${o2===v?"selected":""}>${esc(o2)}</option>`).join("")}</select></td>`; return;
+      }
+      const bad = num.has(c) && (v===""||v==null||isNaN(Number(v)));
+      h += `<td class="${num.has(c)?"num":""} ${changed?"changed":""} ${bad?"badcell":""}"><input data-r="${i}" data-c="${j}" value="${esc(v==null?"":v)}" ${num.has(c)?'inputmode="decimal"':""} aria-label="${esc(c)} row ${i+1}"></td>`;
+    });
+    h += "</tr>";
+  });
+  h += `</tbody></table></div>`;
+  const cc = changedCount();
+  const foot = `<span class="msg">${cc?`<span class="st-warn">${cc} unsaved change(s)</span>`:"No unsaved changes"}${P.edited.includes(n.id)?" · this table differs from GitHub":""}</span>
+    ${isDyn?`<button class="btn" type="button" id="mAdd">＋ Add row</button>`:""}
+    <button class="btn danger" type="button" id="mReset" ${P.edited.includes(n.id)?"":"disabled"}>↺ Reset to GitHub</button>
+    <button class="btn ghost" type="button" id="mCancel">Cancel</button>
+    <button class="btn primary" type="button" id="mApply" ${cc?"":"disabled"}>Apply &amp; re-optimize</button>`;
+  frame(n, h, foot);
+  const body = $("#panel .body");
+  body.querySelectorAll("input[data-r],select[data-r]").forEach(inp=>{
+    const handler = ()=>{
+      const i=+inp.dataset.r, j=+inp.dataset.c, c=cols[j];
+      let v = inp.value;
+      if(num.has(c) && v.trim()!=="" && !isNaN(Number(v))) v = Number(v);
+      draft.rows[i][j] = v;
+      const o = draft.orig[i] ? draft.orig[i][j] : undefined;
+      const td = inp.parentElement;
+      td.classList.toggle("changed", o===undefined || String(o)!==String(v));
+      td.classList.toggle("badcell", num.has(c) && (v===""||isNaN(Number(v))));
+      const n2 = changedCount();
+      $("#panel footer .msg").innerHTML = n2?`<span class="st-warn">${n2} unsaved change(s)</span>`:"No unsaved changes";
+      $("#mApply").disabled = !n2;
+    };
+    inp.addEventListener(inp.tagName==="SELECT"?"change":"input", handler);
+    inp.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); const nx = body.querySelector(`[data-r="${+inp.dataset.r+1}"][data-c="${inp.dataset.c}"]`); nx&&nx.focus(); } });
+  });
+  body.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{ draft.rows.splice(+b.dataset.del,1); draft.orig.splice(+b.dataset.del,1); modalTable(n); }));
+  const add = $("#mAdd");
+  if(add) add.addEventListener("click", ()=>{
+    const row = cols.map(c=>{
+      if(t.selects[c]) return t.selects[c][0];
+      if(c==="day") return 1;
+      if(c==="qty_kbbl") return 0;
+      return "";
+    });
+    draft.rows.push(row); modalTable(n);
+    setTimeout(()=>{ const w=$("#panel .tblwrap"); w.scrollTop=w.scrollHeight; },10);
+  });
+  $("#mCancel").addEventListener("click", closeModal);
+  $("#mReset").addEventListener("click", ()=>{ draft=null; act({action:"reset_table", table:n.id}); });
+  $("#mApply").addEventListener("click", ()=>{
+    const rows = draft.rows.map(r=>r.map((v,j)=> (num.has(cols[j]) && v!=="" && v!=null && !isNaN(Number(v))) ? Number(v) : v));
+    draft = null;
+    act({action:"edit", table:n.id, columns:cols, rows});
+  });
+}
+
+/* ---------------- validate */
+function modalValidate(n){
+  let h = "";
+  if(!P.issues.length) h += `<div class="issue ok">✔ All input checks passed – the data are consistent and ready for the optimizer.</div>`;
+  P.issues.forEach(i=>h+=`<div class="issue ${i.level}">${i.level==="error"?"⛔":"⚠️"} ${esc(i.msg)}</div>`);
+  h += `<div class="grid2" style="margin-top:12px"><div class="card"><h3>Checks performed</h3><ul class="muted" style="margin:0;padding-left:18px;line-height:1.7">
+    <li>Required columns present in every CSV</li><li>Crude cut yields sum to 1.000</li><li>Min ≤ max for crudes and every unit</li>
+    <li>Reformer / RFCC yields ≤ 1.0</li><li>Each crude / product mapped to exactly one tank</li><li>Opening stock inside [min heel, capacity]</li>
+    <li>Receipts &amp; liftings reference known IDs and valid days</li><li>Decisions complete for every day 1…T</li></ul></div>
+    <div class="card"><h3>What this block builds</h3><p class="muted" style="margin:0;line-height:1.6">Receipts and liftings are pivoted into day × material arrays,
+    unit parameters become a lookup <code>P[param_key]</code>, and rows before the first plan day are marked <b>Actual</b> (locked).
+    ${P.model?`<br><br>Horizon <b>${P.settings.T}</b> days · <b>${P.model.crudes.length}</b> crudes · <b>${P.model.products.length}</b> products · <b>${P.model.tanks.length}</b> tanks.`:""}</p></div></div>`;
+  frame(n, h);
+}
+
+/* ---------------- process model */
+function modalModel(n){
+  if(needResult(n)) return;
+  const m = P.model, Pp = m.P;
+  const cr = m.crude;
+  const term = (coef, v) => `${fmt(coef,3)}·${v}`;
+  const yrow = key => cr.map(c=>`${fmt(c[key],2)}·x<sub>${c.crude_id}</sub>`).join(" + ");
+  let h = `<div class="eq">
+    CDU<sub>t</sub> = Σ<sub>c</sub> x<sub>c,t</sub><br>
+    SR Naphtha<sub>t</sub> = ${yrow("y_naph")}<br>
+    Atm Residue<sub>t</sub> = ${yrow("y_ar")}<br>
+    DHT feed<sub>t</sub> = ${yrow("y_go")} + ${fmt(Pp.RFCC_Y_LCO,2)}·f<sub>t</sub><br>
+    <span class="hl">LPG</span> = SR LPG + ${fmt(Pp.REF_Y_LPG,2)}·r + ${fmt(Pp.RFCC_Y_LPG,2)}·f &nbsp;·&nbsp;
+    <span class="hl">Naphtha</span> = SR Naphtha − r &nbsp;·&nbsp;
+    <span class="hl">Gasoline 95</span> = ${fmt(Pp.REF_Y_REFORMATE,2)}·r + ${fmt(Pp.RFCC_Y_GASOLINE,2)}·f<br>
+    <span class="hl">Jet A-1</span> = SR Kerosene &nbsp;·&nbsp; <span class="hl">Diesel</span> = ${fmt(Pp.DHT_Y_DIESEL,2)}·DHT feed &nbsp;·&nbsp;
+    <span class="hl">Fuel oil</span> = Atm Residue − f + ${fmt(Pp.RFCC_Y_SLURRY,2)}·f
+  </div>
+  <p class="muted">Every product is a straight line in the decisions (x, r, f). So each decision has a fixed margin per barrel – the optimizer pushes the best ones until a constraint stops it.</p>
+  <h3 style="font-size:13px;margin:14px 0 6px">Margin per extra barrel of each decision ($/bbl)</h3>
+  <div class="tblwrap"><table><thead><tr><th>Decision</th><th>Var</th><th class="num">Revenue</th><th class="num">Crude cost</th><th class="num">Opex</th><th class="num">Margin</th><th style="width:200px"></th></tr></thead><tbody>`;
+  const mx = Math.max(...m.margin_per_unit.map(r=>Math.abs(r.margin_usd_bbl)),1);
+  m.margin_per_unit.forEach(r=>{
+    const w = Math.abs(r.margin_usd_bbl)/mx*180, pos = r.margin_usd_bbl>=0;
+    h += `<tr><td>${esc(r.decision)}</td><td class="ro">${esc(r.var)}</td><td class="num">${fmt(r.revenue_usd_bbl,2)}</td><td class="num">${fmt(r.crude_cost_usd_bbl,2)}</td><td class="num">${fmt(r.opex_usd_bbl,2)}</td>
+      <td class="num ${pos?"st-ok":"st-bad"}"><b>${fmt(r.margin_usd_bbl,2)}</b></td><td><div style="height:9px;width:${w}px;border-radius:4px;background:${pos?"#34d399":"#f87171"}"></div></td></tr>`;
+  });
+  h += `</tbody></table></div>`;
+  frame(n, h);
+}
+
+/* ---------------- optimizer (objective + constraints + settings) */
+function modalOptimizer(n){
+  if(needResult(n)) return;
+  const m = P.model, Pp = m.P, r = P.result, s = P.settings, bc = r.binding_count||{}, ck = r.checks||{};
+  const mpu = m.margin_per_unit;
+  const zTerms = mpu.map(x=>`<span class="hl">${fmt(x.margin_usd_bbl,2)}</span>·${x.var.replace(/^x_(.+)$/,"x<sub>$1,t</sub>").replace("r_reformer","r<sub>t</sub>").replace("f_rfcc","f<sub>t</sub>")}`).join(" + ").replace(/\+ <span class="hl">-/g,"− <span class=\"hl\">");
+  const xmax = m.crude.map(c=>`x<sub>${c.crude_id}</sub>≤${fmt(c.x_max_kbd)}`).join(", ");
+  const sul = m.crude.map(c=>`${fmt(c.y_ar,2)}(${fmt(c.ar_sulfur_wt,2)}−${fmt(Pp.AR_SULFUR_MAX,2)})x<sub>${c.crude_id}</sub>`).join(" + ");
+  const tab = modalTab.optimizer || "objective";
+  const CONS = [
+    ["C1","CDU capacity",`${fmt(Pp.CDU_MIN)} ≤ Σ<sub>c</sub> x<sub>c,t</sub> ≤ ${fmt(Pp.CDU_MAX)}`],
+    ["C2","Crude rate limits",xmax],
+    ["C3","CDU ramp",`|CDU<sub>t</sub> − CDU<sub>t−1</sub>| ≤ ${fmt(Pp.CDU_RAMP)}  (day ${r.first_plan_day} linked to actual day ${r.first_plan_day-1})`],
+    ["C4","Reformer capacity",`${fmt(Pp.REF_MIN)} ≤ r<sub>t</sub> ≤ ${fmt(Pp.REF_MAX)}`],
+    ["C5","Naphtha availability",`r<sub>t</sub> ≤ Σ<sub>c</sub> yNaph<sub>c</sub>·x<sub>c,t</sub>`],
+    ["C6","RFCC capacity",`${fmt(Pp.RFCC_MIN)} ≤ f<sub>t</sub> ≤ ${fmt(Pp.RFCC_MAX)}`],
+    ["C7","Residue availability",`f<sub>t</sub> ≤ Σ<sub>c</sub> yAR<sub>c</sub>·x<sub>c,t</sub>`],
+    ["C8","DHT capacity",`${fmt(Pp.DHT_MIN)} ≤ Σ<sub>c</sub> yGO<sub>c</sub>·x<sub>c,t</sub> + ${fmt(Pp.RFCC_Y_LCO,2)}·f<sub>t</sub> ≤ ${fmt(Pp.DHT_MAX)}`],
+    ["C9","Gasoline RON ≥ "+fmt(Pp.RON_SPEC_MIN),`(${fmt(Pp.RON_REFORMATE)}−${fmt(Pp.RON_SPEC_MIN)})·${fmt(Pp.REF_Y_REFORMATE,2)}·r<sub>t</sub> + (${fmt(Pp.RON_FCC_GASOLINE)}−${fmt(Pp.RON_SPEC_MIN)})·${fmt(Pp.RFCC_Y_GASOLINE,2)}·f<sub>t</sub> ≥ 0`],
+    ["C10","Residue sulfur ≤ "+fmt(Pp.AR_SULFUR_MAX,1)+" wt%",`${sul} ≤ 0`],
+    ["C11","Crude tank balance",`I<sub>c,t</sub> = I<sub>c,t−1</sub> + Receipt<sub>c,t</sub> − x<sub>c,t</sub>`],
+    ["C12","Product tank balance",`I<sub>p,t</sub> = I<sub>p,t−1</sub> + Prod<sub>p,t</sub> − Lift<sub>p,t</sub>`],
+    ["C13","Tank window",`MinHeel<sub>k</sub> ≤ I<sub>k,t</sub> ≤ Capacity<sub>k</sub>`],
+    ["C14","End-of-horizon stock",`I<sub>k,T</sub> ≥ Target<sub>k</sub>`],
+    ["C15","Lock actual days",`x, r, f fixed for days 1…${r.first_plan_day-1}`],
+    ["C16","Non-negativity",`x, r, f, I ≥ 0`],
+  ];
+  let h = `<div class="tabs">${[["objective","Objective function"],["constraints","Constraints C1–C16"],["settings","Run settings"]].map(([k,l])=>`<button type="button" class="tab ${tab===k?"on":""}" data-tab="${k}">${l}</button>`).join("")}</div>`;
+  if(tab==="objective"){
+    h += `<div class="kpis">
+      <div class="kpi"><div class="l">Optimised margin (plan days)</div><div class="v st-ok">${r.kpi_opt?fmt(r.kpi_opt.plan_margin_kusd)+" $k":"—"}</div><div class="s muted">Z at optimum</div></div>
+      <div class="kpi"><div class="l">Current plan margin</div><div class="v">${fmt(r.kpi_base.plan_margin_kusd)} $k</div><div class="s muted">decisions in daily_decisions.csv</div></div>
+      <div class="kpi"><div class="l">Uplift</div><div class="v ${r.kpi_opt&&r.kpi_opt.plan_margin_kusd>=r.kpi_base.plan_margin_kusd?"st-ok":"st-bad"}">${r.kpi_opt?sgn(r.kpi_opt.plan_margin_kusd-r.kpi_base.plan_margin_kusd)+" $k":"—"}</div><div class="s muted">${r.benchmark&&r.first_plan_day===12&&!s.soft?"workbook benchmark "+fmt(r.benchmark)+" $k":"&nbsp;"}</div></div>
+      <div class="kpi"><div class="l">LP size</div><div class="v">${m.n_vars} × ${m.n_rows}</div><div class="s muted">variables × inequality rows</div></div></div>
+    <h3 style="font-size:13px;margin:4px 0 6px">Objective – maximise plan-days gross margin ($k)</h3>
+    <div class="eq">max Z = Σ<sub>t ∈ T<sub>plan</sub></sub> [ Σ<sub>p</sub> Price<sub>p</sub>·Prod<sub>p,t</sub> − Σ<sub>c</sub> CrudePrice<sub>c</sub>·x<sub>c,t</sub> − ( Opex<sub>CDU</sub>·CDU<sub>t</sub> + Opex<sub>Ref</sub>·r<sub>t</sub> + Opex<sub>RFCC</sub>·f<sub>t</sub> + Opex<sub>DHT</sub>·DHT<sub>t</sub> ) ]</div>
+    <p class="muted" style="margin:10px 0 6px">Because every product is linear in (x, r, f), the objective collapses to one margin coefficient per decision (live values from your inputs):</p>
+    <div class="eq">Z = Σ<sub>t=${r.first_plan_day}…${P.settings.T}</sub> ( ${zTerms} )</div>
+    <div class="grid2" style="margin-top:12px">
+      <div class="card"><h3>Decision variables (per plan day t)</h3><div class="muted" style="line-height:1.7">
+      x<sub>c,t</sub> – crude c charged to the CDU (kbbl/d)<br>r<sub>t</sub> – SR naphtha routed to the Reformer (rest sold as Naphtha)<br>
+      f<sub>t</sub> – atmospheric residue routed to the RFCC (rest to Fuel Oil)<br>I<sub>k,t</sub> – tank inventory (state, substituted out)</div></div>
+      <div class="card"><h3>Status</h3><div class="muted" style="line-height:1.7">Solver: <b class="${r.success?"st-ok":"st-bad"}">${esc(r.message)}</b><br>
+      Locked actual days: 1–${r.first_plan_day-1} · Plan days: ${r.first_plan_day}–${P.settings.T}<br>
+      Soft tank limits: ${s.soft?"ON (penalty "+fmt(s.penalty)+" $/bbl)":"off"}${r.penalty_kusd>0?` · <span class="st-warn">shortfall penalty ${fmt(r.penalty_kusd)} $k</span>`:""}</div></div></div>`;
+  } else if(tab==="constraints"){
+    h += `<div class="tblwrap" style="max-height:60vh"><table><thead><tr><th>ID</th><th>Constraint</th><th>Form (live parameters)</th><th class="num">Binding rows</th><th class="num">Breaches</th></tr></thead><tbody>`;
+    CONS.forEach(([id,label,form])=>{
+      const b = bc[id]||0, v = ck[id];
+      h += `<tr><td><b>${id}</b></td><td>${esc(label)}</td><td style="white-space:normal;font-family:'Cambria Math',Georgia,serif;font-size:13px">${form}</td>
+        <td class="num ${b?"st-warn":""}">${b||"–"}</td><td class="num ${v?"st-bad":"st-ok"}">${v==null?"–":v}</td></tr>`;
+    });
+    h += `</tbody></table></div><p class="muted">C9 and C10 are ratio specs multiplied through by the pool volume, which keeps the model a pure LP. C11–C12 are substituted into C13–C14 so inventories need no extra variables.</p>`;
+  } else {
+    h += `<div class="grid2"><div class="card"><h3>Rolling horizon</h3>
+      <label class="field">First plan day (days before it are locked Actuals): <b id="fpLbl" style="color:#fff">${s.first_plan_day}</b>
+      <input type="range" id="fp" min="2" max="${s.T}" value="${s.first_plan_day}"></label>
+      <p class="muted">Each morning: enter yesterday's actual rates in <b>Actuals &amp; horizon</b>, move this forward one day, and re-solve. Use the first Plan day as tomorrow's instruction.</p></div>
+      <div class="card"><h3>Feasibility handling</h3>
+      <label class="switch"><input type="checkbox" id="soft" ${s.soft?"checked":""}> Soft tank limits (min heel &amp; end target)</label>
+      <label class="field" style="margin-top:10px">Shortfall penalty ($/bbl)<input type="number" id="pen" min="1" max="1000000" step="100" value="${s.penalty}"></label>
+      <p class="muted">When a scenario (e.g. delayed cargo) makes tank targets impossible, soft mode still returns a plan and reports each shortfall in <b>Why?</b>.</p></div></div>`;
+  }
+  const foot = tab==="settings" ? `<span class="msg">Applying settings re-solves the LP.</span><button class="btn ghost" type="button" id="mCancel">Close</button><button class="btn primary" type="button" id="mApplyS">Apply &amp; solve</button>`
+                                : `<span class="msg">${r.success?"Last solve: optimal":"Last solve: "+esc(r.message)}</span><button class="btn primary" type="button" id="mRun">▶ Re-run optimizer</button>`;
+  frame(n, h, foot);
+  document.querySelectorAll("#panel [data-tab]").forEach(b=>b.addEventListener("click",()=>{ modalTab.optimizer=b.dataset.tab; modalOptimizer(n); }));
+  const run=$("#mRun"); if(run) run.addEventListener("click",()=>act({action:"run"}));
+  const c=$("#mCancel"); if(c) c.addEventListener("click", closeModal);
+  const fp=$("#fp"); if(fp) fp.addEventListener("input",()=>{$("#fpLbl").textContent=fp.value;});
+  const ap=$("#mApplyS"); if(ap) ap.addEventListener("click",()=>{
+    let pen = Number($("#pen").value); if(!isFinite(pen)||pen<1) pen=1; if(pen>1e6) pen=1e6;
+    act({action:"settings", first_plan_day:Number($("#fp").value), soft:$("#soft").checked, penalty:pen});
+  });
+}
+
+/* ---------------- decision variables */
+function modalDecisions(n){
+  if(needResult(n)) return;
+  const r = P.result, m = P.model, vars = m.var_names;
+  const crN = m.crudes.length;
+  const V = r.V_opt, B = r.V_base;
+  let h = r.kpi_opt ? "" : `<div class="issue error" style="margin-bottom:10px">No feasible optimised plan – showing the current plan. ${esc(r.message)}</div>`;
+  h += legend(m.crude_names.map((nm,i)=>[CRUDE_COLORS[i%6], nm]));
+  h += barChart({title:"Crude slate to CDU (kbbl/d)", xs:r.days, stacked:true, vline:r.first_plan_day, dimBefore:r.first_plan_day,
+                 series:m.crudes.map((c,i)=>({label:m.crude_names[i], color:CRUDE_COLORS[i%6], ys:V.map(row=>row[i])})), h:200});
+  h += `<div class="tblwrap" style="margin-top:10px"><table><thead><tr><th>Day</th><th>Date</th><th>Status</th>${vars.map(v=>`<th class="num">${esc(v)}</th>`).join("")}<th class="num">CDU</th><th class="num">RON</th><th class="num">Resid S</th><th class="num">Margin $k</th></tr></thead><tbody>`;
+  r.days.forEach((d,i)=>{
+    const plan = r.status[i]==="Plan";
+    h += `<tr class="${plan?"plan":"actual"}"><td>${d}</td><td>${esc(r.dates[i])}</td><td>${plan?'<span class="st-ok">Plan</span>':"Actual (locked)"}</td>`;
+    vars.forEach((v,j)=>{ const ch = plan && Math.abs(V[i][j]-B[i][j])>1e-3; h+=`<td class="num v" title="current plan: ${fmt(B[i][j],2)}">${fmt(V[i][j],2)}${ch?` <span class="muted">(${sgn(V[i][j]-B[i][j],1)})</span>`:""}</td>`; });
+    h += `<td class="num">${fmt(r.cdu_opt[i],1)}</td><td class="num">${fmt(r.ron_opt[i],2)}</td><td class="num">${fmt(r.sulfur_opt[i],3)}</td><td class="num">${fmt(r.margin_opt[i],1)}</td></tr>`;
+  });
+  h += `</tbody></table></div><p class="muted">Brackets show the change vs the current plan. Hover a value to see the current-plan figure.</p>`;
+  frame(n, h);
+}
+
+/* ---------------- economics */
+function modalEconomics(n){
+  if(needResult(n)) return;
+  const r = P.result, e = r.econ;
+  const kb = r.kpi_base, ko = r.kpi_opt || r.kpi_base;
+  let h = `<div class="kpis">
+    <div class="kpi"><div class="l">Plan-days margin – optimised</div><div class="v st-ok">${fmt(ko.plan_margin_kusd)} $k</div><div class="s">${sgn(ko.plan_margin_kusd-kb.plan_margin_kusd)} $k vs current</div></div>
+    <div class="kpi"><div class="l">Actual-days margin (locked)</div><div class="v">${fmt(kb.actual_margin_kusd)} $k</div><div class="s muted">days 1–${r.first_plan_day-1}</div></div>
+    <div class="kpi"><div class="l">Month gross margin</div><div class="v">${fmt(ko.month_margin_kusd)} $k</div><div class="s muted">actual + plan</div></div>
+    <div class="kpi"><div class="l">Crude run (month)</div><div class="v">${fmt(ko.crude_run_kbbl)} kbbl</div><div class="s muted">current ${fmt(kb.crude_run_kbbl)}</div></div></div>`;
+  h += legend([["#64748b","Current plan"],["#34d399","Optimised"]]);
+  h += barChart({title:"Daily gross margin ($k/d)", xs:r.days, vline:r.first_plan_day, h:210,
+                 series:[{label:"Current plan", color:"#64748b", ys:r.margin_base},{label:"Optimised", color:"#34d399", ys:r.margin_opt}]});
+  h += `<div class="grid2" style="margin-top:12px"><div class="card"><h3>Plan-days economics ($k)</h3><table><thead><tr><th></th><th class="num">Current</th><th class="num">Optimised</th><th class="num">Change</th></tr></thead><tbody>
+    ${e.labels.map((l,i)=>`<tr><td>${l}</td><td class="num">${fmt(e.base[i])}</td><td class="num">${fmt(e.opt[i])}</td><td class="num ${(i===1||i===2)?(e.opt[i]-e.base[i]<=0?"st-ok":"st-bad"):(e.opt[i]-e.base[i]>=0?"st-ok":"st-bad")}">${sgn(e.opt[i]-e.base[i])}</td></tr>`).join("")}</tbody></table></div>
+    <div class="card"><h3>Product make – plan days (kbbl)</h3><table><thead><tr><th>Product</th><th class="num">$/bbl</th><th class="num">Current</th><th class="num">Optimised</th><th class="num">Change</th></tr></thead><tbody>
+    ${r.make.map(p=>`<tr><td>${esc(p.name)}</td><td class="num">${fmt(p.price)}</td><td class="num">${fmt(p.base,1)}</td><td class="num">${fmt(p.opt,1)}</td><td class="num">${sgn(p.opt-p.base,1)}</td></tr>`).join("")}</tbody></table></div></div>`;
+  frame(n, h);
+}
+
+/* ---------------- tank balance */
+function modalTankBalance(n){
+  if(needResult(n)) return;
+  const r = P.result;
+  const sel = modalTab.tank || r.tanks[0].id;
+  const t = r.tanks.find(x=>x.id===sel) || r.tanks[0];
+  let h = `<div class="row" style="margin-bottom:10px"><label class="field">Tank<select id="tkSel" style="background:#0b1426;color:#e6edf8;border:1px solid #2a4170;border-radius:8px;padding:6px 8px;font:inherit">
+    ${r.tanks.map(x=>`<option value="${x.id}" ${x.id===t.id?"selected":""}>${x.id} – ${esc(x.service)} (${x.type})</option>`).join("")}</select></label>
+    <span class="muted">Capacity ${fmt(t.cap)} · min heel ${fmt(t.heel)} · end target ${fmt(t.target)} kbbl · ${t.type==="Crude"?"inflow = receipts, outflow = CDU charge":"inflow = production, outflow = liftings"}</span></div>`;
+  h += `<div class="tblwrap"><table><thead><tr><th>Day</th><th>Date</th><th class="num">Opening</th><th class="num">Inflow</th><th class="num">Outflow</th><th class="num">Closing</th><th class="num">Fill %</th><th>Status</th></tr></thead><tbody>`;
+  r.days.forEach((d,i)=>{
+    const s = t.status[i];
+    h += `<tr class="${r.status[i]==="Plan"?"plan":"actual"}"><td>${d}</td><td>${esc(r.dates[i])}</td><td class="num">${fmt(t.opening[i],1)}</td><td class="num">${t.inflow[i]?fmt(t.inflow[i],1):"–"}</td><td class="num">${t.outflow[i]?fmt(t.outflow[i],1):"–"}</td>
+      <td class="num v"><b>${fmt(t.closing[i],1)}</b></td><td class="num">${fmt(t.closing[i]/t.cap*100,0)}%</td><td class="${s==="OK"?"st-ok":"st-bad"}">${s}</td></tr>`;
+  });
+  h += `</tbody></table></div><h3 style="font-size:13px;margin:14px 0 6px">C14 – end-of-horizon targets (all tanks)</h3><div class="tblwrap"><table><thead><tr><th>Tank</th><th>Service</th><th class="num">Closing day ${P.settings.T}</th><th class="num">Target</th><th>Check</th></tr></thead><tbody>
+    ${r.c14.map(c=>`<tr><td>${c.tank_id}</td><td>${esc(c.service)}</td><td class="num">${fmt(c.closing_last_day,1)}</td><td class="num">${fmt(c.end_target)}</td><td class="${c.C14_ok?"st-ok":"st-bad"}">${c.C14_ok?"OK":"SHORT"}</td></tr>`).join("")}</tbody></table></div>`;
+  frame(n, h);
+  $("#tkSel").addEventListener("change", e=>{ modalTab.tank=e.target.value; modalTankBalance(n); });
+}
+
+/* ---------------- tank curves */
+function modalTankCurves(n){
+  if(needResult(n)) return;
+  const r = P.result;
+  const filter = modalTab.curves || "All";
+  let h = `<div class="row" style="justify-content:space-between">${legend([["#94a3b8","Current plan",true],["#34d399","Optimised"],["#f87171","Capacity",true],["#fbbf24","Min heel",true],["#38bdf8","End target ▲"]])}
+    <div class="tabs" style="margin:0">${["All","Crude","Product"].map(f=>`<button type="button" class="tab ${filter===f?"on":""}" data-f="${f}">${f}</button>`).join("")}</div></div>`;
+  h += `<div class="grid-tanks">`;
+  r.tanks.filter(t=>filter==="All"||t.type===filter).forEach(t=>{
+    const bad = t.status.some(s=>s!=="OK") || t.closing[t.closing.length-1] < t.target-1e-6;
+    h += `<div class="card" style="${bad?"border-color:#7f1d1d":""}"><h4>${t.id} · ${esc(t.service)} <span class="muted" style="font-weight:400">${t.type}</span>${bad?' <span class="st-bad">⚠</span>':""}</h4>
+      ${lineChart({w:300,h:170,xs:r.days,ymin:0,ymax:t.cap*1.06,vline:r.first_plan_day-0.5,
+        series:[{ys:t.closing_base,color:"#94a3b8",dash:"4 3",width:1.5},{ys:t.closing,color:"#34d399",width:2.4}],
+        hlines:[{y:t.cap,color:"#f87171"},{y:t.heel,color:"#fbbf24"}],
+        points:[{x:r.days[r.days.length-1],y:t.target,color:"#38bdf8"}]})}
+      <div class="muted">Close day ${P.settings.T}: <b style="color:#e6edf8">${fmt(t.closing[t.closing.length-1])}</b> / target ${fmt(t.target)} kbbl</div></div>`;
+  });
+  h += `</div>`;
+  frame(n, h);
+  document.querySelectorAll("#panel [data-f]").forEach(b=>b.addEventListener("click",()=>{ modalTab.curves=b.dataset.f; modalTankCurves(n); }));
+}
+
+/* ---------------- why */
+function modalWhy(n){
+  if(needResult(n)) return;
+  const r = P.result;
+  let h = `<ul class="why">${r.explain.map(l=>`<li>${md(l)}</li>`).join("")}</ul>
+    <p class="muted">Shadow price = extra margin ($k) if that limit were relaxed by one unit. The LP can be degenerate, so values are indicative.</p>`;
+  if(r.shortfalls && r.shortfalls.length){
+    h += `<h3 style="font-size:13px">Tank shortfalls (soft mode)</h3><div class="tblwrap"><table><thead><tr><th>Constraint</th><th>Day</th><th>Tank</th><th class="num">Shortfall kbbl</th></tr></thead><tbody>
+      ${r.shortfalls.map(s=>`<tr><td>${s.constraint}</td><td>${s.day}</td><td>${s.tank_id}</td><td class="num st-bad">${fmt(s.shortfall_kbbl,1)}</td></tr>`).join("")}</tbody></table></div>`;
+  }
+  if(r.binding && r.binding.length){
+    h += `<h3 style="font-size:13px;margin-top:14px">Binding constraints (aggregated over plan days)</h3><div class="tblwrap"><table><thead><tr><th>ID</th><th>Constraint</th><th>Item</th><th>Side</th><th class="num">Days</th><th class="num">Shadow price Σ ($k)</th></tr></thead><tbody>
+      ${r.binding.map(b=>`<tr><td>${b.constraint}</td><td>${esc(b.label)}</td><td>${esc(b.item)}</td><td>${b.side}</td><td class="num">${b.days}</td><td class="num">${fmt(b.value,1)}</td></tr>`).join("")}</tbody></table></div>`;
+  }
+  frame(n, h);
+}
+
+/* ============================================================ render cycle */
+function renderAll(){
+  renderToolbar(); renderNodes(); renderEdges();
+  if(openId){
+    const keepScroll = $("#panel .body") ? $("#panel .body").scrollTop : 0;
+    renderModal();
+    const b = $("#panel .body"); if(b) b.scrollTop = keepScroll;
+  }
+  fit();
+}
+window.addEventListener("message", ev=>{
+  const d = ev.data;
+  if(!d || d.type!=="streamlit:render") return;
+  const payload = d.args && d.args.payload;
+  if(!payload) return;
+  P = payload;
+  if(busyNonce && P.ack===busyNonce) busyNonce = null;
+  renderAll();
+});
+window.addEventListener("resize", ()=>fit());
+send("streamlit:componentReady", {apiVersion:1});
+renderAll();
+requestAnimationFrame(tick);
+if(!inStreamlit && window.__TEST_PAYLOAD){ P = window.__TEST_PAYLOAD; renderAll(); }
+window.__flow = {openModal, closeModal, get state(){ return {P, openId, busyNonce}; }};
+})();
+</script>
+</body>
+</html>

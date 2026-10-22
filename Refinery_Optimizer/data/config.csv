@@ -1,0 +1,6 @@
+key,value,description
+horizon_start_date,2026-10-01,Day 1 of the horizon
+horizon_days,31,Days in horizon
+first_plan_day,12,"Days before this are Actual (locked, C15)"
+benchmark_manual_plan_kusd,17024.9,"Original manual plan margin, plan days 12-31"
+benchmark_lp_optimum_kusd,18320,"Reference LP optimum, plan days 12-31"
