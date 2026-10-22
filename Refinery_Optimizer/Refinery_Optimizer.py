@@ -1,301 +1,163 @@
-"""Refinery Production Planning Optimizer - Streamlit web app.
+"""Process model: decisions (x, r, f) -> flows, products, economics, tank balances and checks.
 
-Run locally:   streamlit run app.py
-Pipeline:      CSV inputs -> validation -> LP optimizer -> daily plan + economics -> explanation
+Python twin of the Daily_Plan, Tank_Balance and Constraint_Check sheets.
+Every quantity is LINEAR in the decision vector v = [x_c1..x_cn, r, f], so each one is stored
+as a coefficient vector: quantity_t = V[t] @ M['NAME']. The optimizer re-uses the same vectors,
+so plan evaluation and optimization can never disagree.
 """
 from __future__ import annotations
 
-import io
-import zipfile
-
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-import streamlit as st
 
-import data_loader
-from model import evaluate, margin_per_unit
-from optimizer import explain, optimize
+from data_loader import PlanData
 
-st.set_page_config(page_title="Refinery Planning Optimizer", page_icon="🛢️", layout="wide")
-
-LABELS = {
-    "crude_data": "Crude data", "unit_data": "Unit data", "product_data": "Product data",
-    "tank_master": "Tank master & opening", "crude_receipts": "Crude receipts",
-    "product_liftings": "Product liftings", "daily_decisions": "Daily decisions (actuals)", "config": "Config",
-}
-
-# ------------------------------------------------------------------ state
-if "base_frames" not in st.session_state:
-    st.session_state.base_frames = data_loader.read_csvs()
-    st.session_state.editor_ver = 0
-if "result" not in st.session_state:
-    st.session_state.result = None
+TOL = 1e-6
 
 
-def reset_to(frames):
-    st.session_state.base_frames = frames
-    st.session_state.editor_ver += 1          # new widget keys -> editors reload clean data
-    st.session_state.result = None
+def coeffs(d: PlanData) -> dict[str, np.ndarray]:
+    P, y = d.P, d.crude
+    nc = len(d.crudes)
+    z = np.zeros(nc)
 
+    def v(xc, r=0.0, f=0.0):
+        return np.r_[xc, r, f].astype(float)
 
-# ------------------------------------------------------------------ sidebar
-with st.sidebar:
-    st.header("⚙️ Run settings")
-    up = st.file_uploader("Upload your own CSVs (same file names)", type="csv", accept_multiple_files=True)
-    if up and st.button("Load uploaded CSVs", use_container_width=True):
-        frames = {k: v.copy() for k, v in st.session_state.base_frames.items()}
-        names = {v: k for k, v in data_loader.FILES.items()}
-        loaded = []
-        for f in up:
-            if f.name in names:
-                frames[names[f.name]] = pd.read_csv(f)
-                loaded.append(f.name)
-        reset_to(frames)
-        st.success(f"Loaded: {', '.join(loaded) or 'no matching file names'}")
-    if st.button("↺ Reset to sample data", use_container_width=True):
-        reset_to(data_loader.read_csvs())
-
-    T = len(st.session_state.base_frames["daily_decisions"])
-    default_fp = int(st.session_state.base_frames["daily_decisions"]
-                     .pipe(lambda d: d.loc[d.status == "Plan", "day"].min() if (d.status == "Plan").any() else T))
-    first_plan_day = st.number_input("First plan day (days before = Actual, locked)", 1, T, default_fp, key="fpd",
-                                     help="Rolling horizon: move this forward each day after entering actuals.")
-    soft = st.toggle("Soft tank limits", value=False, key="soft",
-                     help="If a scenario makes tank min-heel / end targets impossible, allow a penalised shortfall "
-                          "instead of returning 'infeasible'.")
-    penalty = st.number_input("Shortfall penalty ($/bbl)", 10.0, 100000.0, 1000.0, 100.0, disabled=not soft)
-
-    st.divider()
-    st.subheader("🚢 Quick scenario: cargo delay")
-    rec = st.session_state.base_frames["crude_receipts"]
-    cargo = st.selectbox("Cargo", key="cargo", options= ["(none)"] + [f"{r.receipt_id} | day {r.day} | {r.crude_id} {r.qty_kbbl} kbbl"
-                                                 for r in rec.itertuples()])
-    delay = st.number_input("Delay (days)", 0, T, 0, key="delay", disabled=cargo == "(none)")
-
-# ------------------------------------------------------------------ header
-st.title("🛢️ Refinery Production Planning Optimizer")
-st.caption("CSV inputs → validation → LP optimizer (SciPy HiGHS) → daily plan & economics → explanation. "
-           "Sample data are illustrative only.")
-
-tabs = st.tabs(["1 · Inputs", "2 · Validation", "3 · Optimize", "4 · Daily plan",
-                "5 · Tank balance", "6 · Economics", "7 · Why? (explain)"])
-
-# ------------------------------------------------------------------ 1. inputs
-with tabs[0]:
-    st.markdown("Edit any table below - changes are used on the next optimizer run. "
-                "Each tab is one CSV file in `data/`.")
-    frames = {}
-    sub = st.tabs([LABELS[k] for k in data_loader.FILES])
-    for tab, name in zip(sub, data_loader.FILES):
-        with tab:
-            dyn = name in ("crude_receipts", "product_liftings")
-            frames[name] = st.data_editor(
-                st.session_state.base_frames[name], key=f"ed_{name}_{st.session_state.editor_ver}",
-                num_rows="dynamic" if dyn else "fixed", use_container_width=True, hide_index=True)
-    with st.expander("Column dictionary"):
-        st.dataframe(pd.read_csv(data_loader.DATA_DIR / "data_dictionary.csv"), hide_index=True,
-                     use_container_width=True)
-
-# apply the quick cargo-delay scenario on top of the edited tables
-if cargo != "(none)" and delay > 0:
-    rid = cargo.split(" | ")[0]
-    r = frames["crude_receipts"].copy()
-    mask = r["receipt_id"] == rid
-    new_day = int(min(r.loc[mask, "day"].iloc[0] + delay, T))
-    r.loc[mask, "day"] = new_day
-    if "date" in r.columns:
-        r.loc[mask, "date"] = frames["daily_decisions"].loc[new_day - 1, "date"]
-    frames["crude_receipts"] = r
-    st.info(f"Scenario active: cargo **{rid}** delayed by {delay} day(s) → arrives day {new_day}.")
-
-# ------------------------------------------------------------------ 2. validation
-issues = data_loader.validate(frames)
-errors = [m for lvl, m in issues if lvl == "error"]
-with tabs[1]:
-    if not issues:
-        st.success("All input checks passed ✔")
-    for lvl, m in issues:
-        (st.error if lvl == "error" else st.warning)(m)
-    st.markdown("""
-**Checks performed:** required columns · crude yields sum to 1 · min ≤ max for every unit and crude ·
-reformer/RFCC yields ≤ 1 · each crude/product mapped to exactly one tank · opening stock inside tank window ·
-receipts/liftings reference known IDs and valid days · decisions complete for every day.
-""")
-
-if errors:
-    with tabs[2]:
-        st.error("Fix the input errors in tab 2 before optimizing.")
-    st.stop()
-
-data = data_loader.build(frames, int(first_plan_day))
-base = evaluate(data)
-# fingerprint of everything that affects the solution -> detect stale results
-fingerprint = (tuple(int(pd.util.hash_pandas_object(f.astype(str), index=False).sum()) for f in frames.values()),
-               data.first_plan_day, soft, penalty)
-
-# ------------------------------------------------------------------ 3. optimize
-with tabs[2]:
-    c1, c2 = st.columns([1, 3])
-    with c1:
-        run = st.button("▶ Run optimizer", type="primary", use_container_width=True)
-    with c2:
-        st.caption(f"Horizon {data.T} days · days 1–{data.first_plan_day - 1} locked as Actual · "
-                   f"{(data.T - data.first_plan_day + 1) * len(data.var_names)} decision variables")
-    if run:
-        with st.spinner("Solving LP..."):
-            res = optimize(data, soft_tanks=soft, penalty_usd_bbl=penalty)
-        st.session_state.result = (res, fingerprint) if res.success else None
-        if not res.success:
-            st.error(res.message)
-
-    stored = st.session_state.result
-    if stored and stored[1] == fingerprint:
-        res = stored[0]
-        opt = evaluate(data, res.V)
-    else:
-        res, opt = None, None
-        if stored:
-            st.warning("Inputs or settings changed since the last run - press **Run optimizer** again.")
-
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Current plan margin (plan days)", f"{base['kpi']['plan_margin_kusd']:,.0f} $k",
-              help="Decisions as stored in daily_decisions.csv")
-    if opt:
-        up_ = opt["kpi"]["plan_margin_kusd"] - base["kpi"]["plan_margin_kusd"]
-        k2.metric("Optimised margin (plan days)", f"{opt['kpi']['plan_margin_kusd']:,.0f} $k", f"{up_:+,.0f} $k")
-        k3.metric("Constraint violations", opt["kpi"]["violations"])
-        k4.metric("Crude run (month)", f"{opt['kpi']['crude_run_kbbl']:,.0f} kbbl")
-        bm = data.cfg.get("benchmark_lp_optimum_kusd")
-        if bm is not None and data.first_plan_day == 12 and not soft:
-            st.caption(f"Workbook reference optimum for plan days 12–31: {float(bm):,.0f} $k "
-                       f"(gap {opt['kpi']['plan_margin_kusd'] - float(bm):+.2f} $k).")
-        if res.penalty_kusd > 0:
-            st.warning(f"Soft mode used: tank shortfall penalty {res.penalty_kusd:,.0f} $k - see tab 7.")
-
-        dec = opt["daily_plan"][["day", "date", "status"] + data.var_names].round(3)
-        st.subheader("Optimised decisions")
-        st.dataframe(dec.style.apply(lambda r: ["background-color: rgba(0,160,80,.15)" if r.status == "Plan"
-                                                else "" for _ in r], axis=1),
-                     use_container_width=True, hide_index=True, height=360)
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w") as z:
-            z.writestr("daily_decisions_optimized.csv", dec.to_csv(index=False))
-            z.writestr("daily_plan.csv", opt["daily_plan"].to_csv(index=False))
-            z.writestr("tank_balance.csv", opt["tank_balance"].to_csv(index=False))
-            z.writestr("constraint_check.csv", opt["checks"].to_csv(index=False))
-            z.writestr("binding_constraints.csv", res.binding.to_csv(index=False))
-        st.download_button("⬇ Download results (zip)", buf.getvalue(), "optimizer_results.zip", "application/zip")
-    else:
-        k2.metric("Optimised margin (plan days)", "—")
-        st.info("Press **Run optimizer** to solve the plan days.")
-
-view = opt if opt else base
-view_name = "Optimised" if opt else "Current"
-
-# ------------------------------------------------------------------ 4. daily plan
-with tabs[3]:
-    st.subheader(f"{view_name} daily plan (kbbl/d, $k/d)")
-    dp = view["daily_plan"]
-    groups = {
-        "Decisions": ["day", "date", "status"] + data.var_names,
-        "Units & cuts": ["day", "cdu_total", "sr_lpg", "sr_naphtha", "sr_kero", "sr_gasoil", "atm_residue",
-                         "reformate", "ref_lpg", "fcc_gasoline", "fcc_lpg", "lco", "slurry", "dht_feed"],
-        "Products": ["day"] + [f"make_{p}" for p in data.products],
-        "Quality": ["day", "gasoline_ron", "residue_s_wt"],
-        "Economics": ["day", "revenue_kusd", "crude_cost_kusd", "opex_kusd", "margin_kusd", "margin_usd_bbl"],
+    M = {
+        "SR_LPG": v(y["y_lpg"].to_numpy(float)),
+        "SR_NAPH": v(y["y_naph"].to_numpy(float)),
+        "SR_KERO": v(y["y_kero"].to_numpy(float)),
+        "SR_GO": v(y["y_go"].to_numpy(float)),
+        "AR": v(y["y_ar"].to_numpy(float)),
+        "CDU": v(np.ones(nc)),
+        "REF_FEED": v(z, 1.0),
+        "RFCC_FEED": v(z, 0.0, 1.0),
+        "REFORMATE": v(z, P["REF_Y_REFORMATE"]),
+        "REF_LPG": v(z, P["REF_Y_LPG"]),
+        "FCC_GAS": v(z, 0.0, P["RFCC_Y_GASOLINE"]),
+        "FCC_LPG": v(z, 0.0, P["RFCC_Y_LPG"]),
+        "LCO": v(z, 0.0, P["RFCC_Y_LCO"]),
+        "SLURRY": v(z, 0.0, P["RFCC_Y_SLURRY"]),
+        "AR_S_MASS": v(y["y_ar"].to_numpy(float) * y["ar_sulfur_wt"].to_numpy(float)),
+        "CRUDE_COST": v(y["price_usd_bbl"].to_numpy(float)),
     }
-    g = st.radio("Columns", list(groups), horizontal=True)
-    st.dataframe(dp[groups[g]].round(3), use_container_width=True, hide_index=True, height=420)
+    M["DHT"] = M["SR_GO"] + M["LCO"]
+    make = {
+        "LPG": M["SR_LPG"] + M["REF_LPG"] + M["FCC_LPG"],
+        "NAP": M["SR_NAPH"] - M["REF_FEED"],
+        "GAS95": M["REFORMATE"] + M["FCC_GAS"],
+        "JET": M["SR_KERO"],
+        "DSL": P["DHT_Y_DIESEL"] * M["DHT"],
+        "FO": M["AR"] - M["RFCC_FEED"] + M["SLURRY"],
+    }
+    for p in d.products:
+        M[f"MAKE_{p}"] = make[p]
+    M["NAPH_LEFT"] = M["SR_NAPH"] - M["REF_FEED"]                                    # C5 >= 0
+    M["AR_LEFT"] = M["AR"] - M["RFCC_FEED"]                                          # C7 >= 0
+    M["RON_EXCESS"] = ((P["RON_REFORMATE"] - P["RON_SPEC_MIN"]) * M["REFORMATE"]
+                       + (P["RON_FCC_GASOLINE"] - P["RON_SPEC_MIN"]) * M["FCC_GAS"])  # C9 >= 0
+    M["S_EXCESS"] = M["AR_S_MASS"] - P["AR_SULFUR_MAX"] * M["AR"]                    # C10 <= 0
+    M["REVENUE"] = sum(d.product.loc[p, "price_usd_bbl"] * M[f"MAKE_{p}"] for p in d.products)
+    M["OPEX"] = (P["CDU_OPEX"] * M["CDU"] + P["REF_OPEX"] * M["REF_FEED"]
+                 + P["RFCC_OPEX"] * M["RFCC_FEED"] + P["DHT_OPEX"] * M["DHT"])
+    M["MARGIN"] = M["REVENUE"] - M["CRUDE_COST"] - M["OPEX"]                          # $k per kbbl = $/bbl
+    return M
 
-    fig = go.Figure()
-    for i, c in enumerate(data.crudes):
-        fig.add_bar(x=dp["day"], y=dp[f"x_{c}"], name=data.crude.loc[c, "crude_name"])
-    fig.add_vline(x=data.first_plan_day - 0.5, line_dash="dash", annotation_text="Plan →")
-    fig.update_layout(barmode="stack", title="Crude slate to CDU", xaxis_title="Day",
-                      yaxis_title="kbbl/d", height=380, margin=dict(t=50, b=10))
-    st.plotly_chart(fig, use_container_width=True)
 
-# ------------------------------------------------------------------ 5. tanks
-with tabs[4]:
-    tb_base, tb_view = base["tank_balance"], view["tank_balance"]
-    tank_opts = [f"{t} – {r.service} ({r.type})" for t, r in data.tank.iterrows()]
-    tid = st.selectbox("Tank", tank_opts, key="tank_pick").split(" – ")[0]
-    a, b_ = tb_base[tb_base.tank_id == tid], tb_view[tb_view.tank_id == tid]
-    row = data.tank.loc[tid]
-    fig = go.Figure()
-    fig.add_scatter(x=a["day"], y=a["closing"], name="Current plan", line=dict(dash="dot"))
-    if opt:
-        fig.add_scatter(x=b_["day"], y=b_["closing"], name="Optimised", line=dict(width=3))
-    fig.add_hline(y=row["capacity_kbbl"], line_color="red", annotation_text="Capacity")
-    fig.add_hline(y=row["min_heel_kbbl"], line_color="orange", annotation_text="Min heel")
-    fig.add_scatter(x=[data.T], y=[row["end_target_kbbl"]], mode="markers", name="End-of-month target",
-                    marker=dict(symbol="triangle-up", size=14))
-    fig.add_vline(x=data.first_plan_day - 0.5, line_dash="dash")
-    fig.update_layout(title=f"{tid} closing inventory (kbbl)", xaxis_title="Day", height=420,
-                      margin=dict(t=50, b=10))
-    st.plotly_chart(fig, use_container_width=True)
+def tank_vector(d: PlanData, M: dict, tank_id: str):
+    """(coef vector of decision-driven net inflow, fixed net inflow per day) for one tank."""
+    row = d.tank.loc[tank_id]
+    mid = row["material_id"]
+    if row["type"] == "Crude":
+        return -np.eye(len(d.var_names))[d.crudes.index(mid)], d.R[mid].to_numpy(float)
+    return M[f"MAKE_{mid}"], -d.L[mid].to_numpy(float)
 
-    wide = tb_view.pivot(index="day", columns="tank_id", values="fill_pct")
-    st.markdown(f"**{view_name} fill % – all tanks**")
-    st.dataframe(wide.style.format("{:.0%}").background_gradient(cmap="RdYlGn_r", vmin=0, vmax=1),
-                 use_container_width=True, height=360)
-    st.markdown("**C14 – end-of-month targets**")
-    st.dataframe(view["c14"].round(2), hide_index=True, use_container_width=True)
 
-# ------------------------------------------------------------------ 6. economics
-with tabs[5]:
-    dp_b, dp_v = base["daily_plan"], view["daily_plan"]
-    plan = dp_b["status"] == "Plan"
-    fig = go.Figure()
-    fig.add_bar(x=dp_b["day"], y=dp_b["margin_kusd"], name="Current plan")
-    if opt:
-        fig.add_bar(x=dp_v["day"], y=dp_v["margin_kusd"], name="Optimised")
-    fig.add_vline(x=data.first_plan_day - 0.5, line_dash="dash")
-    fig.update_layout(barmode="group", title="Daily gross margin ($k/d)", height=380, margin=dict(t=50, b=10))
-    st.plotly_chart(fig, use_container_width=True)
+def margin_per_unit(d: PlanData) -> pd.DataFrame:
+    M = coeffs(d)
+    names = [f"Crude {c} ({d.crude.loc[c, 'crude_name']})" for c in d.crudes] + ["Naphtha → Reformer", "Residue → RFCC"]
+    return pd.DataFrame({"decision": names, "var": d.var_names, "revenue_usd_bbl": M["REVENUE"],
+                         "crude_cost_usd_bbl": M["CRUDE_COST"], "opex_usd_bbl": M["OPEX"],
+                         "margin_usd_bbl": M["MARGIN"]}).round(3)
 
-    cols = ["revenue_kusd", "crude_cost_kusd", "opex_kusd", "margin_kusd"]
-    summ = pd.DataFrame({"Current plan": dp_b.loc[plan, cols].sum()})
-    if opt:
-        summ["Optimised"] = dp_v.loc[plan, cols].sum()
-        summ["Change"] = summ["Optimised"] - summ["Current plan"]
-    summ.index = ["Product revenue", "Crude cost", "Opex", "Gross margin"]
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**Plan-days economics ($k)**")
-        st.dataframe(summ.style.format("{:,.0f}"), use_container_width=True)
-        prod_cols = [f"make_{p}" for p in data.products]
-        rev = pd.DataFrame({"product": data.products,
-                            "volume_kbbl": dp_v.loc[plan, prod_cols].sum().values,
-                            "price_usd_bbl": data.product["price_usd_bbl"].values})
-        rev["revenue_kusd"] = rev["volume_kbbl"] * rev["price_usd_bbl"]
-        st.markdown(f"**{view_name} product make – plan days**")
-        st.dataframe(rev.round(1), hide_index=True, use_container_width=True)
-    with c2:
-        st.markdown("**Margin per extra barrel of each decision ($/bbl)**")
-        st.caption("Because the model is linear, each decision has a fixed margin per barrel. "
-                   "The optimizer pushes the highest ones until a constraint stops it.")
-        mpu = margin_per_unit(data)
-        st.dataframe(mpu.style.format({c: "{:,.2f}" for c in mpu.columns[1:]})
-                     .background_gradient(subset=["margin_usd_bbl"], cmap="RdYlGn"),
-                     hide_index=True, use_container_width=True)
 
-# ------------------------------------------------------------------ 7. explain
-with tabs[6]:
-    if not opt:
-        st.info("Run the optimizer first.")
-    else:
-        st.subheader("Why the optimizer chose this plan")
-        for line in explain(data, base["kpi"], opt["kpi"], res):
-            st.markdown(f"- {line}")
-        st.caption("Shadow price = margin gained ($k) if that limit is relaxed by one unit. "
-                   "The LP can be degenerate, so shadow prices are indicative, not unique.")
-        if not res.shortfalls.empty:
-            st.markdown("**Tank shortfalls (soft mode)**")
-            st.dataframe(res.shortfalls.round(2), hide_index=True)
-        with st.expander("All binding constraints"):
-            st.dataframe(res.binding[["constraint", "label", "day", "item", "side", "shadow_price"]]
-                         .round(3).sort_values(["constraint", "day"]), hide_index=True, use_container_width=True)
-        st.markdown("**Constraint check – optimised plan (True = OK)**")
-        st.dataframe(opt["checks"], hide_index=True, use_container_width=True, height=360)
+def evaluate(d: PlanData, V: np.ndarray | None = None) -> dict:
+    """Recalculate the full plan for decision matrix V (T x n). Default = decisions in the CSV."""
+    V = d.V if V is None else np.asarray(V, float)
+    M = coeffs(d)
+    P = d.P
+    q = {k: V @ vec for k, vec in M.items()}
+
+    dp = d.decisions[["day", "date"]].copy()
+    dp["status"] = np.where(dp["day"] < d.first_plan_day, "Actual", "Plan")
+    for i, name in enumerate(d.var_names):
+        dp[name] = V[:, i]
+    for k, col in [("CDU", "cdu_total"), ("SR_LPG", "sr_lpg"), ("SR_NAPH", "sr_naphtha"), ("SR_KERO", "sr_kero"),
+                   ("SR_GO", "sr_gasoil"), ("AR", "atm_residue"), ("REFORMATE", "reformate"), ("REF_LPG", "ref_lpg"),
+                   ("FCC_GAS", "fcc_gasoline"), ("FCC_LPG", "fcc_lpg"), ("LCO", "lco"), ("SLURRY", "slurry"),
+                   ("DHT", "dht_feed")]:
+        dp[col] = q[k]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        dp["residue_s_wt"] = np.where(q["AR"] > 0, q["AR_S_MASS"] / q["AR"], 0.0)
+    for p in d.products:
+        dp[f"make_{p}"] = q[f"MAKE_{p}"]
+    gas = q["REFORMATE"] + q["FCC_GAS"]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        dp["gasoline_ron"] = np.where(gas > 0, (q["REFORMATE"] * P["RON_REFORMATE"]
+                                                + q["FCC_GAS"] * P["RON_FCC_GASOLINE"]) / gas, 0.0)
+        dp["margin_usd_bbl"] = np.where(q["CDU"] > 0, q["MARGIN"] / q["CDU"], 0.0)
+    dp["revenue_kusd"] = q["REVENUE"]
+    dp["crude_cost_kusd"] = q["CRUDE_COST"]
+    dp["opex_kusd"] = q["OPEX"]
+    dp["margin_kusd"] = q["MARGIN"]
+
+    tb_rows = []
+    for tid, row in d.tank.iterrows():
+        vec, fixed = tank_vector(d, M, tid)
+        closing = row["opening_kbbl"] + np.cumsum(V @ vec + fixed)
+        opening = np.r_[row["opening_kbbl"], closing[:-1]]
+        inflow, outflow = (fixed, -(V @ vec)) if row["type"] == "Crude" else (V @ vec, -fixed)
+        for t in range(d.T):
+            c = closing[t]
+            status = "OK" if row["min_heel_kbbl"] - TOL <= c <= row["capacity_kbbl"] + TOL else (
+                "LOW" if c < row["min_heel_kbbl"] else "HIGH")
+            tb_rows.append({"tank_id": tid, "service": row["service"], "type": row["type"], "day": t + 1,
+                            "date": d.decisions["date"].iat[t], "opening": opening[t], "inflow": inflow[t],
+                            "outflow": outflow[t], "closing": c, "min_heel": row["min_heel_kbbl"],
+                            "capacity": row["capacity_kbbl"], "fill_pct": c / row["capacity_kbbl"], "status": status})
+    tb = pd.DataFrame(tb_rows)
+
+    xmax, xmin = d.crude["x_max_kbd"].to_numpy(float), d.crude["x_min_kbd"].to_numpy(float)
+    X = V[:, :len(d.crudes)]
+    cdu = q["CDU"]
+    ramp = np.r_[0.0, np.diff(cdu)]
+    tank_breach = tb.groupby("day")["status"].apply(lambda s: (s != "OK").sum()).to_numpy()
+    ck = dp[["day", "date", "status"]].copy()
+    ck["C1"] = (cdu >= P["CDU_MIN"] - TOL) & (cdu <= P["CDU_MAX"] + TOL)
+    ck["C2"] = ((X >= xmin - TOL) & (X <= xmax + TOL)).all(axis=1)
+    ck["C3"] = np.abs(ramp) <= P["CDU_RAMP"] + TOL
+    ck["C4"] = (q["REF_FEED"] >= P["REF_MIN"] - TOL) & (q["REF_FEED"] <= P["REF_MAX"] + TOL)
+    ck["C5"] = q["NAPH_LEFT"] >= -TOL
+    ck["C6"] = (q["RFCC_FEED"] >= P["RFCC_MIN"] - TOL) & (q["RFCC_FEED"] <= P["RFCC_MAX"] + TOL)
+    ck["C7"] = q["AR_LEFT"] >= -TOL
+    ck["C8"] = (q["DHT"] >= P["DHT_MIN"] - TOL) & (q["DHT"] <= P["DHT_MAX"] + TOL)
+    ck["C9"] = q["RON_EXCESS"] >= -TOL
+    ck["C10"] = q["S_EXCESS"] <= TOL
+    ck["C13"] = tank_breach == 0
+    flags = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10", "C13"]
+    ck["violations"] = (~ck[flags]).sum(axis=1)
+    ck["day_result"] = np.where(ck["violations"] == 0, "FEASIBLE", "VIOLATION")
+
+    last = tb[tb["day"] == d.T].set_index("tank_id")
+    c14 = pd.DataFrame({"tank_id": d.tank.index, "service": d.tank["service"].values,
+                        "closing_last_day": last.loc[d.tank.index, "closing"].values,
+                        "end_target": d.tank["end_target_kbbl"].values})
+    c14["C14_ok"] = c14["closing_last_day"] >= c14["end_target"] - TOL
+
+    plan = dp["status"] == "Plan"
+    kpi = {"month_margin_kusd": float(dp["margin_kusd"].sum()),
+           "actual_margin_kusd": float(dp.loc[~plan, "margin_kusd"].sum()),
+           "plan_margin_kusd": float(dp.loc[plan, "margin_kusd"].sum()),
+           "crude_run_kbbl": float(cdu.sum()),
+           "violations": int(ck["violations"].sum() + (~c14["C14_ok"]).sum())}
+    return {"daily_plan": dp, "tank_balance": tb, "checks": ck, "c14": c14, "kpi": kpi}
