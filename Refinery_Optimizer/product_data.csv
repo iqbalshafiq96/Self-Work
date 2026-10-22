@@ -1,0 +1,7 @@
+product_id,product_name,tank_id,price_usd_bbl,make_formula,produced_from
+LPG,LPG,TK-201,60,SR_LPG + REF_Y_LPG*r + RFCC_Y_LPG*f,SR LPG + Reformer LPG + RFCC LPG
+NAP,Naphtha,TK-301,74,SR_Naph - r,SR Naphtha not sent to Reformer
+GAS95,Gasoline 95,TK-401,99,REF_Y_REFORMATE*r + RFCC_Y_GASOLINE*f,Reformate + FCC gasoline
+JET,Jet A-1,TK-501,103,SR_Kero,Kerosene (Merox)
+DSL,Diesel B10,TK-601,105,DHT_Y_DIESEL*(SR_GO + RFCC_Y_LCO*f),DHT product (SR gasoil + LCO)
+FO,Fuel Oil,TK-701,72,AR - f + RFCC_Y_SLURRY*f,Unconverted residue + slurry
