@@ -4,8 +4,14 @@
 
 The canvas (flow_component/index.html) is a two-way Streamlit component:
   Python -> canvas : tables, validation, model coefficients, optimizer results (JSON "payload")
-  canvas -> Python : user actions {nonce, action, ...} e.g. edit a table, change settings, run, reset
-Every action re-validates, re-solves the LP (SciPy HiGHS) and re-renders the canvas.
+  canvas -> Python : user actions {nonce, action, ...}
+
+Run behaviour:
+  * "Apply" on an input block only saves the edited table and re-validates it.
+    Outputs keep showing the LAST optimizer run and are flagged "re-run needed".
+  * The LP is solved only on: first load, "Run optimizer", or applying run settings.
+  * Solved results are cached per input fingerprint, so undoing an edit (or Reset)
+    brings back the matching results instantly.
 """
 from __future__ import annotations
 
@@ -21,7 +27,7 @@ import streamlit.components.v1 as components
 
 import data_loader
 from model import coeffs, evaluate, margin_per_unit
-from optimizer import CONSTRAINT_LABEL, binding_summary, explain, optimize
+from optimizer import binding_summary, explain, optimize
 
 DEFAULT_SOURCE = "https://github.com/iqbalshafiq96/Self-Work/tree/main/Refinery_Optimizer"
 INPUT_TABLES = ["crude_data", "unit_data", "product_data", "tank_master",
@@ -42,6 +48,7 @@ TABLE_META = {
     "daily_decisions": dict(readonly=["day", "date", "status"],
                             desc="Recorded rates. Rows before the first plan day are locked actuals; Plan rows are the current (manual) plan used as the comparison baseline."),
 }
+OUTPUT_SUMMARY_KEYS = ["model", "optimizer", "decisions", "economics", "tank_balance", "tank_curves", "why"]
 
 st.set_page_config(page_title="Refinery Planning Flow", page_icon="🛢️", layout="wide",
                    initial_sidebar_state="collapsed")
@@ -52,7 +59,7 @@ flow_canvas = components.declare_component("flow_canvas", path=str(Path(__file__
 
 # ---------------------------------------------------------------- helpers
 def clean(o):
-    """Make any nested structure JSON-safe (numpy -> python, NaN/inf -> None)."""
+    """Make any nested structure JSON-safe (numpy/pandas -> python, NaN/inf -> None)."""
     if isinstance(o, dict):
         return {str(k): clean(v) for k, v in o.items()}
     if isinstance(o, (list, tuple)):
@@ -128,7 +135,107 @@ def load_source(url):
     st.session_state.frames = {k: v.copy() for k, v in frames.items()}
     st.session_state.sources = sources
     st.session_state.settings = {"first_plan_day": default_first_plan_day(frames), "soft": False, "penalty": 1000.0}
-    st.session_state.solve_cache = {}
+    st.session_state.solve_cache = {}      # fingerprint -> results bundle
+    st.session_state.last_bundle = None    # results of the most recent optimizer run
+    st.session_state.run_requested = True  # solve once on first load
+
+
+def make_bundle(data, base, res):
+    """Everything the output blocks need from ONE optimizer run (kept until the next run)."""
+    opt = evaluate(data, res.V) if res.success else None
+    view = opt or base
+    M = coeffs(data)
+    mpu = margin_per_unit(data)
+    P = data.P
+    crudes, products = data.crudes, data.products
+
+    model = {
+        "var_names": data.var_names, "crudes": crudes,
+        "crude_names": data.crude["crude_name"].tolist(),
+        "products": products, "product_names": data.product["product_name"].tolist(),
+        "P": {k: float(v) for k, v in P.items()},
+        "crude": data.crude.reset_index().to_dict("records"),
+        "margin_per_unit": mpu.to_dict("records"),
+        "make": {p: M[f"MAKE_{p}"] for p in products},
+        "dht": M["DHT"], "sulfur_row": M["S_EXCESS"], "ron_row": M["RON_EXCESS"],
+        "n_rows": res.n_rows, "n_vars": res.n_vars,
+        "tanks": data.tank.reset_index()[["tank_id", "service", "type", "capacity_kbbl", "min_heel_kbbl",
+                                           "opening_kbbl", "end_target_kbbl"]].to_dict("records"),
+    }
+
+    def tank_series(ev):
+        return {tid: g.sort_values("day") for tid, g in ev["tank_balance"].groupby("tank_id")}
+
+    tb_base, tb_view = tank_series(base), tank_series(view)
+    tanks = []
+    for tid, row in data.tank.iterrows():
+        g, gb = tb_view[tid], tb_base[tid]
+        tanks.append({"id": tid, "service": row["service"], "type": row["type"],
+                      "cap": row["capacity_kbbl"], "heel": row["min_heel_kbbl"], "target": row["end_target_kbbl"],
+                      "opening": g["opening"].tolist(), "inflow": g["inflow"].tolist(), "outflow": g["outflow"].tolist(),
+                      "closing": g["closing"].tolist(), "closing_base": gb["closing"].tolist(),
+                      "status": g["status"].tolist()})
+    dpv, dpb = view["daily_plan"], base["daily_plan"]
+    plan_mask = dpb["status"] == "Plan"
+    econ_cols = ["revenue_kusd", "crude_cost_kusd", "opex_kusd", "margin_kusd"]
+    bsum = binding_summary(data, res) if res.success else pd.DataFrame()
+    check_cols = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10", "C13"]
+    result = {
+        "success": res.success, "message": res.message,
+        "days": data.decisions["day"].tolist(), "dates": data.decisions["date"].astype(str).tolist(),
+        "status": dpb["status"].tolist(), "first_plan_day": data.first_plan_day,
+        "V_base": np.round(dpb[data.var_names].to_numpy(float), 3),
+        "V_opt": np.round(dpv[data.var_names].to_numpy(float), 3),
+        "kpi_base": base["kpi"], "kpi_opt": opt["kpi"] if opt else None,
+        "benchmark": float(data.cfg["benchmark_lp_optimum_kusd"]) if "benchmark_lp_optimum_kusd" in data.cfg else None,
+        "penalty_kusd": res.penalty_kusd,
+        "margin_base": dpb["margin_kusd"].round(2), "margin_opt": dpv["margin_kusd"].round(2),
+        "cdu_opt": dpv["cdu_total"].round(2),
+        "ron_opt": dpv["gasoline_ron"].round(2), "sulfur_opt": dpv["residue_s_wt"].round(3),
+        "econ": {"labels": ["Product revenue", "Crude cost", "Opex", "Gross margin"],
+                 "base": dpb.loc[plan_mask, econ_cols].sum().tolist(),
+                 "opt": dpv.loc[plan_mask, econ_cols].sum().tolist()},
+        "make": [{"id": p, "name": data.product.loc[p, "product_name"],
+                  "price": data.product.loc[p, "price_usd_bbl"],
+                  "base": dpb.loc[plan_mask, f"make_{p}"].sum(), "opt": dpv.loc[plan_mask, f"make_{p}"].sum()}
+                 for p in products],
+        "tanks": tanks,
+        "c14": view["c14"].to_dict("records"),
+        "checks": {c: int((~view["checks"][c]).sum()) for c in check_cols} | {
+            "C14": int((~view["c14"]["C14_ok"]).sum())},
+        "binding": bsum.to_dict("records"),
+        "binding_count": res.binding.groupby("constraint").size().to_dict() if res.success and not res.binding.empty else {},
+        "explain": explain(data, base["kpi"], opt["kpi"], res) if opt else [res.message],
+        "shortfalls": res.shortfalls.to_dict("records"),
+    }
+
+    top = mpu.sort_values("margin_usd_bbl", ascending=False).iloc[0]
+    tk = data.tank
+    summary = {
+        "model": f"Best: {top['var']} {top['margin_usd_bbl']:.2f} $/bbl",
+        "optimizer": f"Z = {opt['kpi']['plan_margin_kusd']:,.0f} $k" if opt else "No feasible plan",
+        "decisions": f"{(data.T - data.first_plan_day + 1) * len(data.var_names)} variables solved" if opt else "Showing current plan",
+        "economics": (f"{opt['kpi']['plan_margin_kusd'] - base['kpi']['plan_margin_kusd']:+,.0f} $k vs current plan"
+                      if opt else f"{base['kpi']['plan_margin_kusd']:,.0f} $k current"),
+        "tank_balance": f"{int((~view['checks']['C13']).sum())} breach day(s) · C14 {int(view['c14']['C14_ok'].sum())}/{len(tk)} OK",
+        "tank_curves": "Closing inventory vs limits",
+        "why": (bsum.iloc[0]["label"] + " is the top constraint") if len(bsum) else res.message[:60],
+    }
+
+    downloads = None
+    if opt:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            dec = opt["daily_plan"][["day", "date", "status"] + data.var_names]
+            z.writestr("daily_decisions_optimized.csv", dec.to_csv(index=False))
+            z.writestr("daily_plan.csv", opt["daily_plan"].to_csv(index=False))
+            z.writestr("tank_balance.csv", opt["tank_balance"].to_csv(index=False))
+            z.writestr("constraint_check.csv", opt["checks"].to_csv(index=False))
+            z.writestr("binding_constraints.csv", res.binding.to_csv(index=False))
+        downloads = buf.getvalue()
+
+    return {"model": clean(model), "result": clean(result), "summary": summary,
+            "status": "optimal" if res.success else "infeasible", "downloads": downloads}
 
 
 # ---------------------------------------------------------------- state
@@ -178,98 +285,40 @@ payload = {
     "edited": [n for n in INPUT_TABLES if not frames_equal(frames[n], st.session_state.base_frames[n])],
     "issues": [{"level": l, "msg": m} for l, m in issues],
     "settings": settings | {"T": T},
-    "summary": {}, "model": None, "result": None, "status": "invalid" if errors else "pending",
+    "summary": {}, "model": None, "result": None,
+    "status": "invalid" if errors else "pending", "stale": False,
 }
 
-opt_bundle = None
-if not errors:
+bundle = None
+if errors:
+    payload["summary"] = {"validate": f"{len(errors)} error(s) – click to see"}
+    st.session_state.run_requested = False   # nothing can be solved until the inputs are fixed
+else:
     data = data_loader.build(frames, settings["first_plan_day"])
-    base = evaluate(data)
     fingerprint = (tuple(int(pd.util.hash_pandas_object(f.astype(str), index=False).sum()) for f in frames.values()),
                    settings["first_plan_day"], settings["soft"], float(settings["penalty"]))
     cache = st.session_state.solve_cache
-    if fingerprint not in cache:
+
+    if st.session_state.run_requested or st.session_state.last_bundle is None:   # Run / settings / first load
         res = optimize(data, soft_tanks=settings["soft"], penalty_usd_bbl=float(settings["penalty"]))
+        bundle = make_bundle(data, evaluate(data), res)
         if len(cache) > 8:
             cache.clear()
-        cache[fingerprint] = res
-    res = cache[fingerprint]
-    opt = evaluate(data, res.V) if res.success else None
-    view = opt or base
-    M = coeffs(data)
-    mpu = margin_per_unit(data)
-    P = data.P
-    days = data.decisions["day"].tolist()
+        cache[fingerprint] = bundle
+        stale = False
+    elif fingerprint in cache:                                      # these exact inputs were solved before
+        bundle, stale = cache[fingerprint], False
+    else:                                                           # inputs applied, not yet re-run
+        bundle, stale = st.session_state.last_bundle, True
 
-    # ---- model (process + LP formulation, for the calculation blocks) ----
-    payload["model"] = {
-        "var_names": data.var_names, "crudes": crudes,
-        "crude_names": data.crude["crude_name"].tolist(),
-        "products": products, "product_names": data.product["product_name"].tolist(),
-        "P": {k: float(v) for k, v in P.items()},
-        "crude": clean(data.crude.reset_index().to_dict("records")),
-        "margin_per_unit": clean(mpu.to_dict("records")),
-        "make": {p: clean(M[f"MAKE_{p}"]) for p in products},
-        "dht": clean(M["DHT"]), "sulfur_row": clean(M["S_EXCESS"]), "ron_row": clean(M["RON_EXCESS"]),
-        "n_rows": res.n_rows, "n_vars": res.n_vars,
-        "tanks": clean(data.tank.reset_index()[["tank_id", "service", "type", "capacity_kbbl", "min_heel_kbbl",
-                                                  "opening_kbbl", "end_target_kbbl"]].to_dict("records")),
-    }
+    st.session_state.run_requested = False
+    st.session_state.last_bundle = bundle
 
-    # ---- results ----
-    def tank_series(ev):
-        tb = ev["tank_balance"]
-        return {tid: g.sort_values("day") for tid, g in tb.groupby("tank_id")}
+    payload["model"], payload["result"] = bundle["model"], bundle["result"]
+    payload["status"], payload["stale"] = bundle["status"], stale
 
-    tb_base, tb_view = tank_series(base), tank_series(view)
-    tanks = []
-    for tid, row in data.tank.iterrows():
-        g, gb = tb_view[tid], tb_base[tid]
-        tanks.append({"id": tid, "service": row["service"], "type": row["type"],
-                      "cap": row["capacity_kbbl"], "heel": row["min_heel_kbbl"], "target": row["end_target_kbbl"],
-                      "opening": g["opening"].tolist(), "inflow": g["inflow"].tolist(), "outflow": g["outflow"].tolist(),
-                      "closing": g["closing"].tolist(), "closing_base": gb["closing"].tolist(),
-                      "status": g["status"].tolist()})
-    dpv, dpb = view["daily_plan"], base["daily_plan"]
-    plan_mask = dpb["status"] == "Plan"
-    econ_cols = ["revenue_kusd", "crude_cost_kusd", "opex_kusd", "margin_kusd"]
-    bsum = binding_summary(data, res) if res.success else pd.DataFrame()
-    check_cols = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10", "C13"]
-    payload["result"] = {
-        "success": res.success, "message": res.message,
-        "days": days, "dates": data.decisions["date"].astype(str).tolist(),
-        "status": dpb["status"].tolist(), "first_plan_day": data.first_plan_day,
-        "V_base": clean(np.round(base["daily_plan"][data.var_names].to_numpy(float), 3)),
-        "V_opt": clean(np.round(view["daily_plan"][data.var_names].to_numpy(float), 3)),
-        "kpi_base": base["kpi"], "kpi_opt": opt["kpi"] if opt else None,
-        "benchmark": float(data.cfg["benchmark_lp_optimum_kusd"]) if "benchmark_lp_optimum_kusd" in data.cfg else None,
-        "penalty_kusd": res.penalty_kusd,
-        "margin_base": clean(dpb["margin_kusd"].round(2)), "margin_opt": clean(dpv["margin_kusd"].round(2)),
-        "cdu_opt": clean(dpv["cdu_total"].round(2)),
-        "ron_opt": clean(dpv["gasoline_ron"].round(2)), "sulfur_opt": clean(dpv["residue_s_wt"].round(3)),
-        "econ": {"labels": ["Product revenue", "Crude cost", "Opex", "Gross margin"],
-                 "base": clean(dpb.loc[plan_mask, econ_cols].sum().tolist()),
-                 "opt": clean(dpv.loc[plan_mask, econ_cols].sum().tolist())},
-        "make": [{"id": p, "name": data.product.loc[p, "product_name"],
-                  "price": data.product.loc[p, "price_usd_bbl"],
-                  "base": dpb.loc[plan_mask, f"make_{p}"].sum(), "opt": dpv.loc[plan_mask, f"make_{p}"].sum()}
-                 for p in products],
-        "tanks": tanks,
-        "c14": clean(view["c14"].to_dict("records")),
-        "checks": {c: int((~view["checks"][c]).sum()) for c in check_cols} | {
-            "C14": int((~view["c14"]["C14_ok"]).sum())},
-        "binding": clean(bsum.to_dict("records")),
-        "binding_count": clean(res.binding.groupby("constraint").size().to_dict()) if res.success and not res.binding.empty else {},
-        "explain": explain(data, base["kpi"], opt["kpi"], res) if opt else [res.message],
-        "shortfalls": clean(res.shortfalls.to_dict("records")),
-    }
-    payload["status"] = "optimal" if res.success else "infeasible"
-    opt_bundle = (data, opt, res) if opt else None
-
-    # ---- one-line stats shown on each block ----
-    cr, pr, tk = frames["crude_data"], frames["product_data"], frames["tank_master"]
-    top = mpu.sort_values("margin_usd_bbl", ascending=False).iloc[0]
-    kv = (opt or base)["kpi"]
+    # input-side summaries always reflect the CURRENT (applied) inputs
+    cr, pr, tk, P = frames["crude_data"], frames["product_data"], frames["tank_master"], data.P
     payload["summary"] = {
         "crude_data": f"{len(cr)} crudes · {cr.price_usd_bbl.min():g}–{cr.price_usd_bbl.max():g} $/bbl",
         "unit_data": f"CDU {P['CDU_MAX']:g} · REF {P['REF_MAX']:g} · RFCC {P['RFCC_MAX']:g} · DHT {P['DHT_MAX']:g} kbd",
@@ -279,17 +328,11 @@ if not errors:
         "product_liftings": f"{len(frames['product_liftings'])} liftings · {frames['product_liftings'].qty_kbbl.sum():,.0f} kbbl",
         "daily_decisions": f"Actual 1–{data.first_plan_day - 1} · Plan {data.first_plan_day}–{data.T}",
         "validate": "All checks passed" if not issues else f"{len(issues)} warning(s)",
-        "model": f"Best: {top['var']} {top['margin_usd_bbl']:.2f} $/bbl",
-        "optimizer": f"Z = {kv['plan_margin_kusd']:,.0f} $k" if opt else "No feasible plan",
-        "decisions": f"{(data.T - data.first_plan_day + 1) * len(data.var_names)} variables solved" if opt else "Showing current plan",
-        "economics": (f"{opt['kpi']['plan_margin_kusd'] - base['kpi']['plan_margin_kusd']:+,.0f} $k vs current plan"
-                      if opt else f"{base['kpi']['plan_margin_kusd']:,.0f} $k current"),
-        "tank_balance": f"{sum((~view['checks']['C13'])) } breach day(s) · C14 {int(view['c14']['C14_ok'].sum())}/{len(tk)} OK",
-        "tank_curves": "Closing inventory vs limits",
-        "why": (bsum.iloc[0]["label"] + " is the top constraint") if len(bsum) else res.message[:60],
     }
-else:
-    payload["summary"] = {"validate": f"{len(errors)} error(s) – click to see"}
+    # model / optimizer / output summaries come from the last run
+    payload["summary"].update({k: bundle["summary"][k] for k in OUTPUT_SUMMARY_KEYS})
+    if stale:
+        payload["summary"]["optimizer"] = "Inputs changed – press Run"
 
 # ---------------------------------------------------------------- canvas
 st.markdown("#### Refinery Production Planning – interactive optimizer flow")
@@ -298,7 +341,7 @@ action = flow_canvas(payload=clean(payload), key="flow", default=None)
 if action and action.get("nonce") and action["nonce"] != st.session_state.last_nonce:
     st.session_state.last_nonce = action["nonce"]
     kind = action.get("action")
-    if kind == "edit" and action.get("table") in INPUT_TABLES:
+    if kind == "edit" and action.get("table") in INPUT_TABLES:          # Apply: save only, no solve
         frames[action["table"]] = rows_to_frame(action["table"], action["columns"], action["rows"], frames)
     elif kind == "reset_table" and action.get("table") in INPUT_TABLES:
         frames[action["table"]] = st.session_state.base_frames[action["table"]].copy()
@@ -306,12 +349,13 @@ if action and action.get("nonce") and action["nonce"] != st.session_state.last_n
         st.session_state.frames = {k: v.copy() for k, v in st.session_state.base_frames.items()}
         settings["first_plan_day"] = default_first_plan_day(st.session_state.base_frames)
         settings["soft"] = False
-    elif kind == "settings":
+    elif kind == "settings":                                           # run settings: apply and solve
         settings["first_plan_day"] = int(action.get("first_plan_day", settings["first_plan_day"]))
         settings["soft"] = bool(action.get("soft", settings["soft"]))
         settings["penalty"] = float(min(max(float(action.get("penalty", settings["penalty"])), 1.0), 1e6))
-    elif kind == "run":
-        st.session_state.solve_cache = {}
+        st.session_state.run_requested = True
+    elif kind == "run":                                                # Run optimizer: solve current inputs
+        st.session_state.run_requested = True
     st.rerun()
 
 # ---------------------------------------------------------------- downloads
@@ -324,18 +368,10 @@ with c1:
     st.download_button("⬇ Edited input CSVs", buf.getvalue(), "inputs_edited.zip", "application/zip",
                        use_container_width=True, help="Commit these to GitHub to make the scenario the new base case.")
 with c2:
-    if opt_bundle:
-        data, opt, res = opt_bundle
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w") as z:
-            dec = opt["daily_plan"][["day", "date", "status"] + data.var_names]
-            z.writestr("daily_decisions_optimized.csv", dec.to_csv(index=False))
-            z.writestr("daily_plan.csv", opt["daily_plan"].to_csv(index=False))
-            z.writestr("tank_balance.csv", opt["tank_balance"].to_csv(index=False))
-            z.writestr("constraint_check.csv", opt["checks"].to_csv(index=False))
-            z.writestr("binding_constraints.csv", res.binding.to_csv(index=False))
-        st.download_button("⬇ Optimizer results", buf.getvalue(), "optimizer_results.zip", "application/zip",
+    if bundle and bundle["downloads"] and not errors:
+        st.download_button("⬇ Optimizer results" + (" (last run)" if payload["stale"] else ""),
+                           bundle["downloads"], "optimizer_results.zip", "application/zip",
                            use_container_width=True)
 with c3:
-    st.caption("Click any block on the canvas to open it. Input blocks are editable; every change re-validates "
-               "and re-solves the LP. Sample data are illustrative only.")
+    st.caption("Click any block to open it. Input blocks are editable – **Apply** saves the change; "
+               "press **▶ Run optimizer** to re-solve. Sample data are illustrative only.")
