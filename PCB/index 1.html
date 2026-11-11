@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PCB / MTD Estimator 2026</title>
+<style>
+:root{--bg:#f4f7fb;--card:#fff;--ink:#1b2a3a;--mut:#5b6b7d;--acc:#0b6bcb;--line:#dde4ee;--ok:#0a8a4a}
+*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:linear-gradient(120deg,#0b3d6e,#0b6bcb);color:#fff;padding:28px 20px}
+header h1{margin:0 0 6px;font-size:1.6rem}header p{margin:0;opacity:.9}
+main{max-width:1100px;margin:auto;padding:20px;display:grid;gap:18px;grid-template-columns:1fr 1fr}
+@media(max-width:850px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+.card h2{margin:0 0 12px;font-size:1.1rem;color:var(--acc)}
+label{display:block;font-size:.88rem;margin:10px 0 4px;color:var(--mut)}
+input,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:.95rem}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chk{display:flex;gap:8px;align-items:center;margin-top:10px}.chk input{width:auto}
+button{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:1rem;cursor:pointer}
+button.sec{background:#e8eef6;color:var(--ink);padding:6px 10px;font-size:.85rem}
+.full{grid-column:1/-1}details{margin-top:10px}summary{cursor:pointer;color:var(--acc)}
+table{width:100%;border-collapse:collapse;font-size:.9rem}th,td{padding:7px;border-bottom:1px solid var(--line);text-align:right}
+th:first-child,td:first-child{text-align:left}tr.sel{background:#eaf3ff}tbody tr{cursor:pointer}
+.big{font-size:1.8rem;font-weight:700;color:var(--ok)}.note{font-size:.8rem;color:var(--mut)}
+.hide{display:none}
+</style>
+</head>
+<body>
+<header><h1>PCB / MTD Estimator 2026</h1>
+<p>Monthly tax deduction estimate based on the LHDN computerised calculation specification 2026</p></header>
+<main>
+<section class="card">
+ <h2>1. Your profile</h2>
+ <label>Tax residence</label>
+ <select id="resident"><option value="1">Resident in Malaysia</option><option value="0">Non-resident (30% flat)</option></select>
+ <div id="resBlock">
+ <label>Tax scheme</label>
+ <select id="scheme"><option value="NORMAL">Normal</option><option value="REP">Returning Expert Programme (15%)</option>
+ <option value="KNOWLEDGE">Knowledge worker – specified region (15%)</option><option value="CSUITE">Non-citizen C-Suite (15%)</option></select>
+ <label>Category</label>
+ <select id="category"><option value="1">1 – Single</option><option value="2">2 – Married, spouse not working</option>
+ <option value="3">3 – Married & spouse working / divorced / widowed / single with adopted child</option></select>
+ <div id="kidBlock" class="hide">
+  <label>Children below 18 (or 18+ studying below diploma) — ×1</label><input id="c1" type="number" min="0" value="0">
+  <label>Children 18+ studying diploma+ (MY) / degree+ (overseas) — ×4</label><input id="c2" type="number" min="0" value="0">
+  <label>Disabled children — ×4</label><input id="c3" type="number" min="0" value="0">
+  <label>Disabled children 18+ studying diploma+ / degree+ — ×8</label><input id="c4" type="number" min="0" value="0">
+ </div>
+ <div class="chk"><input type="checkbox" id="dSelf"><span>I am a disabled person (OKU)</span></div>
+ <div class="chk hide" id="dSpBlock"><input type="checkbox" id="dSpouse"><span>My spouse is disabled (OKU)</span></div>
+ </div>
+</section>
+
+<section class="card">
+ <h2>2. Monthly income</h2>
+ <label>Gross taxable monthly salary incl. taxable allowances/BIK (RM)</label><input id="salary" type="number" min="0" value="5000">
+ <div class="row">
+  <div><label>Employee EPF per month (RM)</label><input id="epf" type="number" min="0" value="550"></div>
+  <div><label>Zakat via payroll per month (RM)</label><input id="zakat" type="number" min="0" value="0"></div>
+ </div>
+ <div class="chk"><input type="checkbox" id="autoEpf" checked><span>Auto-estimate EPF at 11%</span></div>
+ <label>Starting month of calculation</label>
+ <select id="startMonth"></select>
+ <details id="ytdBox"><summary>Year-to-date figures before the start month (optional – from payslip / TP3)</summary>
+  <div class="row">
+   <div><label>Accumulated gross pay ΣY</label><input id="ytdY" type="number" min="0" value="0"></div>
+   <div><label>Accumulated EPF ΣK</label><input id="ytdK" type="number" min="0" value="0"></div>
+   <div><label>PCB already paid X</label><input id="ytdX" type="number" min="0" value="0"></div>
+   <div><label>Zakat already paid Z</label><input id="ytdZ" type="number" min="0" value="0"></div>
+   <div><label>TP1 reliefs already claimed ΣLP</label><input id="ytdLP" type="number" min="0" value="0"></div>
+  </div>
+ </details>
+ <h2 style="margin-top:16px">3. Bonus / additional pay</h2>
+ <div id="bonusList"></div>
+ <button class="sec" type="button" id="addBonus">+ Add bonus</button>
+</section>
+
+<section class="card full">
+ <h2>4. TP1 optional reliefs (annual caps applied)</h2>
+ <div class="row"><div><label>Month you submit TP1 to employer</label><select id="tp1Month"></select></div></div>
+ <div id="tp1List" class="row"></div>
+ <p class="note">Total TP1: RM <span id="tp1Total">0.00</span></p>
+ <button type="button" id="calc">Calculate PCB</button>
+</section>
+
+<section class="card full" id="resultCard">
+ <h2>Results</h2>
+ <p>Estimated total PCB for the year: <span class="big" id="total">–</span></p>
+ <table><thead><tr><th>Month</th><th>Salary</th><th>Bonus</th><th>TP1</th><th>PCB (RM)</th></tr></thead><tbody id="tbody"></tbody></table>
+ <p class="note">Select a month to see the step-by-step working.</p>
+ <div id="breakdown"></div>
+ <p class="note">Estimate only. Your actual PCB follows your employer's payroll and the official EPF contribution table.</p>
+</section>
+</main>
+<script>
+// ===== PCB 2026 core logic (port of pcb_calculator_2026.py) =====
+const EPF_CAP = 4000;
+const TABLE_1 = [ // [lower, M, R%, B cat1&3, B cat2]
+  [2000000,2000000,30,528400,528400],[600000,600000,28,136400,136400],
+  [400000,400000,26,84400,84400],[100000,100000,25,9400,9400],
+  [70000,70000,19,3700,3700],[50000,50000,11,1500,1500],
+  [35000,35000,6,600,600],[20000,20000,3,-250,-650],[5000,5000,1,-400,-800]];
+const EPS = 1e-7;
+const trunc2 = x => (x >= 0 ? Math.floor(x*100 + EPS) : Math.ceil(x*100 - EPS)) / 100;
+const roundUp5sen = x => { const t = trunc2(x); return Math.ceil(Math.round(t*100)/5 - EPS) * 5 / 100; };
+
+function fixedReliefs(p){
+  let t = 9000;
+  if (p.category === 2) t += 4000;
+  if (p.disabledSelf) t += 7000;
+  if (p.disabledSpouse) t += 6000;
+  if (p.category === 2 || p.category === 3) t += 2000 * p.childUnits;
+  return t;
+}
+function capEpf(K,K1,Kt){ K=Math.min(K,EPF_CAP); K1=Math.min(K1,EPF_CAP-K); Kt=Math.min(Kt,EPF_CAP-K-K1); return [K,K1,Kt]; }
+function calcK2(K,K1,Kt,n){ if(n<=0) return 0; const bal=Math.max(0,EPF_CAP-(K+K1+Kt)); return Math.min(trunc2(bal/n),K1); }
+
+function chargeable(p,m,incAdd){
+  const n = 12 - m.month;
+  const [K,K1,Kt] = capEpf(m.K, m.K1, incAdd ? m.Kt : 0);
+  const K2 = calcK2(K,K1,Kt,n);
+  let inc = (m.Y-K) + (m.Y1-K1) + (m.Y1-K2)*n;
+  if (incAdd) inc += (m.Yt-Kt);
+  const rel = fixedReliefs(p) + m.LP + m.LP1;
+  return {P: trunc2(inc-rel), K2, n, income: trunc2(inc), reliefs: rel};
+}
+function annualTax(p,P){
+  if (P<=0) return 0;
+  if (p.scheme==='NORMAL'){
+    if (P<=5000) return 0;
+    for (const [lo,M,R,B13,B2] of TABLE_1) if (P>lo) return (P-M)*R/100 + (p.category===2?B2:B13);
+  }
+  if (p.scheme==='REP'||p.scheme==='KNOWLEDGE'){ const T = P<=35000 ? (p.category===2?800:400) : 0; return P*0.15 - T; }
+  if (p.scheme==='CSUITE') return P*0.15;
+  return 0;
+}
+function calcMTD(p,m){
+  if (!p.resident){ const v=roundUp5sen((m.Y1+m.Yt)*0.30); return {payable:v, method:'Non-resident 30% flat', steps:[]}; }
+  const n = 12 - m.month;
+  const c1 = chargeable(p,m,false);
+  const tax1 = annualTax(p,c1.P);
+  const mtdC = roundUp5sen((tax1-(m.Z+m.X))/(n+1));
+  const mtdDeduct = mtdC >= 10 ? mtdC : 0;
+  const net = mtdDeduct - m.zakatNow;
+  const totalYear = m.X + mtdC*(n+1);
+  const steps = [
+    ['Balance months after this month (n)', n],
+    ['Net income for the year (before reliefs)', c1.income],
+    ['Total reliefs (D+S+Du+Su+QC+ΣLP+LP1)', c1.reliefs],
+    ['Estimated EPF for each remaining month (K2)', c1.K2],
+    ['Step 1B – Chargeable income P', c1.P],
+    ['Annual tax on P', trunc2(tax1)],
+    ['Step 1C – PCB on normal pay this month', mtdC],
+    ['Step 1D – Net PCB after zakat', net],
+    ['Step 1E – Total PCB for the year', trunc2(totalYear)]];
+  if (m.Yt <= 0) return {payable: roundUp5sen(Math.max(0,net)), method:'Resident – normal remuneration', steps};
+  const c2 = chargeable(p,m,true);
+  const tax2 = annualTax(p,c2.P);
+  let add = roundUp5sen(tax2-(totalYear+m.Z)); if (add<10) add=0;
+  const pay = roundUp5sen(Math.max(0,net+add));
+  steps.push(['Step 2 – P including bonus', c2.P],['K2 including bonus', c2.K2],
+    ['Step 3 – Annual tax including bonus', trunc2(tax2)],['Step 4 – PCB on bonus', add],['Step 5 – Total PCB payable', pay]);
+  return {payable: pay, method:'Resident – with additional remuneration (5-step method)', steps};
+}
+function simulateYear(p, o){
+  const acc = {Y:o.ytdY||0, K:o.ytdK||0, X:o.ytdX||0, Z:o.ytdZ||0, LP:o.ytdLP||0};
+  const rows = [];
+  for (let mo=o.startMonth||1; mo<=12; mo++){
+    const m = {month:mo, Y1:o.salary, K1:o.epf, Yt:o.bonuses[mo]||0, Kt:o.bonusEpf[mo]||0,
+               LP1:o.lp[mo]||0, zakatNow:o.zakat||0, ...acc};
+    const r = calcMTD(p,m); rows.push({mo,m,r});
+    const [K,K1,Kt] = capEpf(m.K,m.K1,m.Kt);
+    acc.Y += m.Y1+m.Yt; acc.K = K+K1+Kt; acc.X = trunc2(acc.X + r.payable); acc.Z += m.zakatNow; acc.LP += m.LP1;
+  }
+  return rows;
+}
+// ===== UI =====
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const TP1=[["Medical/special needs/carer – parents & grandparents",8000],["Basic supporting equipment (disabled)",6000],
+["Higher education fees (self)",7000],["Medical: serious disease / fertility / vaccine / dental / check-up / learning disability",10000],
+["Lifestyle (books, PC/phone/tablet, internet, courses)",2500],["Additional lifestyle – sports",1000],["Breastfeeding equipment",1000],
+["Childcare / kindergarten / daycare fees",3000],["SSPN net deposit",8000],["Alimony to former wife",4000],
+["Life insurance / takaful / voluntary EPF",3000],["PRS / deferred annuity",3000],["Education & medical insurance",4000],
+["SOCSO contribution",350],["EV charger / composter / food waste grinder / home CCTV",2500],["Housing loan interest (first home)",7000],
+["Admission fees – tourist attractions / cultural programmes",1000]];
+const $=id=>document.getElementById(id);
+const num=id=>{const v=parseFloat($(id).value);return isFinite(v)&&v>0?v:0;};
+const fmt=v=>Number(v).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2});
+const monthOpts=sel=>MONTHS.map((m,i)=>`<option value="${i+1}"${i+1===sel?' selected':''}>${m}</option>`).join('');
+$('startMonth').innerHTML=monthOpts(1); $('tp1Month').innerHTML=monthOpts(1);
+$('tp1List').innerHTML=TP1.map((t,i)=>`<div><label>${t[0]} (max RM${t[1].toLocaleString()})</label><input type="number" min="0" max="${t[1]}" value="0" data-tp="${i}"></div>`).join('');
+
+function tp1Total(){let s=0;document.querySelectorAll('[data-tp]').forEach(el=>{const cap=TP1[+el.dataset.tp][1];
+ let v=parseFloat(el.value)||0; if(v<0)v=0; if(v>cap){v=cap;el.value=cap;}
+ if(TP1[+el.dataset.tp][0].startsWith('Alimony')&&$('category').value==='2')v=0; s+=v;});
+ $('tp1Total').textContent=fmt(s);return s;}
+document.querySelectorAll('[data-tp]').forEach(el=>el.addEventListener('input',tp1Total));
+
+function addBonus(){const d=document.createElement('div');d.className='row bonusRow';
+ d.innerHTML=`<div><label>Month</label><select class="bm">${monthOpts(12)}</select></div>
+ <div><label>Amount (RM)</label><input class="ba" type="number" min="0" value="0"></div>
+ <div><label>EPF on bonus (RM)</label><input class="be" type="number" min="0" value="0"></div>
+ <div style="align-self:end"><button class="sec" type="button">Remove</button></div>`;
+ d.querySelector('button').onclick=()=>d.remove();
+ d.querySelector('.ba').addEventListener('input',e=>{if($('autoEpf').checked)d.querySelector('.be').value=Math.ceil((parseFloat(e.target.value)||0)*0.11);});
+ $('bonusList').appendChild(d);}
+$('addBonus').onclick=addBonus;
+
+function sync(){const res=$('resident').value==='1';$('resBlock').classList.toggle('hide',!res);
+ const c=$('category').value;$('kidBlock').classList.toggle('hide',c==='1');$('dSpBlock').classList.toggle('hide',c!=='2');
+ if($('autoEpf').checked){$('epf').value=res?Math.ceil(num('salary')*0.11):0;}
+ $('epf').readOnly=$('autoEpf').checked;tp1Total();}
+['resident','category','salary','autoEpf'].forEach(id=>$(id).addEventListener('input',sync));sync();
+
+let rows=[];
+function calc(){
+ const resident=$('resident').value==='1', cat=+$('category').value;
+ const p={resident,scheme:$('scheme').value,category:cat,
+  childUnits:cat===1?0:num('c1')+4*num('c2')+4*num('c3')+8*num('c4'),
+  disabledSelf:$('dSelf').checked,disabledSpouse:cat===2&&$('dSpouse').checked};
+ const bonuses={},bonusEpf={};
+ document.querySelectorAll('.bonusRow').forEach(r=>{const m=+r.querySelector('.bm').value;
+  bonuses[m]=(bonuses[m]||0)+(Math.max(0,parseFloat(r.querySelector('.ba').value)||0));
+  bonusEpf[m]=(bonusEpf[m]||0)+(Math.max(0,parseFloat(r.querySelector('.be').value)||0));});
+ const start=+$('startMonth').value, lp={}, tp=resident?tp1Total():0, tpm=Math.max(+$('tp1Month').value,start);
+ if(tp>0)lp[tpm]=tp;
+ rows=simulateYear(p,{salary:num('salary'),epf:resident?num('epf'):0,zakat:num('zakat'),bonuses,bonusEpf,lp,startMonth:start,
+  ytdY:num('ytdY'),ytdK:num('ytdK'),ytdX:num('ytdX'),ytdZ:num('ytdZ'),ytdLP:num('ytdLP')});
+ let tot=0;$('tbody').innerHTML=rows.map((x,i)=>{tot+=x.r.payable;
+  return `<tr data-i="${i}"><td>${MONTHS[x.mo-1]}</td><td>${fmt(x.m.Y1)}</td><td>${fmt(x.m.Yt)}</td><td>${fmt(x.m.LP1)}</td><td><b>${fmt(x.r.payable)}</b></td></tr>`;}).join('');
+ $('total').textContent='RM '+fmt(tot);
+ document.querySelectorAll('#tbody tr').forEach(tr=>tr.onclick=()=>show(+tr.dataset.i));
+ show(0);$('resultCard').scrollIntoView({behavior:'smooth'});}
+function show(i){document.querySelectorAll('#tbody tr').forEach(t=>t.classList.toggle('sel',+t.dataset.i===i));
+ const x=rows[i];$('breakdown').innerHTML=`<h3>${MONTHS[x.mo-1]} – ${x.r.method}</h3><table>${
+ x.r.steps.map(s=>`<tr><td>${s[0]}</td><td>${typeof s[1]==='number'&&s[0].startsWith('Balance')?s[1]:fmt(s[1])}</td></tr>`).join('')}
+ <tr><td><b>PCB payable this month</b></td><td><b>RM ${fmt(x.r.payable)}</b></td></tr></table>`;}
+$('calc').onclick=calc;
+</script>
+</body></html>
