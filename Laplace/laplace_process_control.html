@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Laplace Transforms in Process Control — Interactive Primer</title>
+<style>
+  :root{
+    --bg:#0f1115;
+    --panel:#171a21;
+    --panel2:#1d2129;
+    --line:#2a303b;
+    --txt:#e8eaee;
+    --dim:#98a1b0;
+    --acc:#e0894a;
+    --acc2:#5ec8c0;
+    --acc3:#8b9ef0;
+    --warn:#e0b04a;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+    line-height:1.65;-webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 22px 90px}
+  header{
+    padding:54px 0 30px;border-bottom:1px solid var(--line);margin-bottom:34px;
+  }
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--acc);margin-bottom:14px}
+  h1{font-size:40px;line-height:1.15;margin:0 0 14px;font-weight:650;letter-spacing:-.02em}
+  header p{color:var(--dim);font-size:17px;max-width:720px;margin:0}
+  h2{font-size:26px;margin:54px 0 6px;font-weight:620;letter-spacing:-.01em}
+  h2 .num{font-family:var(--mono);font-size:14px;color:var(--acc);margin-right:10px;vertical-align:2px}
+  h3{font-size:17px;margin:28px 0 8px;font-weight:600;color:var(--acc2)}
+  p{margin:12px 0}
+  .lead{color:var(--dim)}
+  code{font-family:var(--mono);font-size:.9em;background:#232833;padding:2px 6px;border-radius:4px;color:#ffd9b0}
+  .eq{
+    font-family:"Latin Modern Math","Cambria Math",Georgia,serif;
+    font-size:20px;text-align:center;padding:18px 14px;margin:18px 0;
+    background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--acc);
+    border-radius:8px;overflow-x:auto;white-space:nowrap
+  }
+  .eq.small{font-size:17px}
+  i.v{font-style:italic}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;margin:22px 0}
+  .card.ex{border-left:3px solid var(--acc3)}
+  .tag{
+    display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+    color:#0f1115;background:var(--acc3);padding:3px 9px;border-radius:20px;margin-bottom:10px;font-weight:700
+  }
+  .tag.b{background:var(--acc2)}
+  .tag.c{background:var(--warn)}
+  .lab{
+    background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:20px;margin:24px 0;
+  }
+  .lab h4{margin:0 0 4px;font-size:15px;font-family:var(--mono);color:var(--acc);letter-spacing:.06em;text-transform:uppercase}
+  .lab .hint{color:var(--dim);font-size:13.5px;margin:0 0 16px}
+  canvas{width:100%;height:auto;display:block;background:#12151b;border:1px solid var(--line);border-radius:8px}
+  .ctrls{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px 22px;margin-top:16px}
+  .ctrl label{display:flex;justify-content:space-between;font-size:13px;font-family:var(--mono);color:var(--dim);margin-bottom:5px}
+  .ctrl label b{color:var(--acc2);font-weight:600}
+  input[type=range]{width:100%;accent-color:var(--acc);height:20px}
+  .readout{
+    font-family:var(--mono);font-size:13px;color:var(--dim);margin-top:14px;padding-top:14px;
+    border-top:1px dashed var(--line);white-space:pre-wrap
+  }
+  .readout b{color:var(--txt);font-weight:600}
+  table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14.5px}
+  th,td{border:1px solid var(--line);padding:9px 12px;text-align:left}
+  th{background:var(--panel2);font-weight:600;font-size:13px;letter-spacing:.04em;color:var(--acc2)}
+  td:first-child,td:nth-child(2){font-family:"Cambria Math",Georgia,serif;font-size:16px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:760px){.two{grid-template-columns:1fr}h1{font-size:30px}}
+  .note{border-left:3px solid var(--warn);background:#1c1a14;padding:14px 18px;border-radius:0 8px 8px 0;margin:20px 0;font-size:15px}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--mono);font-size:12px;color:var(--dim);margin:10px 0 0}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .sw{width:14px;height:3px;border-radius:2px;display:inline-block}
+  .steps{counter-reset:s;list-style:none;padding:0}
+  .steps li{counter-increment:s;position:relative;padding:8px 0 8px 40px;border-bottom:1px dashed var(--line)}
+  .steps li:last-child{border-bottom:0}
+  .steps li::before{
+    content:counter(s);position:absolute;left:0;top:9px;width:25px;height:25px;border-radius:50%;
+    background:var(--acc);color:#0f1115;font-family:var(--mono);font-size:13px;font-weight:700;
+    display:flex;align-items:center;justify-content:center
+  }
+  footer{margin-top:60px;padding-top:22px;border-top:1px solid var(--line);color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">Process Dynamics &amp; Control · Interactive Primer</div>
+  <h1>Laplace Transforms, and why process control lives in the <i>s</i>-domain</h1>
+  <p>Differential equations describe the plant. Algebra is what you can actually reason about. The Laplace transform is the bridge — turn <code>d/dt</code> into multiplication by <i>s</i>, solve the algebra, and read stability, offset and speed of response straight off the result. Worked textbook examples below, each with a live plot.</p>
+</header>
+
+<h2><span class="num">01</span>The one trick that matters</h2>
+<p class="lead">Every derivative becomes a multiplication. For a variable at steady state initially (<i>y</i>(0) = 0 in deviation form):</p>
+<div class="eq">ℒ{ dy/dt } = s·Y(s) &nbsp;&nbsp;&nbsp; ℒ{ d²y/dt² } = s²·Y(s) &nbsp;&nbsp;&nbsp; ℒ{ ∫y dt } = Y(s)/s</div>
+<p>So a linear ODE in time becomes a polynomial equation in <i>s</i>. Rearranged as output over input, that ratio is the <b>transfer function</b>:</p>
+<div class="eq">G(s) = Y(s) / U(s)</div>
+
+<h3>Deviation variables come first</h3>
+<p>Before transforming anything, textbooks (Seborg; Coughanowr; Marlin) subtract the steady state:</p>
+<div class="eq small">y′ = y − ȳ &nbsp;&nbsp;&nbsp;&nbsp; u′ = u − ū &nbsp;&nbsp;⟹&nbsp;&nbsp; y′(0) = 0</div>
+<p>This kills the initial-condition terms and the constants, so the transfer function is clean. It also means the transfer function describes <i>changes</i> around an operating point — which is exactly what a controller manipulates.</p>
+
+<h2><span class="num">02</span>Transform table you actually use</h2>
+<table>
+  <thead><tr><th>f(t)</th><th>F(s)</th><th>Where it shows up</th></tr></thead>
+  <tbody>
+    <tr><td>δ(t)</td><td>1</td><td>Impulse / pulse test</td></tr>
+    <tr><td>M (step)</td><td>M/s</td><td>Setpoint change, load upset</td></tr>
+    <tr><td>a·t (ramp)</td><td>a/s²</td><td>Slow drift, fouling, batch ramps</td></tr>
+    <tr><td>e<sup>−t/τ</sup></td><td>1/(s + 1/τ)</td><td>First-order decay</td></tr>
+    <tr><td>1 − e<sup>−t/τ</sup></td><td>1/[s(τs+1)]</td><td>Tank level, thermowell, mixing</td></tr>
+    <tr><td>sin ωt</td><td>ω/(s²+ω²)</td><td>Oscillation, frequency response</td></tr>
+    <tr><td>f(t − θ)·S(t − θ)</td><td>e<sup>−θs</sup>F(s)</td><td><b>Dead time</b> — transport delay in pipes</td></tr>
+  </tbody>
+</table>
+<div class="note"><b>Final Value Theorem.</b> &nbsp; lim<sub>t→∞</sub> y(t) = lim<sub>s→0</sub> s·Y(s). &nbsp;This single line gives you steady-state gain and offset without ever inverting the transform — it's the most used shortcut in control design.</div>
+
+<h2><span class="num">03</span>Example 1 — first-order process (stirred tank / thermowell)</h2>
+<div class="card ex">
+  <span class="tag">Textbook · Seborg Ch.5 · Coughanowr Ch.4</span>
+  <p>Energy balance on a well-mixed heated tank, or a thermocouple in a thermowell, reduces to:</p>
+  <div class="eq">τ · dy′/dt + y′ = K · u′</div>
+  <p>Transform term by term with y′(0) = 0:</p>
+  <div class="eq small">τ s Y(s) + Y(s) = K U(s) &nbsp;⟹&nbsp; <b>G(s) = K / (τs + 1)</b></div>
+  <p>Apply a step of size <i>M</i>, so U(s) = M/s:</p>
+  <div class="eq small">Y(s) = KM / [ s(τs + 1) ] &nbsp;⟹&nbsp; <b>y(t) = KM (1 − e<sup>−t/τ</sup>)</b></div>
+  <p class="lead">Read it off: final value <b>KM</b> (FVT confirms: s·Y(s) → KM as s→0), 63.2% of the change at <i>t</i> = τ, and 98% done by 4τ. That's your whole step test interpretation.</p>
+</div>
+
+<div class="lab">
+  <h4>Lab 1 · First-order step response</h4>
+  <p class="hint">Drag τ and K. The dashed marker sits at t = τ / 63.2% — the classic graphical read of a bump test.</p>
+  <canvas id="c1" width="920" height="330"></canvas>
+  <div class="legend">
+    <span><i class="sw" style="background:#e0894a"></i>y(t) response</span>
+    <span><i class="sw" style="background:#5ec8c0"></i>step input u(t)</span>
+    <span><i class="sw" style="background:#8b9ef0"></i>final value KM</span>
+  </div>
+  <div class="ctrls">
+    <div class="ctrl"><label>τ time constant <b id="v1a">5.0 min</b></label><input type="range" id="s1a" min="0.5" max="20" step="0.1" value="5"></div>
+    <div class="ctrl"><label>K gain <b id="v1b">2.0</b></label><input type="range" id="s1b" min="0.2" max="5" step="0.1" value="2"></div>
+    <div class="ctrl"><label>M step size <b id="v1c">1.0</b></label><input type="range" id="s1c" min="0.5" max="3" step="0.1" value="1"></div>
+  </div>
+  <div class="readout" id="r1"></div>
+</div>
+
+<h2><span class="num">04</span>Example 2 — second order, and where oscillation comes from</h2>
+<div class="card ex">
+  <span class="tag">Textbook · two tanks in series · Seborg Ch.5</span>
+  <p>Two non-interacting first-order stages multiply in the <i>s</i>-domain — that is the real payoff of Laplace. Series elements just cascade:</p>
+  <div class="eq small">G(s) = K/(τ₁s+1) · 1/(τ₂s+1)</div>
+  <p>Written in standard second-order form:</p>
+  <div class="eq">G(s) = K / ( τ²s² + 2ζτ s + 1 )</div>
+  <p>The character of the response is decided entirely by the <b>poles</b>, the roots of the denominator:</p>
+  <ul class="steps">
+    <li><b>ζ &gt; 1</b> — two real poles, overdamped, sluggish, no overshoot. Tanks in series.</li>
+    <li><b>ζ = 1</b> — critically damped, fastest without overshoot.</li>
+    <li><b>0 &lt; ζ &lt; 1</b> — complex conjugate poles, <b>underdamped</b>: overshoot and ringing. Typical of a closed loop tuned aggressively.</li>
+    <li><b>ζ ≤ 0</b> — poles on or right of the imaginary axis: sustained or growing oscillation. Unstable.</li>
+  </ul>
+  <p class="lead">Classic results for underdamped step response — overshoot OS = exp(−πζ/√(1−ζ²)), decay ratio = OS², period T = 2πτ/√(1−ζ²).</p>
+</div>
+
+<div class="lab">
+  <h4>Lab 2 · Damping ratio ↔ pole location</h4>
+  <p class="hint">Left: step response. Right: the poles in the complex plane. Watch them swing off the real axis exactly when ringing starts.</p>
+  <div class="two">
+    <canvas id="c2" width="560" height="330"></canvas>
+    <canvas id="c2p" width="560" height="330"></canvas>
+  </div>
+  <div class="ctrls">
+    <div class="ctrl"><label>ζ damping ratio <b id="v2a">0.50</b></label><input type="range" id="s2a" min="0.05" max="2" step="0.01" value="0.5"></div>
+    <div class="ctrl"><label>τ natural period <b id="v2b">3.0 min</b></label><input type="range" id="s2b" min="0.5" max="10" step="0.1" value="3"></div>
+    <div class="ctrl"><label>K gain <b id="v2c">1.0</b></label><input type="range" id="s2c" min="0.2" max="3" step="0.1" value="1"></div>
+  </div>
+  <div class="readout" id="r2"></div>
+</div>
+
+<h2><span class="num">05</span>Example 3 — dead time, the reason loops go unstable</h2>
+<div class="card ex">
+  <span class="tag b">FOPDT · the model behind every PID tuning rule</span>
+  <p>Transport delay through a pipe shifts the signal in time. Laplace handles it with one exponential factor:</p>
+  <div class="eq">G(s) = K e<sup>−θs</sup> / (τs + 1)</div>
+  <p>Three parameters — gain <i>K</i>, time constant <i>τ</i>, dead time <i>θ</i> — fitted from a single bump test. Cohen–Coon, IMC and Ziegler–Nichols tuning correlations all take exactly these three numbers as input, and the ratio <b>θ/τ</b> is the difficulty index: below 0.2 the loop is easy, above 1.0 you are fighting it.</p>
+  <p class="lead">Why it destabilises: <code>e<sup>−θs</sup></code> has magnitude 1 but contributes phase lag −ωθ that grows without bound with frequency. Gain is untouched, phase margin is eaten alive.</p>
+</div>
+
+<h2><span class="num">06</span>Example 4 — closing the loop, and proving PI removes offset</h2>
+<div class="card ex">
+  <span class="tag c">Block algebra · servo &amp; regulator response</span>
+  <p>With controller G<sub>c</sub>, process G<sub>p</sub>, the closed loop collapses to one formula because everything is algebra now:</p>
+  <div class="eq">Y(s)/Y<sub>sp</sub>(s) = G<sub>c</sub>G<sub>p</sub> / (1 + G<sub>c</sub>G<sub>p</sub>)</div>
+  <p>The denominator set to zero — <b>1 + G<sub>c</sub>G<sub>p</sub> = 0</b> — is the characteristic equation. Its roots are the closed-loop poles. Any root with a positive real part means an unstable loop. That is the whole of classical stability analysis.</p>
+  <h3>Proportional-only leaves offset</h3>
+  <p>With G<sub>c</sub> = K<sub>c</sub> and G<sub>p</sub> = K/(τs+1), a unit setpoint step gives, by Final Value Theorem:</p>
+  <div class="eq small">y(∞) = K<sub>c</sub>K / (1 + K<sub>c</sub>K) &nbsp;&lt;&nbsp; 1 &nbsp;⟹&nbsp; offset = 1/(1 + K<sub>c</sub>K)</div>
+  <h3>Adding integral action kills it</h3>
+  <p>With G<sub>c</sub> = K<sub>c</sub>(1 + 1/τ<sub>I</sub>s), the controller contributes a pole at the origin. Redo the FVT and the offset term vanishes identically:</p>
+  <div class="eq small">y(∞) = 1 &nbsp;&nbsp; for any K<sub>c</sub>, τ<sub>I</sub> that keeps the loop stable</div>
+  <p class="lead">No simulation needed — two lines of algebra in the <i>s</i>-domain prove a result you would otherwise have to trust from experience.</p>
+</div>
+
+<div class="lab">
+  <h4>Lab 3 · Closed-loop FOPDT with a PI controller</h4>
+  <p class="hint">Turn integral action off to see offset appear. Push K<sub>c</sub> up or dead time up and watch the loop ring, then go unstable.</p>
+  <canvas id="c3" width="920" height="360"></canvas>
+  <div class="legend">
+    <span><i class="sw" style="background:#8b9ef0"></i>setpoint</span>
+    <span><i class="sw" style="background:#e0894a"></i>PV y(t)</span>
+    <span><i class="sw" style="background:#5ec8c0"></i>controller output u(t)</span>
+  </div>
+  <div class="ctrls">
+    <div class="ctrl"><label>K<sub>c</sub> controller gain <b id="v3a">1.0</b></label><input type="range" id="s3a" min="0.1" max="8" step="0.1" value="1"></div>
+    <div class="ctrl"><label>τ<sub>I</sub> integral time <b id="v3b">4.0 min</b></label><input type="range" id="s3b" min="0.3" max="30" step="0.1" value="4"></div>
+    <div class="ctrl"><label>θ dead time <b id="v3c">1.0 min</b></label><input type="range" id="s3c" min="0" max="8" step="0.1" value="1"></div>
+    <div class="ctrl"><label>τ process lag <b id="v3d">5.0 min</b></label><input type="range" id="s3d" min="0.5" max="20" step="0.1" value="5"></div>
+    <div class="ctrl"><label>K process gain <b id="v3e">1.5</b></label><input type="range" id="s3e" min="0.2" max="4" step="0.1" value="1.5"></div>
+    <div class="ctrl"><label>Integral action <b id="v3f">ON</b></label><input type="range" id="s3f" min="0" max="1" step="1" value="1"></div>
+  </div>
+  <div class="readout" id="r3"></div>
+</div>
+
+<h2><span class="num">07</span>The workflow, condensed</h2>
+<ul class="steps">
+  <li>Write the balance — mass, energy, momentum. Linearise around the operating point if needed.</li>
+  <li>Convert to deviation variables so all initial conditions are zero.</li>
+  <li>Laplace transform. Derivatives become <i>s</i>, integrals become 1/<i>s</i>, delays become e<sup>−θs</sup>.</li>
+  <li>Rearrange into G(s) = Y(s)/U(s). Combine blocks by multiplying in series, adding in parallel.</li>
+  <li>Form 1 + G<sub>c</sub>G<sub>p</sub> = 0 and check the pole locations for stability.</li>
+  <li>Use the Final Value Theorem for offset and steady-state gain; invert only when you need the full time trace.</li>
+</ul>
+
+<footer>
+  Built as an interactive explainer. Standard results follow Seborg, Edgar, Mellichamp &amp; Doyle <i>Process Dynamics and Control</i>; Coughanowr &amp; LeBlanc; Marlin <i>Process Control</i>. Simulations use explicit Euler integration with a delay buffer for dead time — fine for illustration, not for tuning production loops.
+</footer>
+
+</div>
+
+<script>
+/* ---------- tiny plotting helper ---------- */
+function Plot(cv, opt){
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const m = opt.margin || {l:58,r:18,t:18,b:42};
+  const pw = W-m.l-m.r, ph = H-m.t-m.b;
+  const X = v => m.l + (v-opt.xmin)/(opt.xmax-opt.xmin)*pw;
+  const Y = v => m.t + ph - (v-opt.ymin)/(opt.ymax-opt.ymin)*ph;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#12151b'; ctx.fillRect(0,0,W,H);
+  // grid
+  ctx.strokeStyle='#232833'; ctx.lineWidth=1; ctx.font='11px ui-monospace,monospace'; ctx.fillStyle='#78808f';
+  const nx=6, ny=5;
+  for(let i=0;i<=nx;i++){
+    const xv=opt.xmin+(opt.xmax-opt.xmin)*i/nx, px=X(xv);
+    ctx.beginPath(); ctx.moveTo(px,m.t); ctx.lineTo(px,m.t+ph); ctx.stroke();
+    ctx.textAlign='center'; ctx.fillText(xv.toFixed(opt.xdec??0), px, m.t+ph+17);
+  }
+  for(let i=0;i<=ny;i++){
+    const yv=opt.ymin+(opt.ymax-opt.ymin)*i/ny, py=Y(yv);
+    ctx.beginPath(); ctx.moveTo(m.l,py); ctx.lineTo(m.l+pw,py); ctx.stroke();
+    ctx.textAlign='right'; ctx.fillText(yv.toFixed(opt.ydec??1), m.l-9, py+4);
+  }
+  ctx.strokeStyle='#39404d'; ctx.strokeRect(m.l,m.t,pw,ph);
+  ctx.fillStyle='#98a1b0'; ctx.textAlign='center'; ctx.font='12px ui-monospace,monospace';
+  if(opt.xlabel) ctx.fillText(opt.xlabel, m.l+pw/2, H-8);
+  if(opt.ylabel){ ctx.save(); ctx.translate(14,m.t+ph/2); ctx.rotate(-Math.PI/2); ctx.fillText(opt.ylabel,0,0); ctx.restore(); }
+  return {
+    ctx,X,Y,m,pw,ph,
+    line(pts,color,w,dash){
+      ctx.save(); ctx.beginPath(); ctx.strokeStyle=color; ctx.lineWidth=w||2;
+      ctx.setLineDash(dash||[]); ctx.lineJoin='round';
+      pts.forEach((p,i)=> i?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));
+      ctx.stroke(); ctx.restore();
+    },
+    dot(x,y,color,r){ ctx.beginPath(); ctx.fillStyle=color; ctx.arc(X(x),Y(y),r||4,0,7); ctx.fill(); },
+    text(x,y,s,color,align){ ctx.fillStyle=color; ctx.textAlign=align||'left'; ctx.font='12px ui-monospace,monospace'; ctx.fillText(s,X(x),Y(y)); }
+  };
+}
+const $=id=>document.getElementById(id);
+
+/* ---------- Lab 1 : first order ---------- */
+function lab1(){
+  const tau=+$('s1a').value, K=+$('s1b').value, M=+$('s1c').value;
+  $('v1a').textContent=tau.toFixed(1)+' min'; $('v1b').textContent=K.toFixed(1); $('v1c').textContent=M.toFixed(1);
+  const tmax=Math.max(20, tau*5), yf=K*M, ymax=Math.max(1.35*yf, 1.35*M, 1);
+  const p=Plot($('c1'),{xmin:0,xmax:tmax,ymin:0,ymax:ymax,xlabel:'time (min)',ylabel:'deviation',xdec:0,ydec:1});
+  const resp=[],inp=[];
+  for(let t=0;t<=tmax;t+=tmax/500){ resp.push([t, yf*(1-Math.exp(-t/tau))]); inp.push([t, M]); }
+  inp.unshift([0,0]);
+  p.line([[0,yf],[tmax,yf]],'#8b9ef0',1.5,[6,5]);
+  p.line(inp,'#5ec8c0',2);
+  p.line(resp,'#e0894a',2.6);
+  const y63=yf*0.632;
+  p.line([[tau,0],[tau,y63]],'#e0b04a',1.2,[4,4]);
+  p.dot(tau,y63,'#e0b04a',5);
+  p.text(tau+tmax*0.015,y63*0.75,'t = τ → 63.2%','#e0b04a');
+  $('r1').innerHTML = `y(t) = KM(1 − e^(−t/τ)) = <b>${yf.toFixed(2)}</b>·(1 − e^(−t/${tau.toFixed(1)}))\n`
+    + `Final value (FVT, lim s→0 of s·Y(s)) = KM = <b>${yf.toFixed(2)}</b>\n`
+    + `63.2% at t = ${tau.toFixed(1)} min · 95% at 3τ = ${(3*tau).toFixed(1)} min · 98% at 4τ = ${(4*tau).toFixed(1)} min\n`
+    + `Pole at s = −1/τ = <b>${(-1/tau).toFixed(3)}</b> (real, negative → stable, no oscillation)`;
+}
+
+/* ---------- Lab 2 : second order ---------- */
+function lab2(){
+  const z=+$('s2a').value, tau=+$('s2b').value, K=+$('s2c').value;
+  $('v2a').textContent=z.toFixed(2); $('v2b').textContent=tau.toFixed(1)+' min'; $('v2c').textContent=K.toFixed(1);
+  const tmax=Math.max(25, tau*10);
+  // simulate tau^2 y'' + 2 z tau y' + y = K u
+  const dt=tmax/4000; let y=0,dy=0; const pts=[[0,0]]; let peak=0;
+  for(let i=1;i<=4000;i++){
+    const ddy=(K*1 - y - 2*z*tau*dy)/(tau*tau);
+    dy+=ddy*dt; y+=dy*dt; const t=i*dt; pts.push([t,y]); if(y>peak)peak=y;
+  }
+  const ymax=Math.max(1.3*Math.max(peak,K),0.6), ymin=Math.min(0,1.25*Math.min(...pts.map(p=>p[1])));
+  const p=Plot($('c2'),{xmin:0,xmax:tmax,ymin:ymin,ymax:ymax,xlabel:'time (min)',ylabel:'y(t)',xdec:0,ydec:1,margin:{l:52,r:16,t:16,b:40}});
+  p.line([[0,K],[tmax,K]],'#8b9ef0',1.5,[6,5]);
+  p.line(pts,'#e0894a',2.6);
+
+  // pole plot
+  const wn=1/tau; let poles, kind;
+  if(z<1){ poles=[[-z*wn, wn*Math.sqrt(1-z*z)],[-z*wn,-wn*Math.sqrt(1-z*z)]]; kind='underdamped (complex pair)'; }
+  else { const r=wn*Math.sqrt(z*z-1); poles=[[-z*wn+r,0],[-z*wn-r,0]]; kind = z==1?'critically damped':'overdamped (two real poles)'; }
+  const lim=Math.max(1.4*wn, Math.max(...poles.map(q=>Math.abs(q[0])))*1.3, 0.4);
+  const pp=Plot($('c2p'),{xmin:-lim,xmax:lim*0.45,ymin:-lim,ymax:lim,xlabel:'Real(s)',ylabel:'Imag(s)',xdec:2,ydec:2,margin:{l:58,r:16,t:16,b:40}});
+  pp.line([[0,-lim],[0,lim]],'#e05a5a',1.6,[5,4]);
+  pp.line([[-lim,0],[lim*0.45,0]],'#39404d',1.2);
+  poles.forEach(q=>{
+    pp.ctx.save(); pp.ctx.strokeStyle='#5ec8c0'; pp.ctx.lineWidth=2.4;
+    const X=pp.X(q[0]),Y=pp.Y(q[1]),r=7;
+    pp.ctx.beginPath(); pp.ctx.moveTo(X-r,Y-r); pp.ctx.lineTo(X+r,Y+r);
+    pp.ctx.moveTo(X-r,Y+r); pp.ctx.lineTo(X+r,Y-r); pp.ctx.stroke(); pp.ctx.restore();
+  });
+  pp.text(lim*0.06,lim*0.88,'UNSTABLE →','#e05a5a');
+  const OS = z<1 ? Math.exp(-Math.PI*z/Math.sqrt(1-z*z)) : 0;
+  const per = z<1 ? 2*Math.PI*tau/Math.sqrt(1-z*z) : NaN;
+  $('r2').innerHTML = `G(s) = ${K.toFixed(1)} / ( ${(tau*tau).toFixed(2)}s² + ${(2*z*tau).toFixed(2)}s + 1 ) — <b>${kind}</b>\n`
+    + `Poles: ${poles.map(q=>`${q[0].toFixed(3)}${q[1]>=0?' + ':' − '}${Math.abs(q[1]).toFixed(3)}j`).join('   ,   ')}\n`
+    + (z<1 ? `Overshoot = exp(−πζ/√(1−ζ²)) = <b>${(OS*100).toFixed(1)}%</b> · decay ratio = <b>${(OS*OS).toFixed(3)}</b> · period = <b>${per.toFixed(1)} min</b>`
+           : `No overshoot — both poles real and negative, response is the sum of two exponentials.`);
+}
+
+/* ---------- Lab 3 : closed loop FOPDT + PI ---------- */
+function lab3(){
+  const Kc=+$('s3a').value, Ti=+$('s3b').value, th=+$('s3c').value, tau=+$('s3d').value, K=+$('s3e').value, ion=+$('s3f').value;
+  $('v3a').textContent=Kc.toFixed(1); $('v3b').textContent=Ti.toFixed(1)+' min';
+  $('v3c').textContent=th.toFixed(1)+' min'; $('v3d').textContent=tau.toFixed(1)+' min';
+  $('v3e').textContent=K.toFixed(1); $('v3f').textContent= ion? 'ON (PI)':'OFF (P-only)';
+  const tmax=Math.max(40, (tau+th)*8), dt=0.01, n=Math.round(tmax/dt);
+  const nd=Math.max(0,Math.round(th/dt)); const buf=new Array(nd+1).fill(0);
+  let y=0, I=0, sp=1; const ys=[[0,0]], us=[[0,0]], sps=[[0,0],[0,1]];
+  let bi=0, diverged=false, ymaxseen=0;
+  for(let i=1;i<=n;i++){
+    const t=i*dt, e=sp-y;
+    if(ion) I+=e*dt;
+    let u=Kc*(e + (ion? I/Ti : 0));
+    u=Math.max(-40,Math.min(40,u));
+    buf[bi]=u; bi=(bi+1)%(nd+1);
+    const ud=buf[bi];
+    y += dt*(K*ud - y)/tau;
+    if(!isFinite(y)||Math.abs(y)>500){diverged=true;break;}
+    if(Math.abs(y)>ymaxseen)ymaxseen=Math.abs(y);
+    if(i%8===0){ ys.push([t,y]); us.push([t,u]); }
+  }
+  sps.push([tmax,1]);
+  const hi=Math.max(1.6, Math.min(ymaxseen*1.25, 6)), lo=Math.min(-0.6, -hi*0.45);
+  const p=Plot($('c3'),{xmin:0,xmax:tmax,ymin:lo,ymax:hi,xlabel:'time (min)',ylabel:'deviation',xdec:0,ydec:1});
+  p.line(sps,'#8b9ef0',1.8,[7,5]);
+  p.line(us,'#5ec8c0',1.8);
+  p.line(ys,'#e0894a',2.8);
+  const yend = ys.length? ys[ys.length-1][1] : 0;
+  const ratio=th/tau;
+  let msg = `Closed loop: 1 + Gc·Gp = 0  with  Gc = ${Kc.toFixed(1)}${ion?`(1 + 1/${Ti.toFixed(1)}s)`:''}   Gp = ${K.toFixed(1)}e^(−${th.toFixed(1)}s)/(${tau.toFixed(1)}s+1)\n`;
+  msg += `θ/τ = <b>${ratio.toFixed(2)}</b> — ${ratio<0.2?'easy loop':ratio<1?'moderate, tuning matters':'delay-dominant, expect trouble'}\n`;
+  if(diverged){ msg += `<b>UNSTABLE</b> — output diverging. A closed-loop pole has crossed into the right half plane.`; }
+  else if(!ion){ const off=1/(1+Kc*K); msg += `P-only → FVT gives y(∞) = KcK/(1+KcK) = <b>${(1-off).toFixed(3)}</b>, <b>offset = ${off.toFixed(3)}</b> (simulated: ${yend.toFixed(3)})`; }
+  else { msg += `PI → integrator forces y(∞) = <b>1.000</b>, offset eliminated (simulated: ${yend.toFixed(3)})`; }
+  $('r3').innerHTML=msg;
+}
+
+['s1a','s1b','s1c'].forEach(id=>$(id).addEventListener('input',lab1));
+['s2a','s2b','s2c'].forEach(id=>$(id).addEventListener('input',lab2));
+['s3a','s3b','s3c','s3d','s3e','s3f'].forEach(id=>$(id).addEventListener('input',lab3));
+lab1();lab2();lab3();
+</script>
+</body>
+</html>
