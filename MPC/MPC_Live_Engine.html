@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MPC Live Engine - Dynamic QP Explorer</title>
+<style>
+:root{--bg:#0b1020;--card:#121a30;--card2:#172241;--line:#24315a;--txt:#dfe7ff;--mut:#8b9bc7;--cv1:#4fc3f7;--cv2:#ff8a65;--mv:#b388ff;--ok:#66bb6a;--bad:#ef5350;--tgt:#ffd54f}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(1200px 600px at 20% -10%,#1a2750 0,var(--bg) 60%);color:var(--txt);font:13px/1.45 "Segoe UI",system-ui,sans-serif}
+header{padding:16px 22px 8px}h1{margin:0;font-size:21px;letter-spacing:.3px}h1 span{color:var(--cv1)}
+.sub{color:var(--mut);margin-top:3px;max-width:1100px}
+.wrap{display:grid;grid-template-columns:300px 1fr;gap:14px;padding:10px 22px 22px}
+.card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+.card h3{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:var(--mut)}
+label{display:flex;justify-content:space-between;margin-top:8px;color:#c5d0f0}label b{color:#fff;font-weight:600}
+input[type=range]{width:100%;accent-color:var(--cv1)}
+.hint{color:var(--mut);font-size:11.5px;margin-top:2px}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+button{background:#22305a;color:#fff;border:1px solid #33457d;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px}
+button:hover{background:#2c3d72}button.pri{background:#1e6fd9;border-color:#3b8bf0}button.warn{background:#6b2b25;border-color:#9a3f35}
+.tog{display:flex;justify-content:flex-start;align-items:center;gap:8px;margin-top:10px;cursor:pointer}.tog input{width:16px;height:16px;accent-color:var(--ok)}
+.loop{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.pill{flex:1;min-width:130px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 9px;font-size:11.5px;color:var(--mut)}
+.pill b{display:block;color:#fff;font-size:12px}
+.pill.on{animation:fl .5s ease-out both}
+@keyframes fl{0%{background:#1e6fd9;border-color:#6fb0ff;color:#fff}100%{background:var(--card);border-color:var(--line)}}
+.charts .card{padding:8px 10px}canvas{width:100%;display:block}
+.ctitle{display:flex;justify-content:space-between;align-items:baseline;margin:0 4px 2px}.ctitle b{font-size:13px}
+.leg{color:var(--mut);font-size:11px}.leg i{display:inline-block;width:14px;height:0;border-top:2px solid;vertical-align:middle;margin:0 3px 0 9px}
+.grid3{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
+.kv{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:12.5px}.kv span:nth-child(odd){color:var(--mut)}.kv span:nth-child(even){text-align:right;font-variant-numeric:tabular-nums}
+.bar{height:9px;border-radius:5px;background:#0d1428;overflow:hidden;margin:3px 0 7px}.bar div{height:100%}
+.eq{background:#0d1428;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-family:Consolas,monospace;font-size:12px;color:#cfe0ff;white-space:pre-wrap;line-height:1.5}
+.tag{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;margin:2px 3px 2px 0}
+.t-act{background:#5a4a12;color:#ffe082}.t-bad{background:#5b1d1d;color:#ffab91}.t-ok{background:#16391d;color:#a5d6a7}
+#log{height:150px;overflow:auto;font-family:Consolas,monospace;font-size:11.3px;color:#b8c6ea;background:#0d1428;border-radius:8px;padding:6px 8px;border:1px solid var(--line)}
+#log div{border-bottom:1px dashed #1f2b50;padding:2px 0}
+.explain{color:#c3cdee;font-size:12.5px}.explain p{margin:5px 0}.explain code{color:var(--tgt)}
+@media(max-width:1100px){.wrap{grid-template-columns:1fr}.grid3{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<h1>MPC Live Engine: <span>How a dynamic QP is built and solved every cycle</span></h1>
+<div class="sub">A fired heater. <b style="color:var(--mv)">MV</b> = fuel valve (%). <b style="color:var(--cv1)">CV1</b> = coil outlet temperature (track the setpoint). <b style="color:var(--cv2)">CV2</b> = tube skin temperature (high limit). Skin temp reacts <b>faster</b> and with a <b>higher gain</b> than outlet temp, so pushing hard for outlet temp can overshoot the skin limit on the way there. That's exactly what the dynamic layer checks. Nobody types an equation here: the engine builds <code>H, g, C, b</code> from step-response models and tuning, then solves a QP (ADMM, OSQP-style) live in your browser.</div>
+</header>
+<div class="wrap">
+<aside>
+ <div class="card"><h3>Run</h3>
+  <div class="btns"><button class="pri" id="play">❚❚ Pause</button><button id="one">Step 1 cycle</button><button id="reset">Reset</button></div>
+  <label><span>Cycle speed</span> <b id="spdv"></b></label><input type="range" id="spd" min="0" max="3" step="1" value="1">
+ </div>
+ <div class="card"><h3>Operator (limits &amp; setpoint)</h3>
+  <label><span>CV1 outlet temp SP</span> <b id="spv"></b></label><input type="range" id="sp" min="320" max="360" step="0.5" value="345">
+  <label><span>CV2 skin temp HIGH limit</span> <b id="lim2v"></b></label><input type="range" id="lim2" min="580" max="630" step="1" value="600">
+  <label><span>MV high limit</span> <b id="umaxv"></b></label><input type="range" id="umax" min="45" max="80" step="0.5" value="80">
+  <label><span>MV rate limit per move</span> <b id="dmaxv"></b></label><input type="range" id="dmax" min="0.5" max="6" step="0.5" value="3">
+ </div>
+ <div class="card"><h3>Tuning (fills the objective)</h3>
+  <label><span>CV1 weight W<sub>y</sub></span> <b id="wyv"></b></label><input type="range" id="wy" min="0.1" max="5" step="0.1" value="1">
+  <label><span>Move suppression W<sub>&Delta;u</sub></span> <b id="lamv"></b></label><input type="range" id="lam" min="0" max="30" step="0.5" value="0.5">
+  <div class="hint">High = lazy, smooth moves. Low = aggressive moves.</div>
+  <label><span>Prediction horizon P</span> <b id="Pv"></b></label><input type="range" id="P" min="10" max="60" step="1" value="30">
+  <label><span>Control (move) horizon M</span> <b id="Mv"></b></label><input type="range" id="M" min="1" max="15" step="1" value="8">
+  <label><span>CV2 slack penalty</span> <b id="wsv"></b></label><input type="range" id="ws" min="1" max="300" step="1" value="100">
+  <label class="tog"><input type="checkbox" id="enforce" checked><span>Enforce CV2 limit over the <b>future horizon</b></span></label>
+  <div class="hint">Untick it and the dynamic QP stops checking the skin limit along the path. The SS target is still "legal", but the path isn't.</div>
+ </div>
+ <div class="card"><h3>Reality (what the model doesn't know)</h3>
+  <label><span>Plant gain / model gain</span> <b id="mismatchv"></b></label><input type="range" id="mismatch" min="0.6" max="1.6" step="0.05" value="1">
+  <div class="btns"><button class="warn" id="foul">Tube fouling &uarr; (CV1 &minus;3, CV2 +12)</button><button class="warn" id="feed">Feed temp &uarr; (CV1 +5, CV2 +4)</button><button id="clrd">Clear disturbances</button></div>
+  <label class="tog"><input type="checkbox" id="noise" checked> Measurement noise</label>
+  <div class="hint">The bias update (step 2) is the only feedback. It's how MPC rejects these without knowing their cause.</div>
+ </div>
+</aside>
+<main>
+ <div class="loop" id="loop">
+  <div class="pill"><b>1 &middot; Read PVs</b>measured CV1, CV2, MV</div>
+  <div class="pill"><b>2 &middot; Bias update</b>measured &minus; predicted, shifts the forecast</div>
+  <div class="pill"><b>3 &middot; SS target (LP)</b>where to end up</div>
+  <div class="pill"><b>4 &middot; Build QP</b>A &rarr; H, g, C, b</div>
+  <div class="pill"><b>5 &middot; Solve QP</b>best M future moves</div>
+  <div class="pill"><b>6 &middot; Send move 1</b>discard rest, repeat</div>
+ </div>
+ <div class="charts">
+  <div class="card"><div class="ctitle"><b style="color:var(--cv1)">CV1: Outlet temperature (&deg;C)</b><span class="leg"><i style="border-color:var(--cv1)"></i>measured<i style="border-color:#9aa6c8;border-top-style:dashed"></i>free response (do nothing)<i style="border-color:var(--cv1);border-top-width:3px"></i>optimised prediction<i style="border-color:var(--tgt);border-top-style:dotted"></i>SS target<i style="border-color:#fff;border-top-style:dashed;opacity:.5"></i>operator SP</span></div><canvas id="c1" height="190"></canvas></div>
+  <div class="card"><div class="ctitle"><b style="color:var(--cv2)">CV2: Tube skin temperature (&deg;C)</b><span class="leg"><i style="border-color:var(--cv2)"></i>measured<i style="border-color:#9aa6c8;border-top-style:dashed"></i>free response<i style="border-color:var(--cv2);border-top-width:3px"></i>optimised prediction<i style="border-color:var(--bad);border-top-style:dashed"></i>high limit</span></div><canvas id="c2" height="190"></canvas></div>
+  <div class="card"><div class="ctitle"><b style="color:var(--mv)">MV: Fuel valve (%)</b><span class="leg"><i style="border-color:var(--mv)"></i>applied<i style="border-color:var(--mv);border-top-width:3px"></i>planned M moves (only 1st is sent)<i style="border-color:var(--tgt);border-top-style:dotted"></i>u<sub>ss</sub><i style="border-color:var(--bad);border-top-style:dashed"></i>MV limits</span></div><canvas id="c3" height="150"></canvas></div>
+ </div>
+ <div class="grid3">
+  <div class="card"><h3>Objective: what the engine assembled this cycle</h3>
+   <div class="eq" id="eq"></div>
+   <div style="margin-top:8px" id="jbars"></div>
+  </div>
+  <div class="card"><h3>Constraint evaluation (every future step)</h3>
+   <div class="kv" id="cons"></div>
+   <div id="ctags" style="margin-top:8px"></div>
+   <h3 style="margin-top:12px">Steady-state layer (step 3)</h3>
+   <div class="kv" id="ss"></div>
+  </div>
+  <div class="card"><h3>Dynamic matrix A (CV1): the "equation"</h3>
+   <canvas id="hm" height="170"></canvas>
+   <div class="hint">Rows = future minutes k+1..k+P. Columns = future moves &Delta;u<sub>0</sub>..&Delta;u<sub>M-1</sub>. Each column is the step-test curve shifted down one minute. Dead time shows as the dark top-left triangle. Prediction = <code>y_free + A&middot;&Delta;u</code>: just multiplication, which is why it runs in milliseconds.</div>
+  </div>
+ </div>
+ <div class="grid3" style="grid-template-columns:1.15fr 2fr">
+  <div class="card"><h3>Solver inspector</h3><div class="kv" id="solv"></div></div>
+  <div class="card"><h3>Cycle log</h3><div id="log"></div></div>
+ </div>
+ <div class="card explain"><h3>Things to try</h3>
+  <p><b>1. Dynamic vs steady-state constraint:</b> untick <i>Enforce CV2 limit</i> and hit Reset. The SS target is still legal at 597.5 &deg;C, but the aggressive path overshoots the skin limit to ~615 &deg;C. Tick it again and the QP bends the MV path so skin temp rides the limit on the way up. The SS optimiser can't see this; only the dynamic QP checks every future minute.</p>
+  <p><b>2. Tube fouling:</b> the SS layer sees the skin limit bind and lowers the CV1 target below SP (<i>SP not reachable</i>). That's the constraint priority logic, done by the LP, not by the operator.</p>
+  <p><b>3. Move suppression:</b> slide W<sub>&Delta;u</sub> up and watch the purple plan flatten, and the move-cost bar grow while tracking cost rises. That's the trade-off the QP is balancing.</p>
+  <p><b>4. Model mismatch 1.4&times;:</b> predictions are now wrong. The bias update corrects it cycle by cycle, but you'll see small transient limit violations. That's why real APC keeps a safety margin and why step-testing quality matters.</p>
+  <p><b>5. M = 1:</b> the controller can plan only one move, so it becomes timid and slow. Longer M gives the QP more freedom to shape the path.</p>
+ </div>
+</main>
+</div>
+<script>
+const MPC = (() => {
+  const BIG = 1e20;
+  function stepCoef(K, tau, d, N) {
+    const a = Math.exp(-1 / tau), s = new Float64Array(N + 2);
+    for (let j = 0; j <= N + 1; j++) s[j] = j > d ? K * (1 - Math.pow(a, j - d)) : 0;
+    return s;
+  }
+  function dynMatrix(s, P, M) {
+    const A = [];
+    for (let j = 1; j <= P; j++) {
+      const r = new Float64Array(M);
+      for (let i = 0; i < M; i++) { const k = j - i; r[i] = k >= 1 ? s[k] : 0; }
+      A.push(r);
+    }
+    return A;
+  }
+  function chol(K, n) {
+    const L = new Float64Array(n * n);
+    for (let i = 0; i < n; i++) for (let j = 0; j <= i; j++) {
+      let s = K[i * n + j];
+      for (let k = 0; k < j; k++) s -= L[i * n + k] * L[j * n + k];
+      if (i === j) L[i * n + i] = Math.sqrt(Math.max(s, 1e-12)); else L[i * n + j] = s / L[j * n + j];
+    }
+    return L;
+  }
+  function cholSolve(L, n, b) {
+    const y = new Float64Array(n), x = new Float64Array(n);
+    for (let i = 0; i < n; i++) { let s = b[i]; for (let k = 0; k < i; k++) s -= L[i * n + k] * y[k]; y[i] = s / L[i * n + i]; }
+    for (let i = n - 1; i >= 0; i--) { let s = y[i]; for (let k = i + 1; k < n; k++) s -= L[k * n + i] * x[k]; x[i] = s / L[i * n + i]; }
+    return x;
+  }
+  const mv = (C, x, m, n) => { const r = new Float64Array(m); for (let i = 0; i < m; i++) { let s = 0; for (let j = 0; j < n; j++) s += C[i * n + j] * x[j]; r[i] = s; } return r; };
+  const mtv = (C, y, m, n) => { const r = new Float64Array(n); for (let i = 0; i < m; i++) { const yi = y[i]; if (yi === 0) continue; for (let j = 0; j < n; j++) r[j] += C[i * n + j] * yi; } return r; };
+  const ninf = v => { let m = 0; for (const a of v) m = Math.max(m, Math.abs(a)); return m; };
+  const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
+
+  // OSQP-style ADMM for: min 1/2 x'Px + q'x  s.t. l <= Cx <= u
+  function solveQP(Pm, q, C, l, u, n, m, warm) {
+    let rho = (warm && warm.rho) || 1, sigma = 1e-6, alpha = 1.6;
+    let x = warm && warm.x && warm.x.length === n ? Float64Array.from(warm.x) : new Float64Array(n);
+    let y = warm && warm.y && warm.y.length === m ? Float64Array.from(warm.y) : new Float64Array(m);
+    let z = mv(C, x, m, n); for (let i = 0; i < m; i++) z[i] = clamp(z[i], l[i], u[i]);
+    const CtC = new Float64Array(n * n);
+    for (let r = 0; r < m; r++) for (let i = 0; i < n; i++) { const c = C[r * n + i]; if (c === 0) continue; for (let j = 0; j < n; j++) CtC[i * n + j] += c * C[r * n + j]; }
+    const factor = () => { const K = new Float64Array(n * n); for (let i = 0; i < n * n; i++) K[i] = Pm[i] + rho * CtC[i]; for (let i = 0; i < n; i++) K[i * n + i] += sigma; return chol(K, n); };
+    let L = factor(), it = 0, rp = 0, rd = 0, conv = false, refac = 0;
+    const eabs = 1e-5, erel = 1e-5, maxIt = 4000;
+    for (it = 1; it <= maxIt; it++) {
+      const w = new Float64Array(m); for (let i = 0; i < m; i++) w[i] = rho * z[i] - y[i];
+      const Ctw = mtv(C, w, m, n), rhs = new Float64Array(n);
+      for (let i = 0; i < n; i++) rhs[i] = sigma * x[i] - q[i] + Ctw[i];
+      const xt = cholSolve(L, n, rhs), zt = mv(C, xt, m, n);
+      for (let i = 0; i < n; i++) x[i] = alpha * xt[i] + (1 - alpha) * x[i];
+      for (let i = 0; i < m; i++) {
+        const zr = alpha * zt[i] + (1 - alpha) * z[i];
+        const zn = clamp(zr + y[i] / rho, l[i], u[i]);
+        y[i] += rho * (zr - zn); z[i] = zn;
+      }
+      if (it % 10 === 0) {
+        const Cx = mv(C, x, m, n), Px = mv(Pm, x, n, n), Cty = mtv(C, y, m, n);
+        const rpv = new Float64Array(m); for (let i = 0; i < m; i++) rpv[i] = Cx[i] - z[i];
+        const rdv = new Float64Array(n); for (let i = 0; i < n; i++) rdv[i] = Px[i] + q[i] + Cty[i];
+        rp = ninf(rpv); rd = ninf(rdv);
+        const sp = Math.max(ninf(Cx), ninf(z)), sd = Math.max(ninf(Px), ninf(Cty), ninf(q));
+        if (rp < eabs + erel * sp && rd < eabs + erel * sd) { conv = true; break; }
+        if (it % 50 === 0) {
+          const ratio = Math.sqrt((rp / (sp + 1e-10)) / (rd / (sd + 1e-10) + 1e-12));
+          const nr = clamp(rho * ratio, 1e-6, 1e6);
+          if (nr > 5 * rho || nr < 0.2 * rho) { rho = nr; L = factor(); refac++; }
+        }
+      }
+    }
+    return { x, y, z, rho, iters: Math.min(it, maxIt), rp, rd, conv, refac };
+  }
+
+  class Sim {
+    constructor(p) { this.p = p; this.plant = { K1: 2.0, tau1: 8, d1: 2, K2: 3.0, tau2: 3, d2: 1 }; this.reset(); }
+    reset() {
+      this.N = 90; this.k = 0; this.u0 = 40; this.u = 40; this.y01 = 320; this.y02 = 560;
+      this.dev1 = 0; this.dev2 = 0; this.dd1 = 0; this.dd2 = 0; this.dT1 = 0; this.dT2 = 0;
+      this.uHist = new Array(20).fill(40);
+      this.Yhat1 = new Float64Array(this.N + 1).fill(this.y01);
+      this.Yhat2 = new Float64Array(this.N + 1).fill(this.y02);
+      this.y1 = this.y01; this.y2 = this.y02; this.warm = null; this.last = null;
+      this.hist = { t: [], y1: [], y2: [], u: [], r1: [], sp: [], lim2: [] };
+      const pl = this.plant;
+      this.s1 = stepCoef(pl.K1, pl.tau1, pl.d1, this.N);
+      this.s2 = stepCoef(pl.K2, pl.tau2, pl.d2, this.N);
+    }
+    cycle() {
+      const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
+      const p = this.p, N = this.N, P = p.P, M = p.M, pl = this.plant;
+      // 1 READ
+      const y1m = this.y1, y2m = this.y2, uNow = this.u;
+      // 2 BIAS (feedback)
+      const b1 = y1m - this.Yhat1[0], b2 = y2m - this.Yhat2[0];
+      const f1 = new Float64Array(P), f2 = new Float64Array(P);
+      for (let j = 1; j <= P; j++) { f1[j - 1] = this.Yhat1[j] + b1; f2[j - 1] = this.Yhat2[j] + b2; }
+      // 3 STEADY-STATE TARGET (1-MV LP)
+      const y1e = this.Yhat1[N] + b1, y2e = this.Yhat2[N] + b2;
+      const uDes = uNow + (p.sp - y1e) / pl.K1, uCv2 = uNow + (p.lim2 - y2e) / pl.K2;
+      let uss = uDes, reason = 'SP reachable - no limit active';
+      const ub = Math.min(p.umax, uCv2);
+      if (uss > ub) { uss = ub; reason = ub === p.umax ? 'MV high limit active - SP not reachable' : 'CV2 skin limit active - SP not reachable'; }
+      if (uss < p.umin) { uss = p.umin; reason = 'MV low limit active'; }
+      const r1 = y1e + pl.K1 * (uss - uNow), y2ss = y2e + pl.K2 * (uss - uNow);
+      // 4 BUILD QP
+      const A1 = dynMatrix(this.s1, P, M), A2 = dynMatrix(this.s2, P, M);
+      const n = M + P, m = 2 * P + 2 * M;
+      const Pm = new Float64Array(n * n), q = new Float64Array(n);
+      for (let a = 0; a < M; a++) {
+        for (let b = 0; b < M; b++) { let s = 0; for (let j = 0; j < P; j++) s += A1[j][a] * A1[j][b]; Pm[a * n + b] = 2 * (p.wy * s + (a === b ? p.lam : 0)); }
+        let g = 0; for (let j = 0; j < P; j++) g += A1[j][a] * (f1[j] - r1); q[a] = 2 * p.wy * g;
+      }
+      for (let j = 0; j < P; j++) { Pm[(M + j) * n + M + j] = 2 * p.ws; q[M + j] = p.ws; }
+      const C = new Float64Array(m * n), l = new Float64Array(m), u = new Float64Array(m);
+      for (let j = 0; j < P; j++) {
+        for (let i = 0; i < M; i++) C[j * n + i] = A2[j][i];
+        C[j * n + M + j] = -1; l[j] = -BIG; u[j] = p.enforce ? p.lim2 - f2[j] : BIG;
+        C[(P + j) * n + M + j] = 1; l[P + j] = 0; u[P + j] = BIG;
+      }
+      for (let i = 0; i < M; i++) {
+        const r = 2 * P + i; for (let k = 0; k <= i; k++) C[r * n + k] = 1;
+        l[r] = Math.min(p.umin - uNow, p.dmax * (i + 1)); u[r] = Math.max(p.umax - uNow, -p.dmax * (i + 1));
+        const r2 = 2 * P + M + i; C[r2 * n + i] = 1; l[r2] = -p.dmax; u[r2] = p.dmax;
+      }
+      let warm = null;
+      if (this.warm && this.warm.n === n && this.warm.m === m) {
+        const wx = new Float64Array(n);
+        for (let i = 0; i < M - 1; i++) wx[i] = this.warm.x[i + 1];
+        for (let j = 0; j < P - 1; j++) wx[M + j] = this.warm.x[M + j + 1];
+        warm = { x: wx, y: this.warm.y, rho: this.warm.rho };
+      }
+      // 5 SOLVE
+      const sol = solveQP(Pm, q, C, l, u, n, m, warm);
+      this.warm = { x: sol.x, y: sol.y, rho: sol.rho, n, m };
+      const du = Array.from(sol.x.slice(0, M)), sl = Array.from(sol.x.slice(M));
+      const pred1 = [], pred2 = [];
+      for (let j = 0; j < P; j++) { let a = f1[j], b = f2[j]; for (let i = 0; i < M; i++) { a += A1[j][i] * du[i]; b += A2[j][i] * du[i]; } pred1.push(a); pred2.push(b); }
+      let Jt = 0, Jm = 0, Js = 0, J0 = 0;
+      for (let j = 0; j < P; j++) { Jt += p.wy * (pred1[j] - r1) ** 2; J0 += p.wy * (f1[j] - r1) ** 2; Js += p.ws * (sl[j] ** 2 + sl[j]); }
+      for (let i = 0; i < M; i++) Jm += p.lam * du[i] ** 2;
+      // constraint evaluation
+      const Cx = mv(C, sol.x, m, n), act = [];
+      const tol = 1e-3 * (1 + p.dmax);
+      const cvAct = [], cvViol = [];
+      for (let j = 0; j < P; j++) {
+        if (pred2[j] > p.lim2 + 0.3) cvViol.push(j + 1);
+        else if (p.enforce && Math.abs(Cx[j] - u[j]) < 0.1) cvAct.push(j + 1);
+      }
+      const rateAct = [], mvAct = [];
+      for (let i = 0; i < M; i++) {
+        const r2 = 2 * P + M + i; if (Math.abs(Cx[r2] - u[r2]) < tol || Math.abs(Cx[r2] - l[r2]) < tol) rateAct.push(i + 1);
+        const r = 2 * P + i; if (Math.abs(Cx[r] - u[r]) < tol || Math.abs(Cx[r] - l[r]) < tol) mvAct.push(i + 1);
+      }
+      const uplan = []; let uc = uNow; for (let i = 0; i < M; i++) { uc += du[i]; uplan.push(uc); }
+      // 6 APPLY FIRST MOVE ONLY
+      const uNew = clamp(uNow + du[0], p.umin, p.umax), dApplied = uNew - uNow;
+      this.hist.t.push(this.k); this.hist.y1.push(y1m); this.hist.y2.push(y2m); this.hist.u.push(uNew);
+      this.hist.r1.push(r1); this.hist.sp.push(p.sp); this.hist.lim2.push(p.lim2);
+      if (this.hist.t.length > 400) for (const k in this.hist) this.hist[k].shift();
+      // model update (prediction vector shift + superposition)
+      const n1 = new Float64Array(N + 1), n2 = new Float64Array(N + 1);
+      for (let j = 0; j < N; j++) { n1[j] = this.Yhat1[j + 1] + this.s1[j + 1] * dApplied; n2[j] = this.Yhat2[j + 1] + this.s2[j + 1] * dApplied; }
+      n1[N] = this.Yhat1[N] + this.s1[N + 1] * dApplied; n2[N] = this.Yhat2[N] + this.s2[N + 1] * dApplied;
+      this.Yhat1 = n1; this.Yhat2 = n2;
+      // plant (the "real" process, may differ from model)
+      this.uHist.push(uNew); if (this.uHist.length > 50) this.uHist.shift();
+      const a1 = Math.exp(-1 / pl.tau1), a2 = Math.exp(-1 / pl.tau2), H = this.uHist.length;
+      this.dev1 = a1 * this.dev1 + (1 - a1) * pl.K1 * p.mismatch * (this.uHist[H - 1 - pl.d1] - this.u0);
+      this.dev2 = a2 * this.dev2 + (1 - a2) * pl.K2 * p.mismatch * (this.uHist[H - 1 - pl.d2] - this.u0);
+      const ad = Math.exp(-1 / 5); this.dd1 = ad * this.dd1 + (1 - ad) * this.dT1; this.dd2 = ad * this.dd2 + (1 - ad) * this.dT2;
+      const g = () => p.noise ? (Math.random() + Math.random() + Math.random() - 1.5) * 0.15 : 0;
+      this.y1 = this.y01 + this.dev1 + this.dd1 + g(); this.y2 = this.y02 + this.dev2 + this.dd2 + g();
+      this.u = uNew;
+      const ms = (typeof performance !== 'undefined' ? performance : Date).now() - t0;
+      this.last = { k: this.k, y1m, y2m, uNow, uNew, b1, b2, f1: Array.from(f1), f2: Array.from(f2), pred1, pred2, du, sl, uplan,
+        uDes, uCv2, uss, r1, y2ss, reason, A1, sol, n, m, Jt, Jm, Js, J0, cvAct, cvViol, rateAct, mvAct, ms, P, M };
+      this.k++;
+      return this.last;
+    }
+  }
+  return { Sim, stepCoef, dynMatrix, solveQP };
+})();
+if (typeof module !== 'undefined') module.exports = MPC;
+
+const $ = id => document.getElementById(id);
+const p = { sp: 320, lim2: 600, umin: 20, umax: 80, dmax: 3, wy: 1, lam: 0.5, ws: 100, P: 30, M: 8, enforce: true, mismatch: 1, noise: true };
+let sim = new MPC.Sim(p), running = true, timer = null, demoSP = 345;
+const speeds = [1200, 450, 160, 40], spName = ['slow', 'normal', 'fast', 'turbo'];
+const fmt = (v, d = 2) => (v >= 0 ? '' : '') + Number(v).toFixed(d);
+const sliders = { sp: [' °C', 1], lim2: [' °C', 0], umax: [' %', 1], dmax: [' %', 1], wy: ['', 1], lam: ['', 1], P: [' min', 0], M: [' moves', 0], ws: ['', 0], mismatch: ['×', 2] };
+function bind() {
+  for (const k in sliders) {
+    const el = $(k), show = () => { $(k + 'v').textContent = (+el.value).toFixed(sliders[k][1]) + sliders[k][0]; };
+    el.addEventListener('input', () => { p[k] = +el.value; show(); if (k === 'sp') demoSP = null; });
+    show();
+  }
+  $('enforce').onchange = e => p.enforce = e.target.checked;
+  $('noise').onchange = e => p.noise = e.target.checked;
+  $('spd').oninput = e => { $('spdv').textContent = spName[e.target.value]; restart(); }; $('spdv').textContent = spName[1];
+  $('play').onclick = () => { running = !running; $('play').innerHTML = running ? '❚❚ Pause' : '▶ Run'; restart(); };
+  $('one').onclick = () => { running = false; $('play').innerHTML = '▶ Run'; restart(); tick(true); };
+  $('reset').onclick = () => { sim = new MPC.Sim(p); p.sp = 320; demoSP = +$('sp').value; $('log').innerHTML = ''; logLine('Reset. Plant at steady state (u=40 %, CV1=320 °C, CV2=560 °C). Operator will raise SP at cycle 5.'); tick(); };
+  $('foul').onclick = () => { sim.dT1 -= 3; sim.dT2 += 12; logLine('<span style="color:#ffab91">Disturbance: tube fouling (unmeasured). MPC will only see it through the bias.</span>'); };
+  $('feed').onclick = () => { sim.dT1 += 5; sim.dT2 += 4; logLine('<span style="color:#ffab91">Disturbance: feed inlet temperature up (unmeasured).</span>'); };
+  $('clrd').onclick = () => { sim.dT1 = 0; sim.dT2 = 0; logLine('Disturbances cleared.'); };
+}
+function restart() { clearInterval(timer); if (running) timer = setInterval(tick, speeds[$('spd').value]); }
+function logLine(h) { const d = document.createElement('div'); d.innerHTML = h; const L = $('log'); L.prepend(d); while (L.children.length > 120) L.lastChild.remove(); }
+function flash() { [...$('loop').children].forEach((c, i) => { c.classList.remove('on'); void c.offsetWidth; c.style.animationDelay = (i * 0.07) + 's'; c.classList.add('on'); }); }
+
+function tick(verbose) {
+  if (demoSP !== null && sim.k === 5) { p.sp = demoSP; $('sp').value = demoSP; $('spv').textContent = demoSP.toFixed(1) + ' °C'; logLine('<span style="color:#ffe082">Operator raises CV1 SP 320 → ' + demoSP + ' °C</span>'); demoSP = null; }
+  if (demoSP === null && sim.k > 5) p.sp = +$('sp').value;
+  const r = sim.cycle(); flash(); render(r);
+  const flags = (r.cvViol.length ? ' <span style="color:#ef5350">CV2 predicted violation</span>' : '') + (r.cvAct.length ? ' <span style="color:#ffe082">CV2 limit active</span>' : '');
+  logLine(`k=${r.k} | read CV1=${fmt(r.y1m)} CV2=${fmt(r.y2m)} | bias ${fmt(r.b1, 2)}/${fmt(r.b2, 2)} | SS u=${fmt(r.uss)} r1=${fmt(r.r1, 1)} | QP ${r.n}×${r.m} ${r.sol.iters} it ${r.ms.toFixed(1)} ms | sent Δu=${fmt(r.du[0], 3)} → u=${fmt(r.uNew)}${flags}`);
+}
+
+function setupCanvas(c) { const dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = +c.getAttribute('height'); if (c.width !== w * dpr) { c.width = w * dpr; c.height = h * dpr; c.style.height = h + 'px'; } const x = c.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); return [x, w, h]; }
+function chart(c, o) {
+  const [x, W, H] = setupCanvas(c), L = 46, R = 10, T = 8, B = 20;
+  x.clearRect(0, 0, W, H);
+  const t0 = o.now - 60, t1 = o.now + o.P;
+  let ys = []; o.series.forEach(s => s.pts.forEach(pt => { if (pt[0] >= t0 && pt[0] <= t1) ys.push(pt[1]); })); (o.hl || []).forEach(h => ys.push(h.y));
+  let lo = Math.min(...ys), hi = Math.max(...ys); if (hi - lo < 4) { const m = (hi + lo) / 2; lo = m - 2; hi = m + 2; } const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const X = t => L + (t - t0) / (t1 - t0) * (W - L - R), Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  x.fillStyle = 'rgba(79,195,247,0.05)'; x.fillRect(X(o.now), T, X(t1) - X(o.now), H - T - B);
+  x.strokeStyle = '#1f2b50'; x.lineWidth = 1; x.fillStyle = '#7f8fbd'; x.font = '10.5px Segoe UI';
+  for (let i = 0; i <= 4; i++) { const v = lo + (hi - lo) * i / 4, yy = Y(v); x.beginPath(); x.moveTo(L, yy); x.lineTo(W - R, yy); x.stroke(); x.fillText(v.toFixed(1), 4, yy + 3); }
+  for (let t = Math.ceil(t0 / 10) * 10; t <= t1; t += 10) { x.fillText((t - o.now >= 0 ? '+' : '') + (t - o.now), X(t) - 8, H - 5); }
+  x.strokeStyle = '#6f7fb0'; x.setLineDash([2, 3]); x.beginPath(); x.moveTo(X(o.now), T); x.lineTo(X(o.now), H - B); x.stroke(); x.setLineDash([]);
+  x.fillStyle = '#9fb0e0'; x.fillText('NOW  |  future (prediction horizon) →', X(o.now) + 4, T + 10);
+  (o.hl || []).forEach(h => { x.strokeStyle = h.c; x.setLineDash(h.d || [6, 4]); x.lineWidth = 1.3; x.beginPath(); x.moveTo(X(h.from ?? t0), Y(h.y)); x.lineTo(X(t1), Y(h.y)); x.stroke(); x.setLineDash([]); if (h.lab) { x.fillStyle = h.c; x.fillText(h.lab, W - R - x.measureText(h.lab).width - 2, Y(h.y) - 3); } });
+  o.series.forEach(s => {
+    x.strokeStyle = s.c; x.lineWidth = s.w || 1.6; x.setLineDash(s.d || []); x.globalAlpha = s.a || 1; x.beginPath(); let st = false, py = 0;
+    s.pts.forEach(pt => { if (pt[0] < t0) return; const xx = X(pt[0]), yy = Y(pt[1]); if (!st) { x.moveTo(xx, yy); st = true; } else if (s.step) { x.lineTo(xx, py); x.lineTo(xx, yy); } else x.lineTo(xx, yy); py = yy; });
+    x.stroke(); x.setLineDash([]); x.globalAlpha = 1;
+    if (s.viol) s.pts.forEach(pt => { if (pt[1] > s.viol + 0.3 && pt[0] >= t0) { x.fillStyle = '#ef5350'; x.beginPath(); x.arc(X(pt[0]), Y(pt[1]), 2.4, 0, 7); x.fill(); } });
+  });
+}
+function render(r) {
+  const h = sim.hist, now = r.k, P = r.P;
+  const hp = key => h.t.map((t, i) => [t, h[key][i]]);
+  const fut = arr => arr.map((v, j) => [now + j + 1, v]);
+  chart($('c1'), { now, P, series: [
+    { pts: hp('y1'), c: '#4fc3f7', w: 1.6 },
+    { pts: [[now, r.y1m], ...fut(r.f1)], c: '#9aa6c8', d: [5, 4], w: 1.3 },
+    { pts: [[now, r.y1m], ...fut(r.pred1)], c: '#4fc3f7', w: 3 },
+    { pts: hp('r1').concat([[now + P, r.r1]]), c: '#ffd54f', d: [2, 3], w: 1.4, step: true }],
+    hl: [{ y: p.sp, c: 'rgba(255,255,255,.45)', lab: 'SP ' + p.sp }] });
+  chart($('c2'), { now, P, series: [
+    { pts: hp('y2'), c: '#ff8a65', w: 1.6, viol: p.lim2 },
+    { pts: [[now, r.y2m], ...fut(r.f2)], c: '#9aa6c8', d: [5, 4], w: 1.3 },
+    { pts: [[now, r.y2m], ...fut(r.pred2)], c: '#ff8a65', w: 3, viol: p.lim2 }],
+    hl: [{ y: p.lim2, c: '#ef5350', lab: 'HIGH ' + p.lim2 }] });
+  const plan = [[now, r.uNow], ...r.uplan.map((v, i) => [now + i, v])]; plan.push([now + P, r.uplan[r.uplan.length - 1]]);
+  chart($('c3'), { now, P, series: [
+    { pts: hp('u'), c: '#b388ff', w: 1.6, step: true },
+    { pts: plan, c: '#b388ff', w: 3, step: true, a: .85 },
+    { pts: [[now, r.uss], [now + P, r.uss]], c: '#ffd54f', d: [2, 3], w: 1.4 }],
+    hl: [{ y: p.umax, c: '#ef5350', lab: 'MV HI ' + p.umax }, { y: p.umin, c: '#ef5350', lab: 'MV LO ' + p.umin }] });
+
+  const M = r.M;
+  $('eq').innerHTML =
+`min  J(Δu) =  Σ<sub>j=1..${P}</sub> <span style="color:#4fc3f7">${p.wy.toFixed(1)}</span>·(ŷ1<sub>j</sub> − <span style="color:#ffd54f">${r.r1.toFixed(1)}</span>)²
+          + Σ<sub>i=0..${M - 1}</sub> <span style="color:#b388ff">${p.lam.toFixed(1)}</span>·Δu<sub>i</sub>²
+          + Σ<sub>j</sub> <span style="color:#ff8a65">${p.ws}</span>·(s<sub>j</sub>² + s<sub>j</sub>)
+with  ŷ1 = y1<sub>free</sub> + A1·Δu      (bias ${r.b1 >= 0 ? '+' : ''}${r.b1.toFixed(2)})
+      ŷ2 = y2<sub>free</sub> + A2·Δu ≤ ${p.lim2} + s   (bias ${r.b2 >= 0 ? '+' : ''}${r.b2.toFixed(2)})
+→ engine form:  ½ xᵀHx + gᵀx,  l ≤ Cx ≤ u
+   x = [Δu(${M}) | slack(${P})] → H ${r.n}×${r.n},  C ${r.m}×${r.n}`;
+  const J = r.Jt + r.Jm + r.Js, mx = Math.max(r.J0, J, 1e-9);
+  const bar = (lab, v, c) => `<div class="kv"><span>${lab}</span><span>${v.toFixed(2)}</span></div><div class="bar"><div style="width:${Math.min(100, v / mx * 100)}%;background:${c}"></div></div>`;
+  $('jbars').innerHTML = bar('Tracking cost (CV1 error²)', r.Jt, '#4fc3f7') + bar('Move cost (Δu²)', r.Jm, '#b388ff') + bar('Constraint slack cost', r.Js, '#ff8a65') +
+    bar('<b>Total J (optimised)</b>', J, '#66bb6a') + bar('J if we do nothing (Δu = 0)', r.J0, '#5d6a94');
+
+  const nC = r.m;
+  $('cons').innerHTML = `<span>Rows checked this cycle</span><span>${nC}</span>
+    <span>CV2 high limit × ${P} future steps</span><span>${p.enforce ? 'hard + slack' : 'OFF'}</span>
+    <span>MV absolute limits × ${M}</span><span>hard</span><span>MV rate limits × ${M}</span><span>hard</span><span>Slack ≥ 0 × ${P}</span><span>hard</span>
+    <span>Max predicted CV2</span><span style="color:${Math.max(...r.pred2) > p.lim2 + 0.3 ? '#ef5350' : '#a5d6a7'}">${Math.max(...r.pred2).toFixed(2)}</span>`;
+  const rng = a => a.length ? (a.length > 1 ? `k+${a[0]}…k+${a[a.length - 1]}` : `k+${a[0]}`) : '';
+  let tags = '';
+  if (r.cvViol.length) tags += `<span class="tag t-bad">CV2 &gt; limit at ${r.cvViol.length} future steps (${rng(r.cvViol)})</span>`;
+  if (r.cvAct.length) tags += `<span class="tag t-act">CV2 limit ACTIVE at ${r.cvAct.length} steps (${rng(r.cvAct)})</span>`;
+  if (r.rateAct.length) tags += `<span class="tag t-act">Rate limit active: move ${r.rateAct.join(', ')}</span>`;
+  if (r.mvAct.length) tags += `<span class="tag t-act">MV limit active: move ${r.mvAct.join(', ')}</span>`;
+  if (!tags) tags = '<span class="tag t-ok">No constraint active: unconstrained optimum</span>';
+  $('ctags').innerHTML = tags;
+  $('ss').innerHTML = `<span>u needed for SP</span><span>${r.uDes.toFixed(2)} %</span><span>u max allowed by CV2 limit</span><span>${r.uCv2.toFixed(2)} %</span>
+    <span>u<sub>ss</sub> chosen</span><span style="color:#ffd54f">${r.uss.toFixed(2)} %</span><span>CV1 target r1</span><span style="color:#ffd54f">${r.r1.toFixed(2)} °C</span>
+    <span>CV2 at steady state</span><span>${r.y2ss.toFixed(2)} °C</span><span style="grid-column:1/3;color:${r.reason.startsWith('SP') ? '#a5d6a7' : '#ffe082'}">${r.reason}</span>`;
+  $('solv').innerHTML = `<span>Method</span><span>ADMM (OSQP-style), warm-started</span><span>Decision variables</span><span>${r.n}</span><span>Constraint rows</span><span>${r.m}</span>
+    <span>Iterations</span><span>${r.sol.iters}</span><span>Converged</span><span style="color:${r.sol.conv ? '#a5d6a7' : '#ef5350'}">${r.sol.conv ? 'yes' : 'max iter'}</span>
+    <span>Primal / dual residual</span><span>${r.sol.rp.toExponential(1)} / ${r.sol.rd.toExponential(1)}</span><span>ρ (step size), refactors</span><span>${r.sol.rho.toPrecision(3)}, ${r.sol.refac}</span>
+    <span>Solve time (your browser)</span><span>${r.ms.toFixed(2)} ms</span><span>Real DCS cycle budget</span><span>30–60 s</span>
+    <span>Planned Δu (M moves)</span><span style="font-family:Consolas;font-size:11px">${r.du.map(v => v.toFixed(2)).join(' ')}</span>`;
+  heat(r.A1, P, M);
+}
+function heat(A, P, M) {
+  const [x, W, H] = setupCanvas($('hm')); x.clearRect(0, 0, W, H);
+  const L = 30, T = 4, cw = (W - L - 4) / M, ch = (H - T - 16) / P; let mx = 0; A.forEach(r => r.forEach(v => mx = Math.max(mx, v)));
+  for (let j = 0; j < P; j++) for (let i = 0; i < M; i++) {
+    const v = A[j][i] / (mx || 1); x.fillStyle = `hsl(${200 - 170 * v},85%,${10 + 50 * v}%)`; x.fillRect(L + i * cw, T + j * ch, cw - 1, Math.max(ch - 0.5, 0.5));
+  }
+  x.fillStyle = '#7f8fbd'; x.font = '10px Segoe UI'; x.fillText('k+1', 2, T + 8); x.fillText('k+' + P, 2, H - 16);
+  for (let i = 0; i < M; i++) if (M <= 10 || i % 2 === 0) x.fillText('Δu' + i, L + i * cw + cw / 2 - 9, H - 4);
+}
+bind(); p.sp = 320; demoSP = +$('sp').value;
+logLine('Plant at steady state. Operator will raise SP at cycle 5. Watch CV2 ride its limit.');
+tick(); restart();
+window.addEventListener('resize', () => sim.last && render(sim.last));
+</script></body></html>
