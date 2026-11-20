@@ -15,8 +15,10 @@ main{max-width:1100px;margin:auto;padding:20px;display:grid;gap:18px;grid-templa
 .card h2{margin:0 0 12px;font-size:1.1rem;color:var(--acc)}
 label{display:block;font-size:.88rem;margin:10px 0 4px;color:var(--mut)}
 input,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:.95rem}
+input[readonly],input:disabled{background:#f0f3f8;color:var(--mut)}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .chk{display:flex;gap:8px;align-items:center;margin-top:10px}.chk input{width:auto}
+.chk input.rate{width:80px;padding:5px 8px}
 button{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:1rem;cursor:pointer}
 button.sec{background:#e8eef6;color:var(--ink);padding:6px 10px;font-size:.85rem}
 .full{grid-column:1/-1}details{margin-top:10px}summary{cursor:pointer;color:var(--acc)}
@@ -40,7 +42,7 @@ th:first-child,td:first-child{text-align:left}tr.sel{background:#eaf3ff}tbody tr
  <option value="KNOWLEDGE">Knowledge worker – specified region (15%)</option><option value="CSUITE">Non-citizen C-Suite (15%)</option></select>
  <label>Category</label>
  <select id="category"><option value="1">1 – Single</option><option value="2">2 – Married, spouse not working</option>
- <option value="3">3 – Married & spouse working / divorced / widowed / single with adopted child</option></select>
+ <option value="3">3 – Married &amp; spouse working / divorced / widowed / single with adopted child</option></select>
  <div id="kidBlock" class="hide">
   <label>Children below 18 (or 18+ studying below diploma) — ×1</label><input id="c1" type="number" min="0" value="0">
   <label>Children 18+ studying diploma+ (MY) / degree+ (overseas) — ×4</label><input id="c2" type="number" min="0" value="0">
@@ -59,7 +61,13 @@ th:first-child,td:first-child{text-align:left}tr.sel{background:#eaf3ff}tbody tr
   <div><label>Employee EPF per month (RM)</label><input id="epf" type="number" min="0" value="550"></div>
   <div><label>Zakat via payroll per month (RM)</label><input id="zakat" type="number" min="0" value="0"></div>
  </div>
- <div class="chk"><input type="checkbox" id="autoEpf" checked><span>Auto-estimate EPF at 11%</span></div>
+ <div class="chk">
+  <input type="checkbox" id="autoEpf" checked>
+  <span>Auto-estimate EPF at</span>
+  <input id="epfRate" class="rate" type="number" min="0" max="100" step="0.5" value="11" aria-label="Employee EPF rate in percent">
+  <span>%</span>
+ </div>
+ <p class="note" id="epfRateNote">Common rates: 11% (standard), 9% (reduced), 0% (opt-out / non-member).</p>
  <label>Starting month of calculation</label>
  <select id="startMonth"></select>
  <details id="ytdBox"><summary>Year-to-date figures before the start month (optional – from payslip / TP3)</summary>
@@ -191,27 +199,47 @@ const monthOpts=sel=>MONTHS.map((m,i)=>`<option value="${i+1}"${i+1===sel?' sele
 $('startMonth').innerHTML=monthOpts(1); $('tp1Month').innerHTML=monthOpts(1);
 $('tp1List').innerHTML=TP1.map((t,i)=>`<div><label>${t[0]} (max RM${t[1].toLocaleString()})</label><input type="number" min="0" max="${t[1]}" value="0" data-tp="${i}"></div>`).join('');
 
+// ----- EPF rate (editable, default 11%) -----
+const EPF_DEFAULT_RATE = 11;
+function epfRate(){                       // returns fraction, e.g. 0.11
+  const v = parseFloat($('epfRate').value);
+  if (!isFinite(v)) return EPF_DEFAULT_RATE/100;   // blank/invalid -> default
+  return Math.min(Math.max(v,0),100)/100;          // clamp 0–100%
+}
+$('epfRate').addEventListener('change',()=>{      // tidy the field on blur
+  const v=parseFloat($('epfRate').value);
+  $('epfRate').value = isFinite(v) ? Math.min(Math.max(v,0),100) : EPF_DEFAULT_RATE;
+  sync();
+});
+
 function tp1Total(){let s=0;document.querySelectorAll('[data-tp]').forEach(el=>{const cap=TP1[+el.dataset.tp][1];
  let v=parseFloat(el.value)||0; if(v<0)v=0; if(v>cap){v=cap;el.value=cap;}
  if(TP1[+el.dataset.tp][0].startsWith('Alimony')&&$('category').value==='2')v=0; s+=v;});
  $('tp1Total').textContent=fmt(s);return s;}
 document.querySelectorAll('[data-tp]').forEach(el=>el.addEventListener('input',tp1Total));
 
+function updateBonusEpf(d){
+ const be=d.querySelector('.be'); be.readOnly=$('autoEpf').checked;
+ if($('autoEpf').checked) be.value=Math.ceil((parseFloat(d.querySelector('.ba').value)||0)*epfRate());
+}
 function addBonus(){const d=document.createElement('div');d.className='row bonusRow';
  d.innerHTML=`<div><label>Month</label><select class="bm">${monthOpts(12)}</select></div>
  <div><label>Amount (RM)</label><input class="ba" type="number" min="0" value="0"></div>
  <div><label>EPF on bonus (RM)</label><input class="be" type="number" min="0" value="0"></div>
  <div style="align-self:end"><button class="sec" type="button">Remove</button></div>`;
  d.querySelector('button').onclick=()=>d.remove();
- d.querySelector('.ba').addEventListener('input',e=>{if($('autoEpf').checked)d.querySelector('.be').value=Math.ceil((parseFloat(e.target.value)||0)*0.11);});
- $('bonusList').appendChild(d);}
+ d.querySelector('.ba').addEventListener('input',()=>updateBonusEpf(d));
+ $('bonusList').appendChild(d); updateBonusEpf(d);}
 $('addBonus').onclick=addBonus;
 
 function sync(){const res=$('resident').value==='1';$('resBlock').classList.toggle('hide',!res);
  const c=$('category').value;$('kidBlock').classList.toggle('hide',c==='1');$('dSpBlock').classList.toggle('hide',c!=='2');
- if($('autoEpf').checked){$('epf').value=res?Math.ceil(num('salary')*0.11):0;}
- $('epf').readOnly=$('autoEpf').checked;tp1Total();}
-['resident','category','salary','autoEpf'].forEach(id=>$(id).addEventListener('input',sync));sync();
+ const auto=$('autoEpf').checked;
+ if(auto){$('epf').value=res?Math.ceil(num('salary')*epfRate()):0;}
+ $('epf').readOnly=auto; $('epfRate').disabled=!auto;
+ document.querySelectorAll('.bonusRow').forEach(updateBonusEpf);
+ tp1Total();}
+['resident','category','salary','autoEpf','epfRate'].forEach(id=>$(id).addEventListener('input',sync));sync();
 
 let rows=[];
 function calc(){
