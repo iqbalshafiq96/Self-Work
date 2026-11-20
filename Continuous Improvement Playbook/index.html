@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slide Viewer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Segoe UI, Arial, sans-serif; background: #1e1e1e; color: #eee;
+         display: flex; flex-direction: column; height: 100vh; }
+  header { display: flex; gap: 8px; align-items: center; justify-content: center;
+           padding: 8px; background: #2b2b2b; flex-wrap: wrap; }
+  button { background: #0078d4; color: #fff; border: 0; padding: 6px 14px; border-radius: 4px; cursor: pointer; }
+  button:hover { background: #106ebe; }
+  button:disabled { background: #555; cursor: wait; }
+  #zip { background: #107c10; }
+  #zip:hover:not(:disabled) { background: #0b5a0b; }
+  #status { font-size: 13px; color: #bbb; min-width: 120px; }
+  input { width: 70px; padding: 5px; border-radius: 4px; border: 1px solid #555; background: #111; color: #eee; text-align: center; }
+  main { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  main img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  #thumbs { display: flex; gap: 6px; overflow-x: auto; padding: 6px; background: #2b2b2b; }
+  #thumbs img { height: 60px; cursor: pointer; opacity: .5; border: 2px solid transparent; }
+  #thumbs img.active { opacity: 1; border-color: #0078d4; }
+</style>
+</head>
+<body>
+<header>
+  <button id="first">⏮</button>
+  <button id="prev">◀ Prev</button>
+  <span>Slide <input id="jump" type="number" min="1"> / <span id="total"></span></span>
+  <button id="next">Next ▶</button>
+  <button id="last">⏭</button>
+  <button id="fs">⛶ Fullscreen</button>
+  <button id="zip">⬇ Download ZIP</button>
+  <span id="status" aria-live="polite"></span>
+</header>
+<main><img id="slide" alt="slide"></main>
+<div id="thumbs"></div>
+
+<script>
+  const TOTAL = 203;                              // change if slide count changes
+  const path = n => `slides/Slide${n}.jpg`;       // matches Slide1.jpg ... Slide203.jpg
+  const ZIP_NAME = 'slides.zip';
+  let cur = 1;
+
+  const img = document.getElementById('slide');
+  const jump = document.getElementById('jump');
+  const thumbs = document.getElementById('thumbs');
+  const zipBtn = document.getElementById('zip');
+  const status = document.getElementById('status');
+  document.getElementById('total').textContent = TOTAL;
+  jump.max = TOTAL;
+
+  // Thumbnails (lazy-loaded so 203 images don't load at once)
+  for (let i = 1; i <= TOTAL; i++) {
+    const t = document.createElement('img');
+    t.loading = 'lazy'; t.src = path(i); t.title = 'Slide ' + i;
+    t.addEventListener('click', () => go(i));
+    thumbs.appendChild(t);
+  }
+
+  function go(n) {
+    cur = Math.min(Math.max(1, n), TOTAL);
+    img.src = path(cur);
+    jump.value = cur;
+    location.hash = cur;                          // shareable link: .../#57
+    [...thumbs.children].forEach((t, i) => t.classList.toggle('active', i + 1 === cur));
+    thumbs.children[cur - 1].scrollIntoView({ inline: 'center', block: 'nearest' });
+    if (cur < TOTAL) new Image().src = path(cur + 1);   // preload next slide
+  }
+
+  // ---------- Download all slides as ZIP ----------
+  async function downloadZip() {
+    if (typeof JSZip === 'undefined') { status.textContent = 'ZIP library failed to load'; return; }
+    zipBtn.disabled = true;
+    const zip = new JSZip();
+    let done = 0, failed = [];
+
+    // Fetch in small parallel batches (6 at a time) to avoid overloading the browser
+    const queue = Array.from({ length: TOTAL }, (_, i) => i + 1);
+    async function worker() {
+      while (queue.length) {
+        const n = queue.shift();
+        try {
+          const res = await fetch(path(n));
+          if (!res.ok) throw new Error(res.status);
+          zip.file(`Slide${n}.jpg`, await res.blob());
+        } catch { failed.push(n); }
+        status.textContent = `Fetching ${++done} / ${TOTAL}`;
+      }
+    }
+    await Promise.all(Array.from({ length: 6 }, worker));
+
+    status.textContent = 'Building ZIP…';
+    // STORE = no compression (JPGs are already compressed, so this is much faster)
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' },
+      m => status.textContent = `Zipping ${m.percent.toFixed(0)}%`);
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = ZIP_NAME;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+
+    status.textContent = failed.length
+      ? `Done – ${failed.length} missing: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '…' : ''}`
+      : 'Done ✔';
+    zipBtn.disabled = false;
+  }
+
+  document.getElementById('prev').onclick  = () => go(cur - 1);
+  document.getElementById('next').onclick  = () => go(cur + 1);
+  document.getElementById('first').onclick = () => go(1);
+  document.getElementById('last').onclick  = () => go(TOTAL);
+  document.getElementById('fs').onclick    = () => document.documentElement.requestFullscreen();
+  zipBtn.onclick = downloadZip;
+  jump.addEventListener('change', () => go(parseInt(jump.value) || 1));
+
+  // Keyboard navigation
+  document.addEventListener('keydown', e => {
+    if (e.target === jump) return;
+    if (['ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); go(cur + 1); }
+    if (['ArrowLeft', 'PageUp'].includes(e.key)) go(cur - 1);
+    if (e.key === 'Home') go(1);
+    if (e.key === 'End') go(TOTAL);
+  });
+
+  // Swipe on mobile
+  let x0 = null;
+  img.addEventListener('touchstart', e => x0 = e.touches[0].clientX);
+  img.addEventListener('touchend', e => {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0;
+    if (Math.abs(dx) > 50) go(cur + (dx < 0 ? 1 : -1));
+    x0 = null;
+  });
+
+  go(parseInt(location.hash.slice(1)) || 1);
+</script>
+</body>
+</html>
