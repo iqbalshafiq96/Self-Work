@@ -41,7 +41,8 @@
 
 <script>
   const TOTAL = 203;                              // change if slide count changes
-  const path = n => `slides/Slide${n}.jpg`;       // matches Slide1.jpg ... Slide203.jpg
+  const EXT = 'JPG';                              // matches Slide1.JPG ... Slide203.JPG
+  const path = n => `slides/Slide${n}.${EXT}`;
   const ZIP_NAME = 'slides.zip';
   let cur = 1;
 
@@ -78,7 +79,7 @@
     const zip = new JSZip();
     let done = 0, failed = [];
 
-    // Fetch in small parallel batches (6 at a time) to avoid overloading the browser
+    // Fetch in small parallel batches (6 at a time)
     const queue = Array.from({ length: TOTAL }, (_, i) => i + 1);
     async function worker() {
       while (queue.length) {
@@ -86,7 +87,7 @@
         try {
           const res = await fetch(path(n));
           if (!res.ok) throw new Error(res.status);
-          zip.file(`Slide${n}.jpg`, await res.blob());
+          zip.file(`Slide${n}.${EXT}`, await res.blob());
         } catch { failed.push(n); }
         status.textContent = `Fetching ${++done} / ${TOTAL}`;
       }
@@ -94,7 +95,6 @@
     await Promise.all(Array.from({ length: 6 }, worker));
 
     status.textContent = 'Building ZIP…';
-    // STORE = no compression (JPGs are already compressed, so this is much faster)
     const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' },
       m => status.textContent = `Zipping ${m.percent.toFixed(0)}%`);
 
